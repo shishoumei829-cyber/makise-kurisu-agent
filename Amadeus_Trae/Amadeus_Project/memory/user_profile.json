@@ -1,0 +1,17 @@
+{
+    "user_profile": {
+        "name": "凤凰院凶真",
+        "confirmed_habits": [],
+        "tentative_observations": [
+            {
+                "trait": "[视觉] !!!",
+                "count": 1,
+                "last_seen": "2026/3/26 13:17:40"
+            }
+        ],
+        "clothing_history": []
+    },
+    "system_config": {
+        "observation_threshold": 3
+    }
+}
