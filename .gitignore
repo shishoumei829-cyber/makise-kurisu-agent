@@ -1,0 +1,14 @@
+node_modules/
+.venv/
+venv/
+dist/
+build/
+__pycache__/
+*.log
+*.zip
+*.rar
+*.mp4
+*.pt
+*.pth
+*.onnx
+.env
