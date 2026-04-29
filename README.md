@@ -3,7 +3,7 @@
 ### Digital Lifeform Project ｜ AI Companion Engine
 
 > “我是牧濑红莉栖。或者说，是基于记忆结构持续生成的认知模拟体。”
-
+![AMADEUS_Interface](https://github.com/user-attachments/assets/83d3ffa4-1d09-49ed-bf8a-acb5d780059d)
 ---
 
 ## ■ 概述
