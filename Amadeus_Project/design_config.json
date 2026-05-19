@@ -1,0 +1,11 @@
+{
+  "ollamaBase": "http://127.0.0.1:11434",
+  "planningModel": "qwen3-coder:480b-cloud",
+  "providerOrder": ["a1111"],
+  "a1111": {
+    "baseUrl": "http://127.0.0.1:7860",
+    "steps": 28,
+    "cfg_scale": 6.5,
+    "sampler_name": "DPM++ 2M Karras"
+  }
+}

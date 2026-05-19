@@ -1,6 +1,7 @@
 node_modules/
 .venv/
 venv/
+kurisu_env/
 dist/
 build/
 __pycache__/
@@ -12,3 +13,30 @@ __pycache__/
 *.pth
 *.onnx
 .env
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Python / JS caches
+*.pyc
+.pytest_cache/
+.cache/
+npm-debug.log*
+yarn-error.log*
+
+# Runtime data and generated stores
+amadeus_data/
+Amadeus_Project/vector_store/
+Amadeus_Project/dist/
+Amadeus_Project/Amadeus_Project/
+debug-*.log
+Amadeus_Project/error.log
+Amadeus_Project/output.log
+
+# Large binary assets and shortcuts
+*.tga
+*.sph
+*.pmx
+*.lnk

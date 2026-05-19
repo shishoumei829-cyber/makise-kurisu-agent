@@ -1,0 +1,26 @@
+{
+  "id": "design_1777724949364",
+  "created_at": "2026-05-02T12:29:09.364Z",
+  "request": "我想设计一个AR眼镜",
+  "brief": {
+    "title": "AR眼镜概念设计",
+    "intent": "设计一款未来感十足的增强现实眼镜，突出科技感与佩戴舒适性",
+    "visual_direction": "采用极简主义设计语言，主体为透明材质与金属框架结合，强调光影反射效果。构图采用正面视角略带仰角，突出眼镜的立体感和科技属性。色彩以银灰色金属质感为主，搭配深色背景营造对比。材质表现重点在于透明亚克力、拉丝金属和哑光塑料的质感对比。",
+    "prompt": "minimalist AR glasses concept design, sleek transparent frame with metallic accents, floating in mid-air, studio lighting, professional product photography, white and silver color scheme, high-tech aesthetic, clean background, sharp details, reflective surfaces, modern technology device, isometric view, soft shadows, photorealistic rendering, 1:1 aspect ratio",
+    "negative_prompt": "cluttered background, busy composition, multiple objects, text overlay, logos, brands, realistic human face, complex patterns, vintage style, rustic elements, warm colors, brown tones, wood textures, fabric materials, lens flare, motion blur, low resolution, pixelated, cartoon style, illustration, drawing, sketch",
+    "ratio": "1:1",
+    "evaluation": [
+      "金属与透明材质的质感对比是否清晰",
+      "整体造型是否体现科技感和未来感",
+      "光影处理是否突出产品的立体层次"
+    ]
+  },
+  "render": null,
+  "render_error": null,
+  "critique": {
+    "score": 0.78,
+    "warnings": [
+      "没有检测到可用免费本地图像后端，只完成了设计方案和出图 prompt。"
+    ]
+  }
+}

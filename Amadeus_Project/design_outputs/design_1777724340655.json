@@ -1,0 +1,26 @@
+{
+  "id": "design_1777724340655",
+  "created_at": "2026-05-02T12:19:00.656Z",
+  "request": "??????,???",
+  "brief": {
+    "title": "占位符设计",
+    "intent": "创建一个通用的占位符图像，用于未指定具体需求的场景",
+    "visual_direction": "极简主义几何构成，使用基础形状和渐变色彩营造现代感",
+    "prompt": "minimalist geometric composition, abstract shapes, soft gradient background, clean white space, modern design aesthetic, simple forms, balanced layout, professional quality",
+    "negative_prompt": "complex details, cluttered composition, dark colors, realistic elements, text overlay, busy background, low quality, pixelated, distorted",
+    "ratio": "1:1",
+    "evaluation": [
+      "构图平衡性：主体元素在画面中分布均匀，视觉重心稳定",
+      "色彩纯净度：背景渐变过渡自然，无突兀色块",
+      "简约表现力：图形元素控制在3个以内，避免过度装饰"
+    ]
+  },
+  "render": null,
+  "render_error": null,
+  "critique": {
+    "score": 0.78,
+    "warnings": [
+      "没有检测到可用免费本地图像后端，只完成了设计方案和出图 prompt。"
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "design_1777724095909",
+  "created_at": "2026-05-02T12:14:55.909Z",
+  "request": "???? AMADEUS ?????????",
+  "brief": {
+    "title": "Amadeus Visual Identity",
+    "intent": "为Amadeus品牌创建一个奢华、优雅且具有音乐艺术感的视觉标识系统",
+    "visual_direction": "以古典音乐的优雅曲线和现代奢华材质相结合，通过金色与深蓝的对比营造高级感，主体采用抽象化的音符流动形态，配合镜面反射和丝绸质感增强视觉层次",
+    "prompt": "luxurious abstract musical flow, golden curved lines transforming into silk ribbons, deep navy blue background with metallic gold accents, mirror-like reflective surfaces, elegant typography layout space, sophisticated branding composition, 1:1 ratio, high-end luxury aesthetic, minimal yet impactful design",
+    "negative_prompt": "cluttered composition, low quality, blurry, distorted shapes, bright colors, cartoon style, text overlay, crowded elements, amateur design, pixelated, noisy",
+    "ratio": "1:1",
+    "evaluation": [
+      "视觉层次是否体现出音乐的流动性与奢华品牌的高级感",
+      "金色与深蓝的色彩搭配是否达到视觉平衡且突出品牌气质",
+      "构图是否为后续文字排版预留了充足的空间和视觉焦点"
+    ]
+  },
+  "render": null,
+  "render_error": null,
+  "critique": {
+    "score": 0.7,
+    "warnings": [
+      "图像模型生成文字不稳定，建议图片完成后再单独排版文字。",
+      "没有检测到可用免费本地图像后端，只完成了设计方案和出图 prompt。"
+    ]
+  }
+}

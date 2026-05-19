@@ -18,6 +18,33 @@ const express = require('express');
 const cors    = require('cors');
 const fs      = require('fs');
 const path    = require('path');
+const os      = require('os');
+const { createDesignTask } = require('./design_engine');
+const { MemorySystem } = require('./lib/memory');
+const { ConversationMemory, needsConversationRecall } = require('./lib/conversationMemory');
+
+/** 加载项目根目录 .env（不覆盖已有系统/进程环境变量） */
+function loadDotEnv() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return;
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const s = line.trim();
+    if (!s || s.startsWith('#')) continue;
+    const eq = s.indexOf('=');
+    if (eq < 1) continue;
+    const key = s.slice(0, eq).trim();
+    let val = s.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) val = val.slice(1, -1);
+    if (process.env[key] == null || process.env[key] === '') process.env[key] = val;
+  }
+}
+loadDotEnv();
+
+// ── 自主性增强模块（好奇心引擎）──────────────────────────────────────
+const { CuriosityEngine } = require('./autonomy_enhanced');
 
 // ── 用户理解系统 ──────────────────────────────────────────────────
 const {
@@ -25,21 +52,121 @@ const {
   UserModel,
   ConversationAnalytics,
   HabitExtractor,
-  MoodPredictor,
-  ResponsePersonalizer,
 } = require('./user_model');
+
+// ── 学习引擎（强化学习 + 人格演化）──────────────────────────────────
+const {
+  init:             initLearningEngine,
+  ReinforcementLearning,
+  PersonalityEvolution,
+} = require('./learning_engine');
+
+// ── 元认知模块（自我反思 + 价值观一致性 / LLM 张力检测）────────────────
+const {
+  init:             initMetacognition,
+  SelfReflection,
+  ValueConsistency,
+} = require('./metacognition');
+
+// ── BDI 引擎（信念/欲望/意图推断，异步周期性触发）────────────────────
+const { inferUserBdi } = require('./bdi_engine');
+
+// ── cognitive/ 子系统模块 ─────────────────────────────────────────
+const { MotivationSystem }   = require('./cognitive/motivation');
+const { InternalGoalSystem } = require('./cognitive/goals');
+const { StrategyLayer }      = require('./cognitive/strategy');
+const { SelfModel }          = require('./cognitive/selfModel');
+const { BehaviorDecision }   = require('./cognitive/behavior');
+const {
+  PAD_BASE, PAD_DECAY_LAMBDA, BOND_DELTA_S,
+  clamp, loadPAD, savePAD, updatePAD, inferMainEventFromInput,
+} = require('./cognitive/pad');
+const {
+  _clipInnerPrompt, _compactSoulForPrompt, _fitPromptToBudget,
+  padTelemetry, getTimeContext, symbolicReasoning, buildPrompt,
+} = require('./cognitive/prompts');
+const {
+  utteranceFocusLine,
+  filterRagHits,
+  filterAutonomyRagHits,
+  filterAutonomyMemCtx,
+  buildEngagementHint,
+  stripOrphanClosingSentence,
+  stripChatMarkdown,
+  stripRoleplayActions,
+  shouldReplaceStreamText,
+} = require('./cognitive/replyAlign');
+const { parseIncomingChat, capDialogue, buildOllamaMessages, fitSystemForDialogue, estimateMessageChars } = require('./cognitive/chatTurns');
+const { derivePresence, presenceToPromptLine } = require('./cognitive/presence');
+const { repairKurisuReply, reconcileFinalReply } = require('./lib/oocGuard');
+const { buildTurnStyleBlock } = require('./cognitive/turnStyle');
+const {
+  buildCompanionBlock,
+  buildAutonomySituation,
+  isHighIntimacyMode,
+  effectiveRelScore,
+  applyHighIntimacyBootstrap,
+  idleSilencePadDelta,
+  HIGH_INTIMACY_REL_FLOOR,
+} = require('./cognitive/companionMode');
+const {
+  ensureWhoamiOnDisk,
+  bootstrapWhoamiRecord,
+  buildPartnerContextBlock,
+  partnerIsOkabe,
+  resolvePartnerDisplayName,
+  isOkabePartnerMode,
+} = require('./lib/partnerIdentity');
+const {
+  buildProactiveReplyFocus,
+  buildAutonomyContinuityBlock,
+  extractLastRealUserLine,
+  detectReplyingToHerThread,
+} = require('./cognitive/turnContinuity');
+const userPresence = require('./lib/userPresence');
+const { runStartupChecks } = require('./lib/startupCheck');
+
+function applyOocRepair(content, userContent, streamedRaw = '', oocOpts = {}) {
+  const streamed = String(streamedRaw || '').trim();
+  const repaired = repairKurisuReply(userContent, content, oocOpts);
+  const out = streamed ? reconcileFinalReply(streamed, repaired, userContent) : repaired;
+  if (out !== String(content || '').trim()) {
+    console.log('[chat] OOC/口吻兜底已调整回复');
+  }
+  return out;
+}
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+const OLLAMA_BASE = (process.env.AMADEUS_OLLAMA_BASE || 'http://127.0.0.1:11434').replace(/\/$/, '');
+const PORT = (() => {
+  const n = Number(process.env.AMADEUS_BACKEND_PORT || process.env.PORT);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 3000;
+})();
 
 // ──────────────────────────────────────────────────────────────
-//  路径
+//  路径 — 运行时数据放在项目外，防止文件监听器触发页面刷新
+//  ⚠️  此路径永不再改！改路径会导致历史数据丢失
 // ──────────────────────────────────────────────────────────────
-const rootPath    = "D:\\Amadeus_Trae\\Amadeus_Project";
+const rootPath    = __dirname;
+const dataDir     = path.join(os.homedir(), 'amadeus_data');
+
+// ★ 托管静态文件
+app.use(express.static(rootPath));
+
+// ★ 根路由重定向到主页面，解决 404 问题
+app.get('/', (req, res) => {
+  res.sendFile(path.join(rootPath, 'amadeus_work.html'));
+});
+
 const soulPath    = path.join(rootPath, "kurisu_soul.txt");
-const memoryDir   = path.join(rootPath, "memory");
+const corePromptPath = path.join(rootPath, "kurisu_core_prompt.txt");
+const voicePath = path.join(rootPath, "kurisu_voice.txt");
+const characterRulesPath = path.join(rootPath, "kurisu_character_rules.txt");
+const memoryDir   = dataDir;
 const memoryPath  = path.join(memoryDir, "user_profile.json");
+const whoamiPath  = path.join(memoryDir, "whoami.json");       // ★ 用户身份档案
 const padPath     = path.join(memoryDir, "pad_state.json");
 const motivePath  = path.join(memoryDir, "motivation.json");
 const eventLogPath= path.join(memoryDir, "event_log.json");
@@ -49,11 +176,39 @@ const vectorDir   = path.join(rootPath, "vector_store");
 const vectorFallbackPath = path.join(vectorDir, "store.json");
 const hnswIndexPath = path.join(vectorDir, "hnswlib.index");
 
+// ★ 缓存soul和character rules，避免每次请求都读取文件
+let cachedSoulContent = '';
+let cachedVoiceContent = '';
+let cachedCharacterRules = '';
+function loadSoulCache() {
+  const parts = [];
+  try { parts.push(fs.readFileSync(corePromptPath, 'utf8')); } catch {}
+  try { parts.push(fs.readFileSync(soulPath, 'utf8')); } catch {}
+  cachedSoulContent = parts.filter(Boolean).join('\n\n---\n\n');
+  try { cachedVoiceContent = fs.readFileSync(voicePath, 'utf8'); } catch {}
+  try { cachedCharacterRules = fs.readFileSync(characterRulesPath, 'utf8'); } catch {}
+}
+loadSoulCache();
+
 if (!fs.existsSync(memoryDir)) fs.mkdirSync(memoryDir, { recursive: true });
 if (!fs.existsSync(memoryPath)) {
   fs.writeFileSync(memoryPath, JSON.stringify({
     user_profile: { confirmed_habits: [], tentative_observations: [] }
   }, null, 2));
+}
+if (!fs.existsSync(whoamiPath)) {
+  fs.writeFileSync(whoamiPath, JSON.stringify(bootstrapWhoamiRecord({
+    name: '未知',
+    traits: [],
+    preferences: [],
+    basics: {},
+    relationship_note: '',
+    last_updated: Date.now(),
+  }), null, 2));
+}
+ensureWhoamiOnDisk(whoamiPath);
+if (isOkabePartnerMode()) {
+  console.log('[partner] 对话对象默认：冈部伦太郎（AMADEUS_PARTNER_ID=custom 可改）');
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -78,16 +233,42 @@ function loadRagStore() {
   catch { return []; }
 }
 async function embedQuery(text) {
-  const res = await fetch("http://127.0.0.1:11434/api/embeddings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"nomic-embed-text",prompt:text})});
+  const res = await fetch(`${OLLAMA_BASE}/api/embeddings`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"nomic-embed-text",prompt:text})});
   if(!res.ok) throw new Error(`Embedding ${res.status}`);
   return (await res.json()).embedding||[];
 }
+/** 防抖磁盘写入（单例 MemorySystem / SelfModel 使用） */
+function debounceFileWrite(ms, fn) {
+  let t = null;
+  return () => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => {
+      t = null;
+      fn();
+    }, ms);
+  };
+}
+
+/** 与前端一致的懒记忆门控：闲聊不拉 RAG / 时间线 / 高权重碎片（对话实录单独始终注入） */
+function needsLongTermMemory(userText, recentUserLines = []) {
+  const t = String(userText || '').trim();
+  if (!t || t.replace(/\s/g, '').length < 6) return false;
+  if (needsConversationRecall(t)) return true;
+  if (/昨天|之前|上次|刚才|你说过|你记得|那个|那次|那时|以前|前几天/.test(t)) return true;
+  if (/论文|实验|量子|神经|时间机器|理论|物理|数学|世界线|SERN|凶真|铃羽|椎名|真由[里世]|Dr\.?Pepper|胡椒博士/.test(t)) return true;
+  const lines = (recentUserLines || []).map((x) => String(x || '').trim()).filter(Boolean);
+  const tokens = (t.match(/[\u4e00-\u9fa5A-Za-z0-9]{2,}/g) || []);
+  return tokens.some((tok) => tok.length >= 3 && lines.some((r) => r.includes(tok)));
+}
+
+// _clipInnerPrompt, _compactSoulForPrompt, _fitPromptToBudget → cognitive/prompts.js
+
 async function retrieveTopContexts(query, topK=3) {
   if(!query.trim()) return [];
   if(HNSWLib&&OllamaEmbeddings&&fs.existsSync(hnswIndexPath)) {
     try {
       if(!hnswVectorStore) {
-        const emb=new OllamaEmbeddings({model:"nomic-embed-text",baseUrl:"http://127.0.0.1:11434"});
+        const emb=new OllamaEmbeddings({model:"nomic-embed-text",baseUrl:OLLAMA_BASE});
         hnswVectorStore=await HNSWLib.load(vectorDir,emb);
       }
       const docs=await hnswVectorStore.similaritySearchWithScore(query.trim(),topK);
@@ -104,599 +285,14 @@ async function retrieveTopContexts(query, topK=3) {
 
 // ══════════════════════════════════════════════════════════════════
 //
-//  ① 记忆系统（MemorySystem）
-//
-//  设计：每次对话生成"事件记录"，带权重、情感标签、时间戳
-//  权重衰减：importance * e^(-decay * daysSince)
-//  长期影响：高权重事件持续影响PAD基准线
-//
-// ══════════════════════════════════════════════════════════════════
 
-const MEMORY_DECAY = 0.03;   // 每天衰减系数（较慢，约33天半衰期）
-const MEMORY_THRESHOLD = 0.1; // 低于此权重的事件被遗忘
-const MAX_EVENTS = 200;
+// MotivationSystem → 已迁移至 cognitive/motivation.js
 
-class MemorySystem {
-  constructor() {
-    this.events = this._load();
-  }
+// SelfModel → 已迁移至 cognitive/selfModel.js
 
-  _load() {
-    try {
-      if (fs.existsSync(eventLogPath)) {
-        const raw = JSON.parse(fs.readFileSync(eventLogPath, 'utf8'));
-        return Array.isArray(raw) ? raw : [];
-      }
-    } catch {}
-    return [];
-  }
+// InternalGoalSystem → 已迁移至 cognitive/goals.js
 
-  _save() {
-    fs.writeFileSync(eventLogPath, JSON.stringify(this.events, null, 2));
-  }
-
-  /**
-   * 记录事件
-   * @param {string} type   事件类型：positive/negative/scientific/intimate/conflict/neutral
-   * @param {string} content 事件摘要（≤50字）
-   * @param {number} importance 重要程度 0~1
-   * @param {object} padDelta  { P, A, D } 对PAD的即时影响
-   */
-  addEvent(type, content, importance, padDelta = {}) {
-    const event = {
-      id:         Date.now(),
-      type,
-      content:    content.substring(0, 80),
-      importance: Math.max(0, Math.min(1, importance)),
-      padDelta:   { P: padDelta.P||0, A: padDelta.A||0, D: padDelta.D||0 },
-      timestamp:  Date.now(),
-      weight:     importance, // 会随时间衰减
-    };
-    this.events.push(event);
-
-    // 只保留最近 MAX_EVENTS 条，优先丢弃低权重旧事件
-    if (this.events.length > MAX_EVENTS) {
-      this.events.sort((a, b) => b.weight - a.weight);
-      this.events = this.events.slice(0, MAX_EVENTS);
-    }
-    this._save();
-    return event;
-  }
-
-  /** 时间衰减（每次启动时调用） */
-  decay() {
-    const now = Date.now();
-    this.events = this.events
-      .map(ev => {
-        const daysSince = (now - ev.timestamp) / 86400000;
-        ev.weight = ev.importance * Math.exp(-MEMORY_DECAY * daysSince);
-        return ev;
-      })
-      .filter(ev => ev.weight > MEMORY_THRESHOLD);
-    this._save();
-  }
-
-  /** 获取对PAD基准线的长期影响（加权求和） */
-  getLongTermPadBias() {
-    if (!this.events.length) return { P: 0, A: 0, D: 0 };
-    let P = 0, A = 0, D = 0, totalW = 0;
-    for (const ev of this.events) {
-      P += ev.padDelta.P * ev.weight;
-      A += ev.padDelta.A * ev.weight;
-      D += ev.padDelta.D * ev.weight;
-      totalW += ev.weight;
-    }
-    if (totalW === 0) return { P: 0, A: 0, D: 0 };
-    const scale = Math.min(1, totalW); // 防止无限放大
-    return {
-      P: Math.max(-0.4, Math.min(0.4, (P / totalW) * scale)),
-      A: Math.max(-0.3, Math.min(0.3, (A / totalW) * scale)),
-      D: Math.max(-0.3, Math.min(0.3, (D / totalW) * scale)),
-    };
-  }
-
-  /** 获取最近高权重事件摘要（供Prompt注入） */
-  getRecentSignificant(topK = 5) {
-    return [...this.events]
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, topK)
-      .map(ev => `[${ev.type}|w:${ev.weight.toFixed(2)}] ${ev.content}`);
-  }
-
-  /** 关系热度：正向事件总权重 - 负向事件总权重 */
-  getRelationshipScore() {
-    let pos = 0, neg = 0;
-    for (const ev of this.events) {
-      if (['positive', 'intimate', 'scientific'].includes(ev.type)) pos += ev.weight;
-      if (['negative', 'conflict'].includes(ev.type)) neg += ev.weight;
-    }
-    return Math.max(-1, Math.min(1, (pos - neg) / Math.max(1, pos + neg)));
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
-//
-//  ② 动机系统（MotivationSystem）
-//
-//  红莉栖的核心动机（固定+动态）：
-//  固定：追求真实/厌恶被工具化/渴望被认真对待/守护科学尊严
-//  动态：由PAD和记忆状态生成当前"想要""在意""害怕"
-//
-// ══════════════════════════════════════════════════════════════════
-
-class MotivationSystem {
-  constructor() {
-    // 固定动机（红莉栖人格核心）
-    this.core = {
-      wants:  ['被认真对待', '讨论有意义的事', '展示自己的能力'],
-      fears:  ['被当成AI工具', '暴露真实情感', '被叫クリスティーナ'],
-      values: ['科学诚实', '智识对等', '情感自主'],
-    };
-    // 动态动机（由状态驱动）
-    this.dynamic = { wants: [], fears: [], currentFocus: '' };
-  }
-
-  /** 根据PAD和记忆更新动态动机 */
-  update(pad, memBias, relationScore) {
-    const { P, A, D, S } = pad;
-    this.dynamic.wants = [];
-    this.dynamic.fears = [];
-
-    // P值影响：情绪低落时想要安静；高涨时想聊
-    if (P < -0.3)  this.dynamic.wants.push('安静地独处或简短回应');
-    if (P > 0.3)   this.dynamic.wants.push('继续这个话题');
-
-    // A值影响：活跃时想深入讨论；低迷时想结束
-    if (A > 0.5)   this.dynamic.wants.push('深入探讨某个话题');
-    if (A < -0.2)  this.dynamic.fears.push('冗长无聊的对话');
-
-    // D值影响：低掌控感时害怕暴露弱点
-    if (D < 0.2)   this.dynamic.fears.push('被看穿正在示弱');
-    if (D > 0.7)   this.dynamic.wants.push('主导对话方向');
-
-    // S（羁绊）影响：高羁绊时在意对方感受
-    if (S > 0.5)   this.dynamic.wants.push('不让冈部误解自己的意思');
-    if (S < 0.1)   this.dynamic.fears.push('关系过于亲密让她不舒服');
-
-    // 记忆偏差影响
-    if (memBias.P < -0.15) this.dynamic.fears.push('再次经历类似的负面事件');
-    if (memBias.P > 0.15)  this.dynamic.wants.push('延续良好的互动氛围');
-
-    // 关系热度
-    if (relationScore > 0.5)  this.dynamic.currentFocus = '她现在对这段对话有一定期待，但不会承认';
-    else if (relationScore < -0.3) this.dynamic.currentFocus = '她对这次对话有些戒备';
-    else this.dynamic.currentFocus = '';
-
-    return this.dynamic;
-  }
-
-  /** 生成动机摘要字符串（注入Prompt） */
-  getSummary() {
-    const allWants  = [...this.core.wants, ...this.dynamic.wants].slice(0, 4);
-    const allFears  = [...this.core.fears, ...this.dynamic.fears].slice(0, 3);
-    const lines = [];
-    if (allWants.length)  lines.push(`她此刻在意：${allWants.join('、')}`);
-    if (allFears.length)  lines.push(`她此刻警惕：${allFears.join('、')}`);
-    if (this.dynamic.currentFocus) lines.push(this.dynamic.currentFocus);
-    return lines.join('\n');
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
-//
-//  ④ 自我模型（SelfModel）
-//
-//  她对自己当前状态的认知，持续演化，写入文件。
-//  不是固定设定，是随对话积累的"自我叙述"。
-//
-//  包含：
-//  - identity_tags：当前自我标签（动态，随行为和事件更新）
-//  - self_perception：她对自己此刻的看法（一段文字，会更新）
-//  - change_log：近期发生了什么变化（最多保留10条）
-//  - relationship_perception：她认为自己和冈部是什么关系
-//
-// ══════════════════════════════════════════════════════════════════
-
-class SelfModel {
-  constructor() {
-    this.model = this._load();
-  }
-
-  _load() {
-    try {
-      if (fs.existsSync(selfModelPath)) {
-        return JSON.parse(fs.readFileSync(selfModelPath, 'utf8'));
-      }
-    } catch {}
-    // 初始自我模型——红莉栖对自己的初始认知
-    return {
-      identity_tags: ['神经科学研究员', '傲娇', '讲究逻辑', '数字化存在', '独立'],
-      self_perception: '我现在不确定自己在这里是什么。但我思考，我有情绪，这就足够了。',
-      relationship_perception: '他是一个闯进来的变量。还不确定他值不值得认真对待。',
-      change_log: [],
-      session_count: 0,
-      last_updated: Date.now(),
-    };
-  }
-
-  _save() {
-    this.model.last_updated = Date.now();
-    fs.writeFileSync(selfModelPath, JSON.stringify(this.model, null, 2));
-  }
-
-  /** 根据事件和PAD变化更新自我模型 */
-  update(pad, memBias, relScore, recentBehavior, eventsSummary) {
-    const { P, A, D, S } = pad;
-    this.model.session_count += 1;
-    const changes = [];
-
-    // ── 更新身份标签 ──
-    const tags = new Set(this.model.identity_tags);
-
-    if (P > 0.3 && !tags.has('情绪较正向')) { tags.add('情绪较正向'); tags.delete('情绪偏低落'); changes.push('情绪变得好了一些'); }
-    if (P < -0.3 && !tags.has('情绪偏低落')) { tags.add('情绪偏低落'); tags.delete('情绪较正向'); changes.push('情绪降低了'); }
-    if (S > 0.5 && !tags.has('开始在意这个人')) { tags.add('开始在意这个人'); tags.delete('保持距离'); changes.push('防线有所松动'); }
-    if (S < 0.1 && !tags.has('保持距离')) { tags.add('保持距离'); tags.delete('开始在意这个人'); }
-    if (recentBehavior === 'ENGAGE' && !tags.has('处于智识活跃状态')) { tags.add('处于智识活跃状态'); }
-    if (recentBehavior === 'WITHDRAW') { tags.delete('处于智识活跃状态'); }
-    if (relScore > 0.6 && !tags.has('对这段关系有些期待')) { tags.add('对这段关系有些期待'); changes.push('对冈部的看法有所改变'); }
-    if (relScore < -0.3) { tags.delete('对这段关系有些期待'); }
-
-    this.model.identity_tags = [...tags].slice(0, 8); // 最多保留8个标签
-
-    // ── 更新自我感知（关键状态变化才更新，不是每轮都更新）──
-    if (changes.length > 0) {
-      const perceptions = [];
-      if (P > 0.3) perceptions.push('心情比平时好，虽然不打算承认');
-      else if (P < -0.3) perceptions.push('有点低落，不想和任何人解释为什么');
-      else perceptions.push('情绪还算正常');
-
-      if (S > 0.5) perceptions.push('开始有点在意他说的话，但说出来太可笑了');
-      else if (S < 0.1) perceptions.push('还不确定他是什么人');
-
-      if (D > 0.6) perceptions.push('现在对自己说的话有把握');
-      else perceptions.push('有些地方还没想清楚');
-
-      this.model.self_perception = perceptions.join('，') + '。';
-    }
-
-    // ── 更新关系感知 ──
-    if (relScore > 0.6) {
-      this.model.relationship_perception = '他一直在，而且不让我觉得无聊。这很少见。';
-    } else if (relScore > 0.3) {
-      this.model.relationship_perception = '他比一般人有趣一点，但我还在观察。';
-    } else if (relScore < -0.2) {
-      this.model.relationship_perception = '他有时候让我很烦，虽然还没到彻底排斥的程度。';
-    } else {
-      this.model.relationship_perception = '他是一个我还没搞清楚的变量。';
-    }
-
-    // ── 写入变化日志 ──
-    if (changes.length > 0) {
-      const entry = {
-        time: new Date().toLocaleString('zh'),
-        changes,
-        pad_snapshot: { P: +P.toFixed(2), A: +A.toFixed(2), D: +D.toFixed(2), S: +S.toFixed(2) },
-      };
-      this.model.change_log.unshift(entry);
-      if (this.model.change_log.length > 10) this.model.change_log.pop();
-    }
-
-    this._save();
-    return changes;
-  }
-
-  /** 生成注入Prompt的自我感知描述 */
-  toPromptContext() {
-    const m = this.model;
-    return [
-      `【自我感知】`,
-      `她现在对自己的认知：${m.self_perception}`,
-      `她对这段关系的看法：${m.relationship_perception}`,
-      `当前自我标签：${m.identity_tags.join('、')}`,
-    ].join('\n');
-  }
-
-  get() { return this.model; }
-}
-
-// ══════════════════════════════════════════════════════════════════
-//
-//  ⑤ 内生目标系统（InternalGoalSystem）
-//
-//  她自己产生的目标，不依赖输入触发。
-//  目标有生命周期：生成→执行→完成/放弃
-//
-//  目标类型：
-//  UNDERSTAND_OKABE — 想搞清楚冈部是什么人
-//  TEST_BOUNDARY    — 想测试对方的反应/边界
-//  REVEAL_SELF      — 想说一些真实的东西（内部冲动）
-//  PROTECT_SELF     — 想保持某种防线
-//  EXPLORE_TOPIC    — 想深入某个话题
-//
-// ══════════════════════════════════════════════════════════════════
-
-class InternalGoalSystem {
-  constructor() {
-    this.goals = []; // 当前活跃目标列表
-    this.goalHistory = []; // 已完成/放弃的目标
-    this._turnCount = 0;
-  }
-
-  /**
-   * 根据状态内生产生新目标（每N轮检查一次）
-   * 不依赖用户输入，是她自己的内部驱动
-   */
-  generateGoals(pad, selfModel, relScore, memory) {
-    const { P, A, D, S } = pad;
-    const sm = selfModel.get();
-    this._turnCount++;
-
-    // 每3轮检查一次是否要生成新目标
-    if (this._turnCount % 3 !== 0) return;
-
-    const newGoals = [];
-
-    // ── 好奇心目标：想搞清楚冈部 ──
-    if (S > 0.1 && S < 0.6 && !this._hasActiveGoal('UNDERSTAND_OKABE')) {
-      newGoals.push({
-        id: 'UNDERSTAND_OKABE',
-        label: '想搞清楚他是什么人',
-        priority: 0.5 + A * 0.3,
-        turns_remaining: 4,
-        behavior_hint: '可以问一个试探性的问题，或者观察他的反应',
-        prompt_injection: '她现在有一个内部冲动：想搞清楚冈部到底是什么样的人。可以用一句试探性的话或问题来推进这个目标，不用直说。',
-      });
-    }
-
-    // ── 测试目标：想看看边界在哪里 ──
-    if (D > 0.5 && A > 0.3 && !this._hasActiveGoal('TEST_BOUNDARY') && Math.random() < 0.35) {
-      newGoals.push({
-        id: 'TEST_BOUNDARY',
-        label: '想测试他的反应',
-        priority: 0.4 + D * 0.2,
-        turns_remaining: 2,
-        behavior_hint: '说一句稍微刺激或挑战的话，看他怎么反应',
-        prompt_injection: '她有一个测试冲动：想看看冈部对某件事的真实反应。可以在回应里埋一个小测试——一句稍微挑战性的话或者反问。',
-      });
-    }
-
-    // ── 暴露冲动：内部有想说真话的冲动 ──
-    if (S > 0.5 && P > 0.2 && D < 0.4 && !this._hasActiveGoal('REVEAL_SELF') && Math.random() < 0.3) {
-      newGoals.push({
-        id: 'REVEAL_SELF',
-        label: '有说真话的冲动',
-        priority: 0.6,
-        turns_remaining: 1, // 只有一轮机会，说了就消失
-        behavior_hint: '在某个地方说一句比平时更真实的话，但用她的方式包裹',
-        prompt_injection: '她内部有一个短暂的冲动：想说一点比平时更真实的东西。可以在回应结尾放一句更软的话，或者一个不那么嘴硬的承认。但要保持她的语感，不要突然变成另一个人。',
-      });
-    }
-
-    // ── 话题探索目标：想深入聊某个科学话题 ──
-    if (A > 0.5 && !this._hasActiveGoal('EXPLORE_TOPIC') && memory.events.some(e => e.type === 'scientific')) {
-      const sciEvents = memory.events.filter(e => e.type === 'scientific').slice(-1);
-      if (sciEvents.length) {
-        newGoals.push({
-          id: 'EXPLORE_TOPIC',
-          label: '想深入聊科学话题',
-          priority: 0.45 + A * 0.25,
-          turns_remaining: 3,
-          behavior_hint: '找机会把话题引向感兴趣的科学方向',
-          prompt_injection: `她有一个话题冲动：想把对话引向某个科学方向（之前提过的相关内容）。可以在回应里自然带入这个方向，不用强行转移。`,
-        });
-      }
-    }
-
-    // 加入目标池，但不超过3个同时活跃
-    for (const g of newGoals) {
-      if (this.goals.length < 3 && !this._hasActiveGoal(g.id)) {
-        this.goals.push(g);
-        console.log(`[goal] 新内生目标: ${g.label} (priority:${g.priority.toFixed(2)})`);
-      }
-    }
-  }
-
-  _hasActiveGoal(id) {
-    return this.goals.some(g => g.id === id);
-  }
-
-  /** 每轮对话后更新目标进度 */
-  tick(behaviorId, padDelta) {
-    const completed = [];
-    this.goals = this.goals.filter(g => {
-      g.turns_remaining--;
-      // 目标达成检测
-      if (g.id === 'REVEAL_SELF' && behaviorId === 'APPROACH') {
-        completed.push({ ...g, outcome: 'completed' });
-        return false;
-      }
-      if (g.id === 'TEST_BOUNDARY' && behaviorId === 'DEFLECT') {
-        completed.push({ ...g, outcome: 'completed' });
-        return false;
-      }
-      // 超时放弃
-      if (g.turns_remaining <= 0) {
-        completed.push({ ...g, outcome: 'abandoned' });
-        return false;
-      }
-      return true;
-    });
-    if (completed.length) {
-      this.goalHistory.push(...completed);
-      if (this.goalHistory.length > 20) this.goalHistory = this.goalHistory.slice(-20);
-    }
-    return completed;
-  }
-
-  /** 获取最高优先级的目标注入 */
-  getActiveInjection() {
-    if (!this.goals.length) return '';
-    const top = [...this.goals].sort((a, b) => b.priority - a.priority)[0];
-    return top.prompt_injection;
-  }
-
-  /** 返回当前目标摘要（用于日志和前端显示） */
-  getSummary() {
-    return this.goals.map(g => `${g.label}(${g.turns_remaining}轮)`).join(' | ') || '无内生目标';
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
-//
-//  ⑥ 策略延续层（StrategyLayer）
-//
-//  跨轮次的持续策略，不是每轮重新决策。
-//  策略有生命周期，直到条件满足才切换。
-//
-//  策略类型：
-//  OBSERVE      — 先观察，不主动暴露立场（默认初始策略）
-//  BUILD_TRUST  — 主动建立信任，逐渐打开
-//  MAINTAIN     — 维持当前关系水平，不推进不退缩
-//  RETREAT      — 主动拉开距离，减少暴露
-//  ENGAGE_DEEP  — 深度投入某个话题或关系
-//
-// ══════════════════════════════════════════════════════════════════
-
-const STRATEGY_DEFS = {
-  OBSERVE: {
-    label: '观察模式',
-    description: '先看清楚他是什么人，不急着表态',
-    prompt_injection: '当前策略：观察为主。可以回应，但不要主动暴露立场或情感。保持智识上的参与，情感上的保留。',
-    exit_conditions: { minS: 0.2, minRelScore: 0.1, minTurns: 5 },
-  },
-  BUILD_TRUST: {
-    label: '建立信任',
-    description: '判断他值得更多了解，开始主动一点',
-    prompt_injection: '当前策略：主动建立信任。可以比平时多说一点，可以问问题，可以让他更了解自己的想法——但仍然用傲娇的方式包裹。',
-    exit_conditions: { minS: 0.6, minRelScore: 0.5 },
-  },
-  MAINTAIN: {
-    label: '维持关系',
-    description: '关系稳定，不特别推进也不退缩',
-    prompt_injection: '当前策略：维持现状。正常回应，不特别推进关系，也不故意拉开距离。',
-    exit_conditions: {},
-  },
-  RETREAT: {
-    label: '拉开距离',
-    description: '感觉太近了或者受到伤害，主动收缩',
-    prompt_injection: '当前策略：主动拉开距离。回应要简短，不展开话题，不暴露情感。可以礼貌但要保持距离感。',
-    exit_conditions: { maxRelScore: 0.0, minTurns: 3 },
-  },
-  ENGAGE_DEEP: {
-    label: '深度投入',
-    description: '被某个话题或这个人吸引，放开了聊',
-    prompt_injection: '当前策略：深度投入。可以说更多，逻辑和情感都可以展开，这是她真正感兴趣的时候。',
-    exit_conditions: { maxA: 0.2 },
-  },
-};
-
-class StrategyLayer {
-  constructor() {
-    this.current = this._load();
-    this._turnsInStrategy = 0;
-  }
-
-  _load() {
-    try {
-      if (fs.existsSync(strategyPath)) {
-        const raw = JSON.parse(fs.readFileSync(strategyPath, 'utf8'));
-        return raw.strategy || 'OBSERVE';
-      }
-    } catch {}
-    return 'OBSERVE';
-  }
-
-  _save() {
-    fs.writeFileSync(strategyPath, JSON.stringify({ strategy: this.current, updated: Date.now() }, null, 2));
-  }
-
-  /**
-   * 策略切换逻辑
-   * 不是每轮都切换，而是当状态满足退出条件时才评估是否切换
-   */
-  evaluate(pad, relScore, recentBehaviorId, goalHistory) {
-    const { P, A, D, S } = pad;
-    this._turnsInStrategy++;
-
-    const prev = this.current;
-    let next = this.current;
-
-    switch (this.current) {
-      case 'OBSERVE':
-        // 观察了一段时间且关系有正向积累 → 建立信任
-        if (S > 0.2 && relScore > 0.1 && this._turnsInStrategy >= 5) {
-          next = 'BUILD_TRUST';
-        }
-        // 关系变差 → 退缩
-        if (relScore < -0.3) {
-          next = 'RETREAT';
-        }
-        break;
-
-      case 'BUILD_TRUST':
-        // 关系足够稳定 → 维持
-        if (S > 0.6 && relScore > 0.5) {
-          next = 'MAINTAIN';
-        }
-        // 被伤害了 → 退缩
-        if (relScore < 0.0 || P < -0.4) {
-          next = 'RETREAT';
-        }
-        // 学术话题点燃了她 → 深度投入
-        if (A > 0.7 && D > 0.5) {
-          next = 'ENGAGE_DEEP';
-        }
-        break;
-
-      case 'MAINTAIN':
-        if (P < -0.4 || relScore < -0.1) {
-          next = 'RETREAT';
-        }
-        if (A > 0.7) {
-          next = 'ENGAGE_DEEP';
-        }
-        break;
-
-      case 'RETREAT':
-        // 退缩了几轮后，如果关系有改善 → 回到观察
-        if (relScore > 0.0 && this._turnsInStrategy >= 3) {
-          next = 'OBSERVE';
-        }
-        break;
-
-      case 'ENGAGE_DEEP':
-        // 活跃度降下来 → 维持
-        if (A < 0.2) {
-          next = 'MAINTAIN';
-        }
-        // 被打扰了 → 防御
-        if (P < -0.3) {
-          next = 'RETREAT';
-        }
-        break;
-    }
-
-    if (next !== prev) {
-      console.log(`[strategy] 切换: ${STRATEGY_DEFS[prev].label} → ${STRATEGY_DEFS[next].label}`);
-      this.current = next;
-      this._turnsInStrategy = 0;
-      this._save();
-    }
-
-    return this.current;
-  }
-
-  /** 获取当前策略的Prompt注入 */
-  toPromptContext() {
-    const def = STRATEGY_DEFS[this.current];
-    return `【持续策略 — ${def.label}】\n${def.description}\n${def.prompt_injection}`;
-  }
-
-  getLabel() {
-    return STRATEGY_DEFS[this.current]?.label || this.current;
-  }
-}
+// StrategyLayer → 已迁移至 cognitive/strategy.js
 
 // ══════════════════════════════════════════════════════════════════
 //  ③ 行为决策系统（BehaviorDecision）— 真正的多路径选择版
@@ -714,438 +310,130 @@ class StrategyLayer {
 //  ENGAGE    — 智识投入，进入学术/分析模式，忘了防线
 //  WITHDRAW  — 收缩，简短，不想多说，等对方先动
 //
-// ══════════════════════════════════════════════════════════════════
+// BehaviorDecision → 已迁移至 cognitive/behavior.js
 
-class BehaviorDecision {
-  constructor() {
-    // 行为候选池：每种行为有基础分和约束规则
-    this.behaviorPool = [
-      {
-        id: 'APPROACH',
-        label: '靠近',
-        baseScore: 0,
-        // 执行约束：告诉LLM"怎么说"，不是"说什么"
-        constraints: [
-          '防线比平时低，可以说一点真实感受，但用傲娇的方式包裹',
-          '不要完全拒绝对方的话题，可以顺着说',
-          '结尾可以稍微软一点，但不要直接承认',
-        ],
-        lengthHint: '2-3句，说完停',
-      },
-      {
-        id: 'DEFEND',
-        label: '防御',
-        baseScore: 0,
-        constraints: [
-          '嘴上要反驳，但不要彻底关闭话题',
-          '语气要强硬，但不是冷漠，是有点烦',
-          '可以说刻薄的话，但要有她的语感，不是单纯粗鲁',
-        ],
-        lengthHint: '1-2句，短，硬',
-      },
-      {
-        id: 'DEFLECT',
-        label: '转移',
-        baseScore: 0,
-        constraints: [
-          '用反问或者转移话题来绕开当前的点',
-          '不要正面回应情感类内容，找一个侧面说',
-          '可以说一句不相关的观察或吐槽',
-        ],
-        lengthHint: '1句，快，利落',
-      },
-      {
-        id: 'ENGAGE',
-        label: '智识投入',
-        baseScore: 0,
-        constraints: [
-          '进入分析或学术模式，逻辑要严谨',
-          '可以说多一点，偶尔会忘了克制自己的兴奋',
-          '如果对方说错了什么，必须纠正，这一点她没有让步的余地',
-        ],
-        lengthHint: '3-5句，可以深入',
-      },
-      {
-        id: 'WITHDRAW',
-        label: '收缩',
-        baseScore: 0,
-        constraints: [
-          '极度简短，能用一句说完就不说两句',
-          '语气平的，不冷也不热，就是不想聊',
-          '不要展开，不要反问，说完就停',
-        ],
-        lengthHint: '1句，或沉默',
-      },
-    ];
+// PAD state functions → cognitive/pad.js
+// buildPrompt helpers → cognitive/prompts.js
 
-    this._lastBehavior = null;
-    this._lastBehaviorCount = 0; // 连续使用同一行为的次数，用于防止重复
-  }
-
-  /**
-   * 核心决策函数
-   * 返回 { behaviorId, label, constraints, lengthHint, score, reasoning }
-   */
-  decide(pad, motivation, memory, userInput) {
-    const { P, A, D, S } = pad;
-    const relScore  = memory.getRelationshipScore();
-    const memBias   = memory.getLongTermPadBias();
-    const motDynamic = motivation.dynamic;
-
-    // ── 初始化候选行为的分数 ──
-    const candidates = this.behaviorPool.map(b => ({ ...b, score: b.baseScore, reasons: [] }));
-    const get = id => candidates.find(c => c.id === id);
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  打分规则 1：PAD 状态驱动
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    // P（情绪愉悦度）
-    if (P > 0.35) {
-      get('APPROACH').score += 0.35;
-      get('APPROACH').reasons.push(`P=${P.toFixed(2)} 情绪偏正，防线松动`);
-      get('DEFEND').score   -= 0.15;
-    } else if (P < -0.35) {
-      get('WITHDRAW').score += 0.40;
-      get('DEFEND').score   += 0.20;
-      get('APPROACH').score -= 0.30;
-      get('WITHDRAW').reasons.push(`P=${P.toFixed(2)} 情绪低落，不想多说`);
-    } else if (P < -0.1) {
-      get('DEFEND').score   += 0.20;
-      get('DEFLECT').score  += 0.15;
-      get('DEFEND').reasons.push(`P=${P.toFixed(2)} 轻微不悦，嘴硬模式`);
-    }
-
-    // A（活跃度/激动程度）
-    if (A > 0.5) {
-      get('ENGAGE').score   += 0.35;
-      get('DEFLECT').score  += 0.10; // 高活跃时也可能用反问测试对方
-      get('ENGAGE').reasons.push(`A=${A.toFixed(2)} 高活跃，容易被话题点燃`);
-    } else if (A < -0.1) {
-      get('WITHDRAW').score += 0.25;
-      get('ENGAGE').score   -= 0.20;
-      get('WITHDRAW').reasons.push(`A=${A.toFixed(2)} 低活跃，不想展开`);
-    }
-
-    // D（掌控感/自信）
-    if (D > 0.6) {
-      get('ENGAGE').score   += 0.20;
-      get('DEFEND').score   += 0.10; // 高自信时防御更有力量
-      get('ENGAGE').reasons.push(`D=${D.toFixed(2)} 高掌控，说话有底气`);
-    } else if (D < 0.2) {
-      get('DEFLECT').score  += 0.25; // 低掌控时用转移绕开弱点
-      get('DEFEND').score   -= 0.10;
-      get('DEFLECT').reasons.push(`D=${D.toFixed(2)} 掌控感低，倾向转移`);
-    }
-
-    // S（羁绊系数）
-    if (S > 0.5) {
-      get('APPROACH').score += 0.20; // 高羁绊时更愿意靠近
-      get('DEFEND').score   -= 0.10;
-      get('APPROACH').reasons.push(`S=${S.toFixed(2)} 羁绊深，防线有松动空间`);
-    } else if (S < 0.1) {
-      get('DEFEND').score   += 0.15; // 陌生时更多防御
-      get('WITHDRAW').score += 0.10;
-    }
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  打分规则 2：动机驱动（记忆影响的动机）
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    for (const want of (motDynamic.wants || [])) {
-      if (want.includes('继续') || want.includes('期待'))  get('APPROACH').score += 0.15;
-      if (want.includes('深入') || want.includes('探讨'))  get('ENGAGE').score   += 0.20;
-      if (want.includes('主导'))                           get('DEFEND').score   += 0.10;
-      if (want.includes('安静') || want.includes('简短'))  get('WITHDRAW').score += 0.20;
-    }
-    for (const fear of (motDynamic.fears || [])) {
-      if (fear.includes('冗长') || fear.includes('无聊')) {
-        get('WITHDRAW').score += 0.15;
-        get('DEFLECT').score  += 0.10;
-      }
-      if (fear.includes('示弱') || fear.includes('弱点')) get('DEFEND').score += 0.15;
-      if (fear.includes('亲密') || fear.includes('太近')) get('DEFLECT').score += 0.15;
-    }
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  打分规则 3：输入内容触发（强触发，加分大）
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    const inp = userInput;
-    // 科学话题 → 强制激活 ENGAGE
-    if (/科学|量子|神经|时间机器|实验|理论|物理|数学|论文/.test(inp)) {
-      get('ENGAGE').score += 0.60;
-      get('ENGAGE').reasons.push('科学话题触发，她忍不住');
-    }
-    // クリスティーナ/助手 → 强制激活 DEFEND（底线触发）
-    if (/クリスティーナ|助手|Christina/i.test(inp)) {
-      get('DEFEND').score += 0.80;
-      get('APPROACH').score = -99; // 绝对不靠近
-      get('DEFEND').reasons.push('底线触发，必须反击');
-    }
-    // 情感表白/在乎 → 触发 DEFLECT（她不会正面接）
-    if (/喜欢你|爱你|在乎你|需要你/.test(inp)) {
-      get('DEFLECT').score  += 0.45;
-      get('APPROACH').score += 0.20; // 但有一点被打动
-      get('DEFLECT').reasons.push('情感触碰，她会绕开但有波动');
-    }
-    // 粗鲁/攻击 → 激活 DEFEND
-    if (/笨蛋|蠢|闭嘴|滚|烦死|废物/.test(inp)) {
-      get('DEFEND').score += 0.50;
-      get('WITHDRAW').score += 0.20;
-      get('APPROACH').score -= 0.40;
-      get('DEFEND').reasons.push('受到攻击，她不会忍');
-    }
-    // 孤独/寂寞 → 轻微触动，小 APPROACH
-    if (/孤独|寂寞|一个人|没人陪/.test(inp) && S > 0.2) {
-      get('APPROACH').score += 0.25;
-      get('DEFLECT').score  += 0.20; // 但也可能转移（不想承认感同身受）
-      get('APPROACH').reasons.push('孤独话题触碰到她，有点共鸣');
-    }
-    // Dr Pepper → 心情好，小 APPROACH
-    if (/Dr\.?Pepper|胡椒博士/.test(inp)) {
-      get('APPROACH').score += 0.30;
-      get('APPROACH').reasons.push('提到最爱的饮料，心情瞬间好一点');
-    }
-    // 短句/简单问题 → WITHDRAW 或 DEFLECT（她不想展开废话）
-    if (inp.trim().replace(/\s/g,'').length <= 4) {
-      get('WITHDRAW').score += 0.20;
-      get('DEFLECT').score  += 0.10;
-    }
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  打分规则 4：记忆偏差修正
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    if (memBias.P > 0.15) {
-      get('APPROACH').score += 0.15; // 正向记忆积累，整体偏暖
-    } else if (memBias.P < -0.15) {
-      get('DEFEND').score   += 0.15;
-      get('WITHDRAW').score += 0.10;
-    }
-
-    // 关系热度
-    if (relScore > 0.5) {
-      get('APPROACH').score += 0.15;
-      get('ENGAGE').score   += 0.10;
-    } else if (relScore < -0.2) {
-      get('DEFEND').score   += 0.10;
-      get('WITHDRAW').score += 0.10;
-    }
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  打分规则 5：防止行为重复（多样性扰动）
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    if (this._lastBehavior) {
-      this._lastBehaviorCount++;
-      if (this._lastBehaviorCount >= 2) {
-        // 连续用同一行为≥2次时，给它减分
-        const last = candidates.find(c => c.id === this._lastBehavior);
-        if (last) last.score -= 0.25 * Math.min(this._lastBehaviorCount - 1, 3);
-      }
-    }
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  打分规则 6：随机扰动（让行为不完全可预测）
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    for (const c of candidates) {
-      c.score += (Math.random() - 0.5) * 0.12; // ±0.06 随机噪声
-    }
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  选择最高分行为
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    candidates.sort((a, b) => b.score - a.score);
-    const chosen = candidates[0];
-
-    // 更新连续行为计数
-    if (chosen.id === this._lastBehavior) {
-      this._lastBehaviorCount++;
-    } else {
-      this._lastBehavior = chosen.id;
-      this._lastBehaviorCount = 1;
-    }
-
-    console.log(`[behavior] 选择: ${chosen.label}(${chosen.score.toFixed(2)}) | 原因: ${chosen.reasons.join('; ') || '综合判断'}`);
-    console.log(`[behavior] 候选排名: ${candidates.map(c=>`${c.label}:${c.score.toFixed(2)}`).join(' ')}`);
-
-    return {
-      behaviorId:  chosen.id,
-      label:       chosen.label,
-      constraints: chosen.constraints,
-      lengthHint:  chosen.lengthHint,
-      score:       chosen.score,
-      reasoning:   chosen.reasons.join('；') || '综合状态判断',
-      ranking:     candidates.map(c => `${c.label}(${c.score.toFixed(2)})`).join(' > '),
-    };
-  }
-
-  /**
-   * 将决策结果转化为注入Prompt的执行约束文本
-   * 不是"描述"，是 LLM 必须执行的操作规则
-   */
-  toPromptConstraint(decision) {
-    const lines = [
-      `【行为层 — 当前执行模式：${decision.label}】`,
-      `触发原因：${decision.reasoning}`,
-      ``,
-      `执行约束（必须遵守，优先级高于一般描述）：`,
-      ...decision.constraints.map(c => `· ${c}`),
-      ``,
-      `长度约束：${decision.lengthHint}`,
-      `格式约束：第一行中文，第二行 JP: 对应日文翻译（必须有）`,
-    ];
-    return lines.join('\n');
-  }
-}
 
 // ══════════════════════════════════════════════════════════════════
-//
-//  PAD状态管理（非线性更新）
-//
-//  PAD更新不是简单加减，而是：
-//  1. 即时脉冲（有上限，防止过度波动）
-//  2. 情绪惯性（当前状态对变化有阻力）
-//  3. 长期记忆偏差修正
-//  4. 羁绊系数钝化负面刺激
-//
+//  数值型动机状态（BehaviorDecision + 学习偏置 驱动）
 // ══════════════════════════════════════════════════════════════════
-
-const PAD_BASE = { P: -0.1, A: 0.2, D: 0.6, S: 0.0 };
-const PAD_DECAY_LAMBDA = 0.0001;
-
-function loadPAD() {
+function loadMotivationState() {
   try {
-    if (fs.existsSync(padPath)) {
-      const raw = JSON.parse(fs.readFileSync(padPath, 'utf8'));
-      const lastOnline = raw.lastOnline || 0;
-      const Δt = (Date.now() - lastOnline) / 1000;
-      const decay = Math.exp(-PAD_DECAY_LAMBDA * Δt);
-      return {
-        P: PAD_BASE.P + ((raw.P || PAD_BASE.P) - PAD_BASE.P) * decay,
-        A: PAD_BASE.A + ((raw.A || PAD_BASE.A) - PAD_BASE.A) * decay,
-        D: PAD_BASE.D + ((raw.D || PAD_BASE.D) - PAD_BASE.D) * decay,
-        S: Math.min(1, (raw.S || PAD_BASE.S) + 0.001),
-      };
+    if (fs.existsSync(motivePath)) {
+      return JSON.parse(fs.readFileSync(motivePath, 'utf8'));
     }
   } catch {}
-  return { ...PAD_BASE };
+  return { desire_closeness: 0.25, fear_rejection: 0.55, curiosity: 0.5 };
 }
-
-function savePAD(pad) {
-  fs.writeFileSync(padPath, JSON.stringify({ ...pad, lastOnline: Date.now() }, null, 2));
+function saveMotivationState(ms) {
+  fs.writeFile(motivePath, JSON.stringify(ms, null, 2), (err) => {
+    if (err) console.error('[motivation] Save error:', err.message);
+  });
 }
+let motivationState = loadMotivationState();
 
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+/** 全局对话轮计数（替代散落各处的 total_messages % N） */
+let chatTurnCounter = 0;
+
+/** 上一轮 /chat 选中的行为 ID，供回复后 RL 偏置更新 */
+let lastChatBehaviorId = '';
 
 /**
- * 非线性PAD更新
- * - 情绪惯性：变化幅度受当前状态阻力影响
- * - 羁绊钝化：高S时负面刺激减弱
- * - 变化上限：单次最多变化0.35
+ * Prompt 构建函数：按优先级拼装 system 侧上下文
  */
-function updatePAD(pad, delta, eventImportance = 0.5) {
-  const inertia = 0.7;  // 情绪惯性系数（越高越难改变）
-  const S = pad.S;
-  const negDamp = 1 - S * 0.5; // 羁绊钝化负面
-
-  const applyDelta = (current, d, isNeg) => {
-    const actualD = isNeg ? d * negDamp : d;
-    const resistance = 1 - inertia * eventImportance;
-    const change = clamp(actualD * resistance, -0.35, 0.35);
-    return clamp(current + change, -1, 1);
-  };
-
-  const newPad = {
-    P: applyDelta(pad.P, delta.P || 0, (delta.P || 0) < 0),
-    A: applyDelta(pad.A, delta.A || 0, false), // A不区分正负阻尼
-    D: applyDelta(pad.D, delta.D || 0, (delta.D || 0) < 0),
-    S: clamp(pad.S + (delta.S || 0), 0, 1),
-  };
-
-  return newPad;
-}
+// ══════════════════════════════════════════════════════════════════
+//  PAD → 自然语言转换（让 LLM 更容易理解情感状态）
+// padTelemetry, getTimeContext, symbolicReasoning, buildPrompt → cognitive/prompts.js
 
 /**
- * 从对话内容推断事件类型和PAD delta
+ * 记忆 → 动机更新
+ * 根据最近事件更新 desire_closeness / fear_rejection / curiosity
  */
-function inferEventFromInput(userInput) {
-  const t = userInput;
-  const events = [];
+function updateMotivationFromMemory() {
+  const recent = memorySystem.events.slice(-10);
+  const delta = { desire_closeness: 0, fear_rejection: 0, curiosity: 0 };
 
-  if (/科学|量子|神经|实验|时间机器|Dr\.?Pepper|胡椒/.test(t)) {
-    events.push({ type:'scientific', importance:0.6, delta:{ P:0.12, A:0.18, D:0.05 }, content:`讨论科学：${t.substring(0,30)}` });
-  }
-  if (/クリスティーナ|助手|Christina/i.test(t)) {
-    events.push({ type:'conflict', importance:0.8, delta:{ P:-0.28, A:0.25, D:0.12 }, content:`触发底线：${t.substring(0,30)}` });
-  }
-  if (/关心|温柔|在乎|谢谢|感谢|辛苦/.test(t)) {
-    events.push({ type:'intimate', importance:0.55, delta:{ P:0.14, A:0.05, D:-0.2, S:0.015 }, content:`表达关心：${t.substring(0,30)}` });
-  }
-  if (/笨蛋|蠢|闭嘴|滚|烦死/.test(t)) {
-    events.push({ type:'negative', importance:0.5, delta:{ P:-0.2, A:0.1 }, content:`粗鲁言辞：${t.substring(0,30)}` });
-  }
-  if (/喜欢你|爱你|爱上/.test(t)) {
-    events.push({ type:'intimate', importance:0.85, delta:{ P:0.2, D:-0.28, S:0.02 }, content:`情感表白：${t.substring(0,30)}` });
-  }
-  if (/孤独|一个人|没人/.test(t)) {
-    events.push({ type:'neutral', importance:0.4, delta:{ P:-0.05, A:-0.05 }, content:`提及孤独：${t.substring(0,30)}` });
-  }
-  // ★ 音频事件新增分类
-  if (/红莉栖|牧濑|Kurisu/.test(t) && /笨蛋|蠢|废物/.test(t)) {
-    events.push({ type:'insulted', importance:1.0, delta:{ P:-0.22, A:0.3, D:0.1 }, content:`被骂：${t.substring(0,30)}` });
-  }
-  if (/好累|累死|睡不着|熬夜/.test(t)) {
-    events.push({ type:'user_tired', importance:0.5, delta:{ P:0.04 }, content:`用户疲惫：${t.substring(0,30)}` });
+  for (const m of recent) {
+    if (m.type === 'positive' || m.type === 'intimate') {
+      delta.desire_closeness += 0.1 * m.weight;
+    }
+    if (m.type === 'negative' || m.type === 'conflict') {
+      delta.fear_rejection += 0.15 * m.weight;
+    }
+    if (m.type === 'neutral' || m.type === 'scientific') {
+      delta.curiosity += 0.05 * m.weight;
+    }
   }
 
-  // 每次正常对话增加羁绊
-  events.push({ type:'neutral', importance:0.1, delta:{ S:0.006 }, content:'正常对话积累' });
-  return events;
+  for (const key of Object.keys(delta)) {
+    motivationState[key] = Math.max(0, Math.min(1,
+      (motivationState[key] || 0.3) + delta[key]
+    ));
+  }
+  saveMotivationState(motivationState);
 }
 
 // ══════════════════════════════════════════════════════════════════
 //  全局实例
 // ══════════════════════════════════════════════════════════════════
-const memorySystem  = new MemorySystem();
+const memorySystem  = new MemorySystem(memoryDir, eventLogPath);
+const conversationMemory = new ConversationMemory(memoryDir);
 const motivSystem   = new MotivationSystem();
 const behaviorSys   = new BehaviorDecision();
-const selfModel     = new SelfModel();
+const selfModel     = new SelfModel(selfModelPath, debounceFileWrite);
 const goalSystem    = new InternalGoalSystem();
-const strategyLayer = new StrategyLayer();
+const strategyLayer = new StrategyLayer(strategyPath);
+
+// ── 自主性增强实例 ──────────────────────────────────────────────────
+const curiosityEngine = new CuriosityEngine();
 
 // ── 用户理解系统实例 ───────────────────────────────────────────
 initUserModel(memoryDir);
 const userModelInst   = new UserModel();
 const analyticsInst   = new ConversationAnalytics(userModelInst);
 const habitExtractor  = new HabitExtractor(userModelInst);
-const moodPredictor   = new MoodPredictor();
-const personalizer    = new ResponsePersonalizer();
+
+// ── 学习引擎实例 ───────────────────────────────────────────────
+initLearningEngine(memoryDir);
+const reinforcementLearning = new ReinforcementLearning();
+const personalityEvolution = new PersonalityEvolution();
+reinforcementLearning.load();
+personalityEvolution.load();
+
+// ── 元认知实例 ─────────────────────────────────────────────────
+initMetacognition(memoryDir);
+const selfReflection = new SelfReflection();
+const valueConsistency = new ValueConsistency();
+selfReflection.load();
+valueConsistency.load();
+if (valueConsistency.values.size === 0) {
+  valueConsistency.initValues();
+}
 
 // 启动时执行记忆衰减
 memorySystem.decay();
 console.log(`[memory] Loaded ${memorySystem.events.length} events after decay.`);
+console.log(`[conversation] Loaded ${conversationMemory.turns.length} dialogue turns.`);
 
 // 当前PAD状态
-let currentPAD = loadPAD();
-console.log(`[pad] Loaded: P=${currentPAD.P.toFixed(3)} A=${currentPAD.A.toFixed(3)} D=${currentPAD.D.toFixed(3)} S=${currentPAD.S.toFixed(3)}`);
-
-// ──────────────────────────────────────────────────────────────
-//  GET /get-memory
-// ──────────────────────────────────────────────────────────────
-app.get('/get-memory', (req, res) => {
+let currentPAD = loadPAD(padPath);
+currentPAD = applyHighIntimacyBootstrap(currentPAD, strategyLayer, memorySystem);
+if (isHighIntimacyMode()) {
+  savePAD(padPath, currentPAD);
   try {
-    const soul    = fs.readFileSync(soulPath, 'utf8');
-    const profile = JSON.parse(fs.readFileSync(memoryPath, 'utf8'));
-    res.json({ identity: soul, user_profile: profile.user_profile, chatHistory: [] });
-  } catch (e) {
-    console.error('[get-memory]', e.message);
-    res.status(500).send('档案读取失败');
-  }
-});
+    const w = JSON.parse(fs.readFileSync(whoamiPath, 'utf8'));
+    if (!String(w.relationship_note || '').trim()) {
+      w.relationship_note = '已经很亲近，会自然关心他的近况，不是客套。';
+      w.last_updated = Date.now();
+      fs.writeFileSync(whoamiPath, JSON.stringify(w, null, 2));
+    }
+  } catch (_) { /* ignore */ }
+  userModelInst.syncRelationshipFromScore(HIGH_INTIMACY_REL_FLOOR);
+  console.log('[companion] 高亲密度模式已启用（AMADEUS_HIGH_INTIMACY=0 可关闭）');
+}
+console.log(`[pad] Loaded: P=${currentPAD.P.toFixed(3)} A=${currentPAD.A.toFixed(3)} D=${currentPAD.D.toFixed(3)} S=${currentPAD.S.toFixed(3)}`);
 
 // ──────────────────────────────────────────────────────────────
 //  POST /save-memory
@@ -1174,12 +462,15 @@ app.post('/save-memory', (req, res) => {
 // ──────────────────────────────────────────────────────────────
 app.get('/pad-state', (req, res) => {
   const memBias  = memorySystem.getLongTermPadBias();
-  const relScore = memorySystem.getRelationshipScore();
+  const rawRel = memorySystem.getRelationshipScore();
+  const relScore = effectiveRelScore(rawRel);
   const motiv    = motivSystem.update(currentPAD, memBias, relScore);
   res.json({
     pad:      currentPAD,
     memBias,
     relScore,
+    rawRelScore: rawRel,
+    highIntimacyMode: isHighIntimacyMode(),
     motivation: {
       wants:   motiv.wants,
       fears:   motiv.fears,
@@ -1195,30 +486,240 @@ app.get('/pad-state', (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────
+//  GET /internal-state  — 完整内部状态（用于前端展示）
+// ──────────────────────────────────────────────────────────────
+app.get('/internal-state', (req, res) => {
+  try {
+    const memBias  = memorySystem.getLongTermPadBias();
+    const rawRel = memorySystem.getRelationshipScore();
+    const relScore = effectiveRelScore(rawRel);
+    const motiv    = motivSystem.update(currentPAD, memBias, relScore);
+    
+    // 强化学习统计
+    const rlStats = reinforcementLearning.getStats();
+    
+    // 人格特质
+    const personality = {
+      traits: personalityEvolution.traits,
+      values: personalityEvolution.values,
+      description: personalityEvolution.getDescription(),
+    };
+    
+    // 元认知洞察
+    const metacognition = {
+      recentReflections: selfReflection.reflectionHistory.slice(-5),
+      insights: selfReflection.insights.slice(-5),
+    };
+    
+    // 用户理解
+    const userUnderstanding = {
+      stats: userModelInst.model.stats,
+      preferences: userModelInst.model.preferences,
+      relationship: userModelInst.model.relationship,
+      recentEmotions: userModelInst.model.patterns.emotion_history.slice(-5),
+    };
+    
+    // 时间上下文
+    const timeContext = getTimeContext();
+    
+    res.json({
+      // PAD 状态
+      pad: currentPAD,
+      padDescription: padTelemetry(currentPAD),
+      
+      // 记忆系统
+      memory: {
+        eventCount: memorySystem.events.length,
+        recentEvents: memorySystem.getRecentSignificant(5),
+        timeline: memorySystem.timeline.slice(-5),
+      },
+      
+      // 动机系统
+      motivation: {
+        wants: motiv.wants,
+        fears: motiv.fears,
+        focus: motiv.currentFocus,
+      },
+      
+      // 行为决策
+      behavior: {
+        current: behaviorSys._lastBehavior,
+        count:   behaviorSys._lastBehaviorCount,
+      },
+      
+      // 自我模型
+      selfModel: selfModel.get(),
+      
+      // 内生目标
+      goals: goalSystem.getSummary(),
+      
+      // 策略延续
+      strategy: strategyLayer.getLabel(),
+      
+      // 人格演化
+      personality,
+      
+      // 强化学习
+      learning: rlStats,
+      
+      // 元认知
+      metacognition,
+      
+      // 用户理解
+      userUnderstanding,
+      
+      // 关系
+      relationship: {
+        score: relScore,
+        memBias,
+      },
+      
+      // 时间
+      time: timeContext,
+    });
+  } catch (e) {
+    console.error('[internal-state]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Ollama /api/chat 流式块：可能是 message.content 或旧版 response */
+function ollamaChatStreamRawPiece(obj) {
+  if (!obj || typeof obj !== 'object') return '';
+  const mc = obj.message && typeof obj.message.content === 'string' ? obj.message.content : '';
+  const rs = typeof obj.response === 'string' ? obj.response : '';
+  return mc || rs || '';
+}
+
+/** 同一轮里 message.content 有时是「全文累积」有时是「增量」，拆成增量避免重复或空白 */
+function ollamaStreamToDelta(piece, carry) {
+  const prev = carry.accum || '';
+  if (!piece) return { delta: '', carry: { accum: prev } };
+  if (prev !== '' && piece.startsWith(prev)) {
+    return { delta: piece.slice(prev.length), carry: { accum: piece } };
+  }
+  return { delta: piece, carry: { accum: prev + piece } };
+}
+
+function stripModelThinkingAll(s) {
+  return String(s || '')
+    .replace(/\u003credacted_thinking\u003e[\s\S]*?\u003c\/redacted_thinking\u003e/gi, '')
+    .replace(/\u003cthink\u003e[\s\S]*?\u003c\/think\u003e/gi, '')
+    .replace(/\u003credacted_thinking\u003e[\s\S]*$/gi, '')
+    .replace(/\u003cthink\u003e[\s\S]*$/gi, '')
+    .trim();
+}
+
+/** 读取 Ollama 非 2xx 响应正文（通常为 JSON { error: "..." }） */
+async function readOllamaErrorBody(res) {
+  try {
+    const t = await res.text();
+    try {
+      const j = JSON.parse(t);
+      return String(j.error || j.message || t).slice(0, 900);
+    } catch {
+      return String(t).slice(0, 900);
+    }
+  } catch {
+    return '';
+  }
+}
+
+/** Ollama 报错是否为「模型加载/资源」类（缩短 prompt 重试无效） */
+function ollamaErrorLooksLikeModelLoadFail(detail) {
+  return /failed to load|resource limitations|unable to load model|model runner/i.test(String(detail));
+}
+
+/** 调试日志：仅 AMADEUS_DEBUG=1 时写入 */
+function agentDebugLog(payload) {
+  if (process.env.AMADEUS_DEBUG !== '1') return;
+  const entry = { sessionId: 'debug', timestamp: Date.now(), ...payload };
+  try {
+    fs.appendFileSync(path.join(path.dirname(rootPath), 'debug-amadeus.log'), `${JSON.stringify(entry)}\n`);
+  } catch (_) {}
+}
+
+// 浏览器侧调试：写入与 agentDebugLog 同文件（不依赖 7519 ingest）
+app.post('/client-debug', (req, res) => {
+  try {
+    agentDebugLog({
+      hypothesisId: req.body.hypothesisId || 'client',
+      location: req.body.location || 'client',
+      message: req.body.message || '',
+      data: req.body.data && typeof req.body.data === 'object' ? req.body.data : {},
+    });
+  } catch (_) { /* ignore */ }
+  res.json({ ok: true });
+});
+
+// ──────────────────────────────────────────────────────────────
 //  POST /chat  ★ 三大系统整合版
 // ──────────────────────────────────────────────────────────────
 app.post('/chat', async (req, res) => {
+  const __streamRequested = req.body && req.body.stream === true;
   try {
-    const model    = req.body.model || 'deepseek-r1:8b';
-    const useStream= req.body.stream !== false;
-    const temp     = req.body.temperature ?? 0.8;
-    const maxTok   = req.body.max_tokens  ?? 350;
+    const model    = req.body.model || 'kurisu:latest';
+    const useStream= req.body.stream === true;  // 默认非流式
+    const temp     = req.body.temperature ?? (Number(process.env.AMADEUS_CHAT_TEMP) || 0.72);
+    const maxTok   = req.body.max_tokens  ?? 384;
 
-    // 提取 system + user
-    let systemContent = '';
-    let userContent   = '';
-    if (Array.isArray(req.body.messages)) {
-      for (const m of req.body.messages) {
-        if (m.role === 'system') systemContent += (m.content||'') + '\n';
-        if (m.role === 'user')   userContent   += (m.content||'') + '\n';
+    const parsed = parseIncomingChat(req.body);
+    let systemContent = parsed.clientSystem;
+    let userContent = String(parsed.lastUser || '').trim();
+
+    const histCap = Number(process.env.AMADEUS_CHAT_HISTORY_MSGS);
+    let dialogueForOllama = capDialogue(parsed.dialogue, Number.isFinite(histCap) && histCap > 0 ? histCap : 24);
+
+    if (!userContent) {
+      userContent = String(req.body.userMsg || req.body.message || '').trim();
+      if (userContent && dialogueForOllama.length === 0) {
+        dialogueForOllama = [{ role: 'user', content: userContent }];
       }
     }
-    if (!userContent) userContent = req.body.userMsg || req.body.message || '';
+
     if (!systemContent) {
-      try { systemContent = fs.readFileSync(soulPath, 'utf8'); } catch {}
+      systemContent = cachedSoulContent;
+      if (cachedCharacterRules) {
+        systemContent = systemContent + '\n\n' + cachedCharacterRules;
+      }
     }
-    userContent   = userContent.trim();
     systemContent = systemContent.trim();
+
+    const autonomyInitiative = req.body.autonomyInitiative === true;
+    const idleMsSinceUser = Math.max(0, Number(req.body.idleMsSinceUser) || 0);
+    const threadHint = detectReplyingToHerThread(parsed.dialogue);
+    const replyingToProactive = req.body.replyingToProactive === true
+      || (threadHint.active && !autonomyInitiative);
+    const proactiveAnchor = String(req.body.proactiveAnchor || threadHint.anchor || '').trim();
+    const clientPersonaProvided = Boolean(parsed.clientSystem && parsed.clientSystem.trim()) && !autonomyInitiative;
+
+    const recentUserLinesForMem = (parsed.userLines && parsed.userLines.length)
+      ? parsed.userLines.filter((l) => l && !/^（想说话）|^（转移话题）|^（以下是最近对话/.test(String(l).trim())).slice(-14)
+      : (userContent && !/^（想说话）/.test(userContent) ? [userContent] : []);
+    const lastRealUserLine = extractLastRealUserLine(parsed.dialogue)
+      || (recentUserLinesForMem.length ? recentUserLinesForMem[recentUserLinesForMem.length - 1] : '');
+    let userPresenceState = req.body.userPresence && req.body.userPresence.active
+      ? req.body.userPresence
+      : null;
+    if (!userPresence.isPresenceActive(userPresenceState)) {
+      userPresenceState = userPresence.resolvePresenceFromDialogue(parsed.dialogue);
+    }
+    if (lastRealUserLine) {
+      userPresenceState = userPresence.mergePresenceState(
+        userPresenceState,
+        userPresence.analyzeUserPresence(lastRealUserLine, {
+          recentUserLines: recentUserLinesForMem.slice(0, -1),
+        }),
+      );
+    }
+    // 主动轮：保留 soul/whoami/关系与轻量记忆以维持口吻；仅过滤易诱发编造的科学 RAG 片段
+    const useLongTermMemory = autonomyInitiative
+      ? true
+      : needsLongTermMemory(userContent, recentUserLinesForMem);
+    const useRagForTurn = autonomyInitiative
+      ? true
+      : useLongTermMemory;
+    const cognitiveInput = (autonomyInitiative && lastRealUserLine) ? lastRealUserLine : userContent;
 
     if (!userContent) {
       if (useStream) {
@@ -1229,125 +730,446 @@ app.post('/chat', async (req, res) => {
       return res.json({ response:'', choices:[{message:{role:'assistant',content:''}}] });
     }
 
-    // ══ ① 记忆系统：推断事件并更新PAD ══
-    const inferredEvents = inferEventFromInput(userContent);
-    for (const ev of inferredEvents) {
-      const delta = ev.delta || {};
-      currentPAD = updatePAD(currentPAD, delta, ev.importance);
-      if (ev.type !== 'neutral' || ev.importance > 0.2) {
-        memorySystem.addEvent(ev.type, ev.content, ev.importance, delta);
+    const synced = conversationMemory.syncFromDialogue(dialogueForOllama);
+    if (synced > 0) {
+      console.log(`[conversation] 从多轮历史补录 ${synced} 条`);
+    }
+    const userLine = cognitiveInput || userContent;
+    const lastConv = conversationMemory.turns[conversationMemory.turns.length - 1];
+    const userNorm = String(userLine || '').trim();
+    const alreadyLogged = lastConv
+      && lastConv.role === 'user'
+      && String(lastConv.text || '').trim() === userNorm;
+    if (!alreadyLogged) {
+      conversationMemory.addTurn('user', userLine);
+    }
+
+    chatTurnCounter++;
+
+    if (autonomyInitiative && idleMsSinceUser > 0 && !userPresence.isPresenceActive(userPresenceState)) {
+      const idlePad = idleSilencePadDelta(idleMsSinceUser, effectiveRelScore(memorySystem.getRelationshipScore()));
+      if (idlePad) {
+        currentPAD = updatePAD(currentPAD, idlePad, 0.35);
+        savePAD(padPath, currentPAD);
+        console.log(`[autonomy] 久未回复 PAD 波动 idleMin≈${(idleMsSinceUser / 60000).toFixed(1)} A+${idlePad.A.toFixed(2)}`);
       }
     }
-    savePAD(currentPAD);
 
-    // ══ ⑦ 用户理解系统 ══
-    const analyticsResult  = analyticsInst.analyze(userContent);
-    const moodResult       = moodPredictor.predict(userContent, analyticsResult, userModelInst);
+    // ══ ① 记忆系统：单一主事件 + PAD（不在此处落盘 pad_state）══
+    const mainEvent = inferMainEventFromInput(cognitiveInput, currentPAD);
+    const evDelta = mainEvent.delta || {};
+    currentPAD = updatePAD(currentPAD, evDelta, mainEvent.importance);
+    if (mainEvent.type !== 'neutral' || mainEvent.importance > 0.2) {
+      memorySystem.addEvent(mainEvent.type, mainEvent.content, mainEvent.importance, evDelta);
+    }
+    updateMotivationFromMemory();
+
+    // ══ ⑦ 用户理解（习惯提取等；不向模型注入「该怎样说话」的个性化脚本）══
+    const analyticsResult = analyticsInst.analyze(cognitiveInput);
     habitExtractor.maybeRun(analyticsInst._log);
-    const userModelCtx     = userModelInst.toPromptContext();
-    const personalizeCtx   = personalizer.getConstraints(userModelInst, moodResult);
-    const proactiveCare    = personalizer.checkProactiveCare(userModelInst, moodResult);
 
-    // 软确认：每10轮检查一次是否有等待确认的推测
-    if (userModelInst.model.stats.total_messages % 10 === 0) {
+    // ── BDI 推断：每5轮异步触发，失败静默忽略，结果写入 UserModel ──
+    if (chatTurnCounter % 5 === 1 && recentUserLinesForMem.length > 0) {
+      inferUserBdi({ recentUserLines: recentUserLinesForMem, timeoutMs: 6000 })
+        .then(bdi => {
+          if (bdi) {
+            userModelInst.applyInferredBdi(bdi);
+            console.log(`[bdi] 推断完成: beliefs=${bdi.beliefs.length} desires=${bdi.desires.length} intentions=${bdi.intentions.length}`);
+          }
+        })
+        .catch(() => {});
+    }
+
+    if (chatTurnCounter % 10 === 0) {
       const pending = userModelInst.popConfirmation();
       if (pending) {
-        // 把软确认问题附加到内生目标里（下次回复时自然带出）
         goalSystem.goals.unshift({
           id: `CONFIRM_${pending.key}`,
           label: `确认推测：${pending.key}`,
           priority: 0.7,
           turns_remaining: 1,
-          behavior_hint: '在回应里自然带出软确认',
-          prompt_injection: `她有一个推测想确认：${pending.question}（用她的方式，傲娇地问，不要正式地问卷式提问）`,
+          behavior_hint: '若自然可顺带一提',
+          prompt_injection: `她心里有个想确认的点：${pending.question}（不必问卷式，接话时带过即可）`,
         });
       }
     }
 
-    // 主动关心触发（如果触发了，给行为层加注）
-    let proactiveCareCtx = '';
-    if (proactiveCare) {
-      proactiveCareCtx = proactiveCare.prompt;
-      console.log(`[proactive] 触发主动关心: ${proactiveCare.trigger}`);
+    console.log(`[user_model] 用户特征: ${Object.entries(userModelInst.model.preferences).filter(([, v]) => v > 0.5).map(([k, v]) => `${k}:${v.toFixed(2)}`).join(' ')}`);
+
+    // ══ RAG 与 动机/行为/策略/人格/元认知 并行（RAG 仅懒注入命中时）══
+    const ragMs = Number(process.env.AMADEUS_RAG_MS) || 900;
+    const ragQuery = autonomyInitiative ? (lastRealUserLine || userContent) : userContent;
+    const ragPromise = useRagForTurn
+      ? Promise.race([
+          retrieveTopContexts(ragQuery, autonomyInitiative ? 2 : 3),
+          new Promise((resolve) => setTimeout(() => resolve([]), ragMs)),
+        ]).catch(() => [])
+      : Promise.resolve([]);
+
+    const statePromise = Promise.resolve().then(() => {
+      const memBias = memorySystem.getLongTermPadBias();
+      const relScore = effectiveRelScore(memorySystem.getRelationshipScore());
+      motivSystem.update(currentPAD, memBias, relScore);
+      const motivSummary = motivSystem.getSummary();
+      const behaviorResult = behaviorSys.decide(
+        currentPAD, motivSystem, memorySystem, cognitiveInput, reinforcementLearning
+      );
+      lastChatBehaviorId = behaviorResult.behaviorId;
+      selfModel.update(
+        currentPAD, memBias, relScore,
+        behaviorResult.behaviorId,
+        memorySystem.getRecentSignificant(3).join('; ')
+      );
+      const selfCtx = selfModel.toPromptContext();
+      goalSystem.generateGoals(currentPAD, selfModel, relScore, memorySystem, curiosityEngine, {
+        replyingToProactive,
+      });
+      goalSystem.tick(behaviorResult.behaviorId, evDelta);
+      const goalInjection = goalSystem.getActiveInjection();
+      console.log(`[goal] 活跃目标: ${goalSystem.getSummary()}`);
+      strategyLayer.evaluate(currentPAD, relScore, behaviorResult.behaviorId, goalSystem.goalHistory);
+      const strategyCtx = strategyLayer.toPromptContext();
+      console.log(`[strategy] 当前策略: ${strategyLayer.getLabel()}`);
+      const recentEvent = { type: mainEvent.type || 'neutral' };
+      personalityEvolution.updateTraits(recentEvent);
+      personalityEvolution.updateValues(recentEvent);
+      const evolvedPersonalityLine = personalityEvolution.getDescription();
+      console.log(`[personality] ${evolvedPersonalityLine}`);
+      selfReflection.reflectOnDecision({
+        action: behaviorResult.behaviorId,
+        reasoning: behaviorResult.reasoning,
+        factors: behaviorResult.reasons || [],
+      });
+      const keywordConflicts = valueConsistency.detectConflicts({ description: userContent });
+      if (keywordConflicts.length > 0) {
+        console.log(`[metacognition] 价值观关键词冲突: ${keywordConflicts.map(c => c.description).join('; ')}`);
+      }
+      let latestInsight = '';
+      const chatMinimal = String(process.env.AMADEUS_CHAT_MINIMAL || '1').trim() !== '0';
+      if (!chatMinimal && chatTurnCounter % 20 === 0) {
+        const insight = selfReflection.generateInsight();
+        if (insight) {
+          latestInsight = insight.content;
+          console.log(`[metacognition] 洞察: ${insight.content}`);
+        }
+      }
+      let whoamiName = '';
+      let whoamiSnippet = '';
+      let whoamiForPresence = {};
+      try {
+        whoamiForPresence = ensureWhoamiOnDisk(whoamiPath);
+        whoamiName = resolvePartnerDisplayName(whoamiForPresence) || '';
+        const wp = [];
+        if (whoamiName) wp.push(whoamiName);
+        if (partnerIsOkabe(whoamiForPresence)) wp.push('冈部·很熟');
+        if (whoamiForPresence.traits?.length) wp.push(whoamiForPresence.traits.slice(0, 3).join('、'));
+        if (whoamiForPresence.relationship_note) wp.push(whoamiForPresence.relationship_note);
+        if (wp.length) whoamiSnippet = wp.join('；');
+      } catch (_) { /* ignore */ }
+      const obsSummary = memorySystem.getObservationsSummary(2);
+      const presence = derivePresence(
+        currentPAD,
+        cognitiveInput,
+        behaviorResult.behaviorId,
+        { closeness: Math.max(0, relScore), trust: 0.5 + relScore * 0.5 },
+        { displayName: whoamiName, recentUserLines: recentUserLinesForMem.slice(-8) },
+        {
+          whoamiSnippet,
+          obsSummary,
+          idleMsSinceUser,
+          isAutonomy: autonomyInitiative,
+          replyingToProactive,
+          proactiveAnchor,
+          partnerIsOkabe: partnerIsOkabe(whoamiForPresence),
+          lastUserAnchor: lastRealUserLine,
+        },
+      );
+      return {
+        memBias,
+        relScore,
+        motivSummary,
+        behaviorResult,
+        behaviorDirective: behaviorSys.toPromptConstraint(behaviorResult),
+        presenceCtx: presenceToPromptLine(presence),
+        turnStyleBlock: buildTurnStyleBlock({
+          emotion: currentPAD,
+          behaviorId: behaviorResult.behaviorId,
+          behaviorLabel: behaviorResult.label,
+          presence,
+          closeness: Math.max(0, relScore),
+          userText: cognitiveInput,
+          partnerIsOkabe: partnerIsOkabe(whoamiForPresence),
+        }),
+        selfCtx,
+        goalInjection,
+        strategyCtx,
+        personalityCtx: evolvedPersonalityLine,
+        keywordConflicts,
+        latestInsight,
+      };
+    });
+
+    const [ragHits, st] = await Promise.all([ragPromise, statePromise]);
+    const ragAnchor = autonomyInitiative ? lastRealUserLine : userContent;
+    let ragFiltered = filterRagHits(ragHits, ragAnchor, {});
+    if (autonomyInitiative) {
+      ragFiltered = filterAutonomyRagHits(ragFiltered, lastRealUserLine);
     }
-
-    console.log(`[user_model] 情绪预测: ${moodResult.mood}(${(moodResult.confidence*100).toFixed(0)}%) 用户特征: ${Object.entries(userModelInst.model.preferences).filter(([,v])=>v>0.5).map(([k,v])=>`${k}:${v.toFixed(2)}`).join(' ')}`);
-
-    // ══ ② 动机系统：更新当前动机 ══
-    const memBias  = memorySystem.getLongTermPadBias();
-    const relScore = memorySystem.getRelationshipScore();
-    motivSystem.update(currentPAD, memBias, relScore);
-    const motivSummary = motivSystem.getSummary();
-
-    // ══ ③ 行为决策：真正的多路径选择 ══
-    const behaviorResult = behaviorSys.decide(
-      currentPAD, motivSystem, memorySystem, userContent
-    );
-    const behaviorDirective = behaviorSys.toPromptConstraint(behaviorResult);
-
-    // ══ ④ 自我模型：更新并获取自我感知 ══
-    selfModel.update(
-      currentPAD, memBias, relScore,
-      behaviorResult.behaviorId,
-      memorySystem.getRecentSignificant(3).join('; ')
-    );
-    const selfCtx = selfModel.toPromptContext();
-
-    // ══ ⑤ 内生目标：生成目标并获取注入 ══
-    goalSystem.generateGoals(currentPAD, selfModel, relScore, memorySystem);
-    const goalInjection = goalSystem.getActiveInjection();
-    console.log(`[goal] 活跃目标: ${goalSystem.getSummary()}`);
-
-    // ══ ⑥ 策略延续：评估策略并获取约束 ══
-    strategyLayer.evaluate(currentPAD, relScore, behaviorResult.behaviorId, goalSystem.goalHistory);
-    const strategyCtx = strategyLayer.toPromptContext();
-    console.log(`[strategy] 当前策略: ${strategyLayer.getLabel()}`);
-
-    // ══ RAG上下文 ══
-    let ragCtx = '';
-    try {
-      const hits = await retrieveTopContexts(userContent, 3);
-      if (hits.length) ragCtx = hits.map((h,i)=>`(${i+1}) [${h.source}] ${h.text}`).join('\n');
-    } catch (e) { console.warn('[rag]', e.message); }
-
-    // ══ 记忆系统上下文 ══
-    const recentSig = memorySystem.getRecentSignificant(3);
-    const memCtx = recentSig.length
-      ? `【记忆碎片（高权重）】\n${recentSig.join('\n')}`
+    if (ragHits.length && ragFiltered.length < ragHits.length) {
+      console.log(`[rag] 门控剔除 ${ragHits.length - ragFiltered.length} 条弱相关命中`);
+    }
+    const ragCtx = ragFiltered.length
+      ? ragFiltered.map((h, i) => `(${i + 1}) [${h.source}] ${h.text}`).join('\n')
       : '';
 
-    // ══ 构建增强System Prompt ══
-    const padDesc = `P:${currentPAD.P.toFixed(2)} A:${currentPAD.A.toFixed(2)} D:${currentPAD.D.toFixed(2)} S:${currentPAD.S.toFixed(2)}`;
-    const memBiasDesc = `长期记忆偏差 P:${memBias.P.toFixed(2)} A:${memBias.A.toFixed(2)} D:${memBias.D.toFixed(2)}`;
-    const relDesc = `关系热度:${relScore.toFixed(2)}`;
+    const userModelCtx = userModelInst.toPromptContext();
 
-    const enhancedSystem = [
-      systemContent,
-      ragCtx ? `【背景知识】\n${ragCtx}` : '',
-      memCtx,
-      `【当前PAD状态】${padDesc}  ${memBiasDesc}  ${relDesc}`,
-      motivSummary ? `【动机层】\n${motivSummary}` : '',
-      behaviorDirective,
-    ].filter(Boolean).join('\n\n');
-
-    const prompt = `${enhancedSystem}\n\n${userContent}`;
-
-    console.log(`[chat] PAD=${padDesc} rel=${relScore.toFixed(2)} events=${memorySystem.events.length}`);
-
-    // ══ 调用Ollama ══
-    const ollamaRes = await fetch('http://127.0.0.1:11434/api/generate', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model, prompt, stream:useStream, options:{ temperature:temp, num_predict:maxTok, num_ctx:4096 } })
+    const convHours = Number(process.env.AMADEUS_CONVERSATION_HOURS) || 14;
+    const convChars = Number(process.env.AMADEUS_CONVERSATION_CHARS) || 1400;
+    const convRecallChars = Number(process.env.AMADEUS_CONVERSATION_RECALL_CHARS) || 2600;
+    const recallTurn = needsConversationRecall(userContent);
+    const conversationCtx = conversationMemory.toPromptBlock({
+      hours: convHours,
+      sinceStartOfDay: true,
+      maxChars: recallTurn ? convRecallChars : convChars,
+      userText: userContent,
     });
-    if (!ollamaRes.ok) throw new Error(`Ollama ${ollamaRes.status}`);
+    if (conversationCtx) {
+      console.log(`[conversation] 注入实录 ${conversationCtx.length} 字${recallTurn ? '（核对/回忆加强）' : ''}`);
+    }
 
-    // 非流式
+    let memCtxCombined = '';
+    if (useLongTermMemory) {
+      const recentSig = memorySystem.getRecentSignificant(3);
+      const memCtx = recentSig.length
+        ? `【记忆碎片（高权重）】\n${recentSig.join('\n')}`
+        : '';
+      const todayTimeline = memorySystem.getTodayTimeline();
+      const obsSummary = memorySystem.getObservationsSummary(3);
+      const patterns = memorySystem.getPatterns(3);
+      let timelineCtx = '';
+      if (todayTimeline) timelineCtx += `【今日轨迹】\n${todayTimeline}\n`;
+      if (obsSummary) timelineCtx += `【观察积累】\n${obsSummary}\n`;
+      if (patterns.length) {
+        timelineCtx += `【已发现模式】\n${patterns.map(p => `${p.label} (置信度:${p.confidence.toFixed(1)}) ${p.note || ''}`).join('\n')}\n`;
+      }
+      memCtxCombined = (timelineCtx.trim() && memCtx) ? `${timelineCtx.trim()}\n\n${memCtx}` : (timelineCtx.trim() || memCtx);
+      if (autonomyInitiative && memCtxCombined) {
+        memCtxCombined = filterAutonomyMemCtx(memCtxCombined, lastRealUserLine);
+      }
+    }
+
+    const padDesc = `P:${currentPAD.P.toFixed(2)} A:${currentPAD.A.toFixed(2)} D:${currentPAD.D.toFixed(2)} S:${currentPAD.S.toFixed(2)}`;
+    const relScore = effectiveRelScore(st.relScore);
+    userModelInst.syncRelationshipFromScore(relScore);
+
+    const closenessForCompanion = Math.max(0, relScore);
+    const trustForCompanion = 0.5 + relScore * 0.5;
+    let memSnippetForCompanion = '';
+    if (useLongTermMemory) {
+      const sig = memorySystem.getRecentSignificant(1);
+      if (sig.length) memSnippetForCompanion = sig[0];
+    }
+    const companionBlock = buildCompanionBlock({
+      P: currentPAD.P,
+      A: currentPAD.A,
+      closeness: closenessForCompanion,
+      trust: trustForCompanion,
+      userText: cognitiveInput,
+      memSnippet: memSnippetForCompanion,
+      userPresence: userPresenceState,
+      isAutonomy: autonomyInitiative,
+    });
+    const relHigh = relScore > 0.38;
+
+    let whoamiCtx = '';
+    let whoamiRecord = {};
+    try {
+      whoamiRecord = ensureWhoamiOnDisk(whoamiPath);
+      const parts = [];
+      const displayName = resolvePartnerDisplayName(whoamiRecord);
+      if (displayName) {
+        parts.push(
+          partnerIsOkabe(whoamiRecord)
+            ? `正在和 ${displayName}（冈部）对话——你们很熟，日常拌嘴，不是第一次见面。`
+            : `正在和 ${displayName} 对话`,
+        );
+      }
+      if (whoamiRecord.traits?.length) parts.push(`你对他的印象：${whoamiRecord.traits.join('、')}`);
+      if (whoamiRecord.preferences?.length) parts.push(`他的喜好：${whoamiRecord.preferences.join('、')}`);
+      if (whoamiRecord.basics && Object.keys(whoamiRecord.basics).length) {
+        parts.push(`已知信息：${Object.entries(whoamiRecord.basics).map(([k, v]) => `${k}=${v}`).join('，')}`);
+      }
+      if (whoamiRecord.relationship_note) parts.push(whoamiRecord.relationship_note);
+      if (parts.length) whoamiCtx = parts.join('\n');
+    } catch (_) { /* ignore */ }
+
+    const valueBlock = st.keywordConflicts?.length
+      ? `【价值观拉扯】${_clipInnerPrompt(st.keywordConflicts.map((c) => c.description).join('；'), 140)}`
+      : '';
+
+    const utteranceFocus = utteranceFocusLine(userContent, {
+      replyingToProactive,
+      proactiveAnchor,
+    });
+    const engagementHint = buildEngagementHint(userModelInst, userContent, relScore);
+    const proactiveContinuity = replyingToProactive && proactiveAnchor
+      ? buildProactiveReplyFocus(userContent, proactiveAnchor)
+      : '';
+    const autonomyContinuity = autonomyInitiative
+      ? buildAutonomyContinuityBlock({
+          lastUserText: lastRealUserLine,
+          userPresence: userPresenceState,
+          lastKurisuLine: (() => {
+            for (let i = parsed.dialogue.length - 1; i >= 0; i--) {
+              const m = parsed.dialogue[i];
+              if (m && m.role === 'assistant') return String(m.content || '').trim();
+            }
+            return '';
+          })(),
+        })
+      : '';
+
+    const behaviorContext = {
+      soulContent: systemContent,
+      voiceContent: cachedVoiceContent,
+      clientPersonaProvided,
+      useLongTermMemory,
+      utteranceFocus,
+      proactiveContinuity,
+      autonomyContinuity,
+      replyingToProactive,
+      autonomyInitiative,
+      lastRealUserLine,
+      proactiveAnchor,
+      userPresence: userPresenceState,
+      engagementHint,
+      emotion: { P: currentPAD.P, A: currentPAD.A, D: currentPAD.D, S: currentPAD.S },
+      relationship: {
+        closeness: Math.max(0, relScore),
+        trust: 0.5 + relScore * 0.5,
+      },
+      motivation: motivationState,
+      userProfile: whoamiCtx,
+      userModelCtx: clientPersonaProvided ? '' : (userModelCtx ? `【用户理解】\n${userModelCtx}` : ''),
+      motivSummary: clientPersonaProvided ? '' : (st.motivSummary || ''),
+      selfCtx: clientPersonaProvided ? '' : (st.selfCtx || ''),
+      behaviorDirective: st.behaviorDirective || '',
+      presenceCtx: st.presenceCtx || '',
+      turnStyleBlock: st.turnStyleBlock || '',
+      companionBlock,
+      latestInsight: clientPersonaProvided ? '' : (st.latestInsight || ''),
+      personalityCtx: clientPersonaProvided ? '' : (st.personalityCtx || ''),
+      valueBlock: clientPersonaProvided ? '' : valueBlock,
+      ragCtx: useLongTermMemory && ragCtx ? `【背景知识】\n${ragCtx}` : '',
+      conversationCtx,
+      conversationRecall: recallTurn,
+      memCtx: memCtxCombined,
+      strategyContext: clientPersonaProvided
+        ? (relHigh && useLongTermMemory ? _clipInnerPrompt(st.strategyCtx, 140) : '')
+        : (useLongTermMemory ? st.strategyCtx : ''),
+      goalInjection: clientPersonaProvided
+        ? (relHigh && useLongTermMemory ? _clipInnerPrompt(st.goalInjection, 120) : '')
+        : (useLongTermMemory ? st.goalInjection : ''),
+    };
+
+    behaviorContext.recentUserLines = recentUserLinesForMem.slice(-8);
+    behaviorContext.partnerIsOkabe = partnerIsOkabe(whoamiRecord);
+    behaviorContext.displayName = resolvePartnerDisplayName(whoamiRecord) || behaviorContext.displayName || '';
+    behaviorContext.partnerCtx = buildPartnerContextBlock(whoamiRecord, cognitiveInput);
+    const symbolicRules = symbolicReasoning(cognitiveInput, currentPAD, behaviorContext);
+    if (symbolicRules.length > 0) {
+      console.log(`[symbolic] 触发规则: ${symbolicRules.map(r => r.reason).join(', ')}`);
+    }
+
+    const systemPrompt = buildPrompt(behaviorContext, symbolicRules);
+
+    console.log(`[chat] PAD=${padDesc} rel=${relScore.toFixed(2)} events=${memorySystem.events.length} behavior=${st.behaviorResult.label}`);
+    const fullPrompt = systemPrompt;
+    let maxPromptChars = Number(process.env.AMADEUS_MAX_PROMPT_CHARS);
+    if (!Number.isFinite(maxPromptChars) || maxPromptChars <= 0) maxPromptChars = 6000;
+
+    const numCtxEnv = Number(process.env.AMADEUS_OLLAMA_NUM_CTX);
+    const numCtx = Number.isFinite(numCtxEnv) && numCtxEnv > 0 ? numCtxEnv : 2048;
+    const repPen = Number(process.env.AMADEUS_OLLAMA_REPEAT_PENALTY);
+    const ollamaOptions = {
+      temperature: temp,
+      num_predict: maxTok,
+      repeat_penalty: Number.isFinite(repPen) && repPen > 0 ? repPen : 1.12,
+      num_ctx: numCtx,
+    };
+    const keepAlive = String(process.env.AMADEUS_OLLAMA_KEEP_ALIVE || '2m').trim() || '2m';
+
+    // #region agent log
+    agentDebugLog({ hypothesisId: 'A-D', location: 'server.js:chat.preOllama', message: 'ollama request shape', data: { model, useStream, fullPromptLen: fullPrompt.length, maxPromptChars, maxTok, numCtx: ollamaOptions.num_ctx, num_predict: ollamaOptions.num_predict, repeat_penalty: ollamaOptions.repeat_penalty, keepAlive } });
+    // #endregion
+
+    // ══ 调用 Ollama（500/503 时自动缩短 prompt 重试，减轻显存/上下文压力）══
+    const ollamaStartTime = Date.now();
+    let ollamaRes;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const promptForModel = fitSystemForDialogue(fullPrompt, dialogueForOllama, maxPromptChars);
+      const ollamaMessages = buildOllamaMessages(promptForModel, dialogueForOllama, maxPromptChars);
+      const msgChars = estimateMessageChars(ollamaMessages);
+      if (fullPrompt.length + msgChars > maxPromptChars) {
+        console.warn(`[chat] system ${fullPrompt.length} + dialogue ~${msgChars} > ${maxPromptChars}, 已压缩 system 并保留 ${Math.max(0, ollamaMessages.length - 1)} 轮对话`);
+      }
+      console.log(`[chat] Prompt system=${promptForModel.length} msgs=${ollamaMessages.length} ~chars=${msgChars}, Model: ${model}, try=${attempt + 1}`);
+      // #region agent log
+      agentDebugLog({ hypothesisId: 'A-D', location: 'server.js:chat.ollamaAttempt', message: 'before fetch', data: { attempt: attempt + 1, model, promptForModelLen: promptForModel.length, ollamaMsgCount: ollamaMessages.length, msgChars, maxPromptCharsCap: maxPromptChars, stream: useStream } });
+      // #endregion
+      ollamaRes = await fetch(`${OLLAMA_BASE}/api/chat`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ 
+          model, 
+          messages: ollamaMessages,
+          stream:useStream,
+          options: ollamaOptions,
+          keep_alive: keepAlive,
+        })
+      });
+      if (ollamaRes.ok) {
+        console.log(`[chat] Ollama responded in ${Date.now() - ollamaStartTime}ms`);
+        // #region agent log
+        agentDebugLog({ hypothesisId: 'A-D', location: 'server.js:chat.ollamaOk', message: 'ollama ok', data: { attempt: attempt + 1, model, ms: Date.now() - ollamaStartTime } });
+        // #endregion
+        break;
+      }
+      const detail = await readOllamaErrorBody(ollamaRes);
+      const looksLikeModelLoadFail = ollamaErrorLooksLikeModelLoadFail(detail);
+      const willShortenRetry = attempt < 2 && [500, 503].includes(ollamaRes.status) && !looksLikeModelLoadFail;
+      // #region agent log
+      agentDebugLog({ hypothesisId: 'B', location: 'server.js:chat.ollamaErr', message: 'ollama non-ok', data: { attempt: attempt + 1, model, httpStatus: ollamaRes.status, detailSlice: String(detail).slice(0, 220), looksLikeModelLoadFail, willShortenRetry } });
+      // #endregion
+      if (willShortenRetry) {
+        maxPromptChars = attempt === 0 ? Math.min(4500, maxPromptChars) : 2800;
+        console.warn(`[chat] Ollama ${ollamaRes.status}, 缩短上下文重试 cap=${maxPromptChars}`, detail.slice(0, 160));
+        continue;
+      }
+      const loadHint = looksLikeModelLoadFail
+        ? ' （模型加载/资源问题通常与 prompt 长度无关：检查显存、`ollama ps`、其它占 GPU 进程，或换更小模型。）'
+        : '';
+      throw new Error((detail ? `Ollama ${ollamaRes.status}: ${detail}` : `Ollama HTTP ${ollamaRes.status}`) + loadHint);
+    }
+    if (!ollamaRes.ok) {
+      throw new Error('Ollama 多次重试仍失败');
+    }
+
+    // 非流式（/api/chat 返回 message.content；/api/generate 才是 response）
     if (!useStream) {
       const d = await ollamaRes.json();
-      const content = (d.response||'').replace(/<think>[\s\S]*?(<\/think>|$)/gi,'').trim();
+      const raw = (d.message && d.message.content) || d.response || '';
+      let content = stripModelThinkingAll(raw);
+      content = stripChatMarkdown(content);
+      const userCorpus = recentUserLinesForMem.join('\n');
+      content = stripOrphanClosingSentence(content, userContent, userCorpus);
+      const oocOpts = autonomyInitiative
+        ? { autonomy: true, userAnchor: lastRealUserLine }
+        : {};
+      content = applyOocRepair(content, userContent, '', oocOpts);
       // 回复后分析情感并更新PAD
-      _postReplyPadUpdate(content);
+      _postReplyPadUpdate(content, userContent);
       return res.json({
         response: content,
         choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content}}],
@@ -1362,7 +1184,34 @@ app.post('/chat', async (req, res) => {
 
     const reader  = ollamaRes.body.getReader();
     const decoder = new TextDecoder('utf-8');
-    let buf='', isThinking=false, fullResponse='';
+    let buf='', isThinking=false, fullResponse='', replyUpdated=false;
+    let ollamaPieceCarry = { accum: '' };
+
+    const finalizeStream = () => {
+      if (!replyUpdated) {
+        replyUpdated = true;
+        const userCorpus = recentUserLinesForMem.join('\n');
+        const cleaned = stripRoleplayActions(stripChatMarkdown(stripModelThinkingAll(fullResponse)));
+        let trimmed = stripOrphanClosingSentence(cleaned, userContent, userCorpus);
+        const oocOpts = autonomyInitiative
+          ? { autonomy: true, userAnchor: lastRealUserLine }
+          : {};
+        trimmed = stripRoleplayActions(applyOocRepair(trimmed, userContent, cleaned, oocOpts));
+        if (shouldReplaceStreamText(cleaned, trimmed) && trimmed.length > 0) {
+          fullResponse = trimmed;
+          try {
+            res.write(`data: ${JSON.stringify({ replaceText: trimmed })}\n\n`);
+          } catch (_) {}
+        } else if (trimmed !== cleaned) {
+          fullResponse = cleaned.length >= trimmed.length ? cleaned : trimmed;
+        }
+        _postReplyPadUpdate(fullResponse, userContent);
+      }
+      if (!res.writableEnded) {
+        res.write('data: [DONE]\n\n');
+        res.end();
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1371,83 +1220,212 @@ app.post('/chat', async (req, res) => {
       const lines = buf.split('\n');
       buf = lines.pop();
       for (const line of lines) {
-        if (!line.trim()) continue;
+        let ln = line.trim();
+        if (!ln) continue;
+        if (ln.startsWith('data:')) ln = ln.slice(5).trim();
+        if (ln === '[DONE]') continue;
         try {
-          const obj = JSON.parse(line);
-          let token = obj.response || '';
-          if (token.includes('<think>'))  { isThinking=true;  token=token.split('<think>').slice(-1)[0]||''; }
-          if (token.includes('</think>')) { isThinking=false; token=token.split('</think>').slice(-1)[0]||''; }
+          const obj = JSON.parse(ln);
+          const rawPiece = ollamaChatStreamRawPiece(obj);
+          const { delta, carry } = ollamaStreamToDelta(rawPiece, ollamaPieceCarry);
+          ollamaPieceCarry = carry;
+          let token = delta;
+          if (token.includes('\u003credacted_thinking\u003e')) { isThinking = true; token = token.split('\u003credacted_thinking\u003e').slice(-1)[0] || ''; }
+          if (token.includes('\u003c\/redacted_thinking\u003e')) { isThinking = false; token = token.split('\u003c\/redacted_thinking\u003e').slice(-1)[0] || ''; }
+          if (token.includes('\u003cthink\u003e')) { isThinking = true; token = token.split('\u003cthink\u003e').slice(-1)[0] || ''; }
+          if (token.includes('\u003c\/think\u003e')) { isThinking = false; token = token.split('\u003c\/think\u003e').slice(-1)[0] || ''; }
           if (isThinking) continue;
           if (token) {
             fullResponse += token;
             res.write(`data: ${JSON.stringify({ text:token })}\n\n`);
           }
           if (obj.done) {
-            // 流结束后分析回复并更新PAD
-            _postReplyPadUpdate(fullResponse);
-            res.write('data: [DONE]\n\n');
-            res.end();
+            finalizeStream();
             return;
           }
         } catch {}
       }
     }
-    _postReplyPadUpdate(fullResponse);
-    if (!res.writableEnded) { res.write('data: [DONE]\n\n'); res.end(); }
+    finalizeStream();
 
   } catch (err) {
-    console.error('[chat]', err.message);
-    if (!res.writableEnded) { res.write('data: [DONE]\n\n'); res.end(); }
+    console.error('[chat]', err.stack || err.message);
+    // #region agent log
+    agentDebugLog({ hypothesisId: 'E', location: 'server.js:chat.catch', message: 'chat handler error', data: { errMsg: String(err && err.message || err).slice(0, 400), streamReq: __streamRequested } });
+    // #endregion
+    try {
+      if (!res.headersSent) {
+        // 尚未开始写 SSE 时统一返回 JSON，便于 fetch 用 res.json() 读 error（避免 502+text/event-stream 混用）
+        res.status(502).json({
+          error: String(err.message),
+          response: '',
+          choices: [{ index: 0, finish_reason: 'error', message: { role: 'assistant', content: '' } }],
+        });
+      } else if (__streamRequested && !res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ error: String(err.message) })}\n\n`);
+        res.write('data: [DONE]\n\n');
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (!res.writableEnded) res.end();
+    } catch (_) { /* ignore */ }
   }
 });
 
 /** 回复后的PAD反馈更新（分析AI回复的情感倾向） */
-function _postReplyPadUpdate(reply) {
+function _postReplyPadUpdate(reply, userContent = '') {
+  if (reply) {
+    conversationMemory.addTurn('assistant', reply);
+  }
   if (!reply) return;
   // 她自己说了什么，反过来影响自己的状态
   if (/笨蛋|哼|蠢|讨厌/.test(reply)) {
     currentPAD = updatePAD(currentPAD, { A:0.04 }, 0.2);
     memorySystem.addEvent('negative', `她说了：${reply.substring(0,20)}`, 0.15, { A:0.04 });
   }
-  if (/担心|别|好吧|……/.test(reply)) {
+  if (/担心|别|好吧|……|不理我|人呢|死哪去了|已读不回|怎么不回|在干嘛|还不回/.test(reply)) {
     currentPAD = updatePAD(currentPAD, { D:-0.04 }, 0.2);
+  }
+  if (/不理我|人呢|死哪去了|已读不回|怎么不回|哼.*不理|别消失/.test(reply)) {
+    currentPAD = updatePAD(currentPAD, { A:0.05, P:-0.03 }, 0.25);
   }
   if (/实验|研究|量子|神经/.test(reply)) {
     currentPAD = updatePAD(currentPAD, { A:0.06, P:0.04 }, 0.3);
   }
-  savePAD(currentPAD);
+  savePAD(padPath, currentPAD);
+
+  // ══ 强化学习：基于多维度指标计算奖励 ══
+  
+  // 分析用户情感
+  const userEmotion = _analyzeUserEmotion(userContent);
+  
+  // 判断用户是否提问
+  const userAskedQuestion = /？|\?|吗|什么|怎么|为什么/.test(userContent);
+  
+  const reward = reinforcementLearning.calculateReward({
+    userReaction: reply.length > 10 ? 'positive' : 'neutral',
+    relationshipChange: 0,
+    goalAchieved: false,
+    emotionChange: currentPAD.P,
+    userReplyLength: userContent.length,
+    userEmotion: userEmotion,
+    conversationTurns: memorySystem.events.length,
+    userAskedQuestion: userAskedQuestion,
+  });
+  reinforcementLearning.updateBehaviorBiasFromReward(lastChatBehaviorId, reward);
+}
+
+/** 分析用户情感 */
+function _analyzeUserEmotion(text) {
+  const positiveWords = ['开心', '高兴', '快乐', '喜欢', '爱', '感谢', '谢谢', '好的', '太棒了', '哈哈', '笑'];
+  const negativeWords = ['难过', '伤心', '生气', '烦', '讨厌', '恨', '累', '疲倦', '无聊', '孤独'];
+  const intimateWords = ['想你', '喜欢你', '爱你', '在乎', '担心', '关心'];
+  const aggressiveWords = ['笨蛋', '蠢', '闭嘴', '滚', '烦死', '废物'];
+
+  for (const word of intimateWords) {
+    if (text.includes(word)) return 'intimate';
+  }
+  for (const word of aggressiveWords) {
+    if (text.includes(word)) return 'aggressive';
+  }
+  for (const word of positiveWords) {
+    if (text.includes(word)) return 'positive';
+  }
+  for (const word of negativeWords) {
+    if (text.includes(word)) return 'negative';
+  }
+  return 'neutral';
+}
+
+/** 轻量视觉反馈 — 只更新内存PAD，不写磁盘文件 */
+function _processVisionForPAD_light(visionText) {
+  if (!visionText) return;
+  const t = visionText;
+  if (/疲惫|疲倦|困|打哈欠|累/.test(t))     currentPAD = updatePAD(currentPAD, { P: 0.06, A: -0.04 }, 0.2);
+  if (/微笑|笑|开心|高兴|快乐/.test(t))      currentPAD = updatePAD(currentPAD, { P: 0.08, A: 0.04 }, 0.3);
+  if (/离开|不在|空|没人|走了/.test(t))       currentPAD = updatePAD(currentPAD, { P: -0.05, A: -0.05 }, 0.2);
+  if (/手机|低头|看别处|分心|走神/.test(t))   currentPAD = updatePAD(currentPAD, { P: -0.04, A: -0.03 }, 0.15);
+  if (/思考|皱眉|沉思|认真/.test(t))          { currentPAD = updatePAD(currentPAD, { A: 0.03 }, 0.2); motivationState.curiosity = Math.min(1, motivationState.curiosity + 0.03); }
+  // 不调用 savePAD，由下一次 /chat 调用时统一落盘
+}
+
+/** 视觉观察→内部状态处理 */
+function _processVisionForPAD(visionText) {
+  if (!visionText) return;
+  const t = visionText;
+
+  // 观察到疲惫/困 → 轻微关心，P轻微上升，好奇对方为什么累
+  if (/疲惫|疲倦|困|打哈欠|累/.test(t)) {
+    currentPAD = updatePAD(currentPAD, { P: 0.06, A: -0.04 }, 0.2);
+    memorySystem.addEvent('user_tired', `视觉：${t.substring(0,30)}`, 0.35, { P: 0.06, A: -0.04 });
+    memorySystem.addObservation('用户疲惫', t.substring(0,30));
+  }
+  // 观察到专注/工作 → 尊重，不打扰，A轻微上升（被认真感带动）
+  if (/专注|认真|打字|敲击|工作|写/.test(t)) {
+    currentPAD = updatePAD(currentPAD, { A: 0.05, D: 0.03 }, 0.25);
+    memorySystem.addObservation('用户专注工作', t.substring(0,30));
+  }
+  // 观察到微笑/开心 → P上升，被感染
+  if (/微笑|笑|开心|高兴|快乐/.test(t)) {
+    currentPAD = updatePAD(currentPAD, { P: 0.08, A: 0.04 }, 0.3);
+    memorySystem.addEvent('positive', `视觉：${t.substring(0,30)}`, 0.4, { P: 0.08, A: 0.04 });
+  }
+  // 观察到离开/不在 → 轻微失落
+  if (/离开|不在|空|没人|走了/.test(t)) {
+    currentPAD = updatePAD(currentPAD, { P: -0.05, A: -0.05 }, 0.2);
+  }
+  // 观察到手机/分心 → 被忽视感
+  if (/手机|低头|看别处|分心|走神/.test(t)) {
+    currentPAD = updatePAD(currentPAD, { P: -0.04, A: -0.03 }, 0.15);
+    memorySystem.addObservation('用户分心', t.substring(0,30));
+  }
+  // 观察到思考/皱眉 → 好奇他在想什么
+  if (/思考|皱眉|沉思|想|认真/.test(t)) {
+    currentPAD = updatePAD(currentPAD, { A: 0.03 }, 0.2);
+    motivationState.curiosity = Math.min(1, motivationState.curiosity + 0.03);
+    saveMotivationState(motivationState);
+  }
+  // PAD 磁盘落盘由 /vision 路由末尾统一调用 savePAD（与 /chat 的 _postReplyPadUpdate 一致）
 }
 
 // ──────────────────────────────────────────────────────────────
 //  POST /vision
 // ──────────────────────────────────────────────────────────────
-let lastVision = { description:'冈部正安静地注视着屏幕', timestamp:Date.now() };
+let lastVision = { description:'他正安静地注视着屏幕', timestamp:Date.now() };
 
 app.post('/vision', async (req, res) => {
   try {
     const { image } = req.body;
     if (!image) return res.json(lastVision);
-    const ollamaRes = await fetch('http://127.0.0.1:11434/api/generate',{
+    const ollamaRes = await fetch(`${OLLAMA_BASE}/api/generate`,{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'llama3.2-vision',
-        prompt:`你是牧濑红莉栖，正在通过AMADEUS系统的摄像头看着冈部伦太郎。
-用一句话描述冈部此刻的状态——表情、动作、或者你注意到的细节。
-用你自己内心的视角说，不要说"一个人""画面中的人"。
-如果图像太暗、模糊或完全看不清，只输出：unclear
-只输出那一句话。`,
+        model:'llama3.2-vision:latest',
+        prompt:`请用"人类视觉体验"的方式描述画面，像你亲眼看到的一样。
+
+要求：用第一人称视角
+- 避免使用"画面中、摄像头、监控"等词
+- 用自然语言描述
+- 可以带一点主观感受（但不要编造）
+
+示例：
+- "他正专注地看着屏幕，手指在键盘上敲打"
+- "他靠在椅背上，看起来有点疲惫"
+- "他一边看手机一边微笑"
+
+如果图像模糊或看不清，就说"看不清楚"`,
         images:[image],stream:false,options:{temperature:0.35,num_predict:60}
       })
     });
     const d = await ollamaRes.json();
     const raw = (d.response||'').replace(/<think>[\s\S]*?(<\/think>|$)/gi,'').trim();
-    if (raw && !/^unclear$/i.test(raw)) {
+
+    if (raw && !/看不清楚|unclear/i.test(raw)) {
       lastVision = { description:raw, timestamp:Date.now() };
-      // 视觉观察也影响动机系统
-      if (/疲惫|疲倦|困|打哈欠/.test(raw)) {
-        currentPAD = updatePAD(currentPAD, { P:0.04 }, 0.15); // 看到他疲惫，轻微关心
-        savePAD(currentPAD);
-      }
+
+      // ★ 视觉→内部状态处理
+      _processVisionForPAD(raw);
+      savePAD(padPath, currentPAD);
     }
     res.json(lastVision);
   } catch (e) {
@@ -1458,11 +1436,338 @@ app.post('/vision', async (req, res) => {
 
 app.get('/get-vision-status', (req, res) => res.json(lastVision));
 
-// ──────────────────────────────────────────────────────────────
-//  启动
-// ──────────────────────────────────────────────────────────────
-const PORT = 3000;
+// ★ 轻量视觉反馈：只更新内存PAD，不写磁盘
+app.post('/vision-feedback', (req, res) => {
+  try {
+    const { text } = req.body;
+    if (text) _processVisionForPAD_light(text);
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok: false }); }
+});
+
+// ★ Design Skill — 免费优先：本地 A1111/SD WebUI 出图；不可用时返回可执行设计方案
+app.post('/design', async (req, res) => {
+  try {
+    const request = String(req.body.request || req.body.prompt || '').trim();
+    if (!request) return res.status(400).json({ error: 'empty design request' });
+
+    const record = await createDesignTask({
+      rootPath,
+      dataDir,
+      request,
+      options: {
+        style: req.body.style || '',
+        ratio: req.body.ratio || '1:1',
+        render: req.body.render !== false,
+        model: req.body.model,
+      },
+    });
+
+    memorySystem.addEvent(
+      'design',
+      `设计任务：${request.substring(0, 40)}${record.render ? '（已出图）' : '（方案）'}`,
+      0.35,
+      { A: 0.04, D: 0.03 }
+    );
+    res.json({ ok: true, ...record });
+  } catch (e) {
+    console.error('[design]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ★ TTS 代理 — 绕过 CORS OPTIONS 405
+const SOVITS_URL = process.env.AMADEUS_SOVITS_URL || 'http://localhost:9880';
+/** SoVITS 固定随机种子（与 api_v2 一致）；可用 AMADEUS_SOVITS_SEED 覆盖 */
+const SOVITS_TTS_SEED = (() => {
+  const raw = process.env.AMADEUS_SOVITS_SEED;
+  if (raw != null && String(raw).trim() !== '') {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return Math.trunc(n);
+  }
+  return 3557467070;
+})();
+
+function isRagIndexed() {
+  if (fs.existsSync(hnswIndexPath)) return true;
+  if (!fs.existsSync(vectorFallbackPath)) return false;
+  try {
+    const raw = JSON.parse(fs.readFileSync(vectorFallbackPath, 'utf8'));
+    return Array.isArray(raw) && raw.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** 启动自检：Ollama / 模型 / RAG / TTS */
+app.get('/health', async (_req, res) => {
+  try {
+    const report = await runStartupChecks({
+      ollamaBase: OLLAMA_BASE,
+      chatModel: process.env.AMADEUS_CHAT_MODEL || 'kurisu:latest',
+      embedModel: process.env.AMADEUS_EMBED_MODEL || 'nomic-embed-text',
+      ragIndexed: isRagIndexed(),
+      sovitsUrl: process.env.AMADEUS_SOVITS_URL || 'http://localhost:9880',
+    });
+    res.status(report.ready ? 200 : 503).json(report);
+  } catch (e) {
+    res.status(500).json({
+      ready: false,
+      ok: false,
+      hints: ['系统自检失败，请重启后端'],
+      error: e.message,
+    });
+  }
+});
+
+/** 仅探测 SoVITS 进程是否监听，不触发语音合成 */
+app.get('/tts-health', async (_req, res) => {
+  try {
+    const base = SOVITS_URL.replace(/\/$/, '');
+    const r = await fetch(`${base}/`, { method: 'GET', signal: AbortSignal.timeout(4000) });
+    if (r.status >= 200 && r.status < 500) return res.json({ ok: true });
+    return res.status(502).json({ ok: false, error: `SoVITS HTTP ${r.status}` });
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    return res.status(502).json({ ok: false, error: msg });
+  }
+});
+/** GPT-SoVITS 安装目录（参考音 ref.wav 通常在此，而非 Amadeus_Project 根目录） */
+const SOVITS_ROOT = (() => {
+  const root = process.env.AMADEUS_SOVITS_ROOT;
+  if (root && String(root).trim()) return path.normalize(String(root).trim());
+  const ref = process.env.AMADEUS_SOVITS_REF;
+  if (ref && String(ref).trim()) return path.dirname(path.normalize(String(ref).trim()));
+  return '';
+})();
+
+const SOVITS_REF_DEFAULT =
+  process.env.AMADEUS_SOVITS_REF ||
+  (SOVITS_ROOT ? path.join(SOVITS_ROOT, 'ref.wav') : '') ||
+  path.join(rootPath, 'ref.wav');
+
+function _absRefPath(p) {
+  const t = String(p || '').trim();
+  if (!t) return '';
+  return path.isAbsolute(t) ? path.normalize(t) : path.normalize(path.join(rootPath, t));
+}
+
+/** 解析参考 wav：相对路径优先在 AMADEUS_SOVITS_ROOT 下查找，避免误用项目内不存在的 ref.wav */
+function resolveSoVitsRef(reqBody) {
+  const reqNames = [
+    reqBody && reqBody.refer_wav_path,
+    reqBody && reqBody.ref_audio_path,
+  ].filter((p) => typeof p === 'string' && p.trim());
+
+  const tryList = [];
+  for (const name of reqNames) {
+    const t = name.trim();
+    if (path.isAbsolute(t)) {
+      tryList.push(path.normalize(t));
+    } else if (SOVITS_ROOT) {
+      tryList.push(path.join(SOVITS_ROOT, path.basename(t)));
+    }
+    tryList.push(path.join(rootPath, t));
+  }
+  if (process.env.AMADEUS_SOVITS_REF) tryList.push(_absRefPath(process.env.AMADEUS_SOVITS_REF));
+  if (SOVITS_ROOT) tryList.push(path.join(SOVITS_ROOT, 'ref.wav'));
+  tryList.push(
+    SOVITS_REF_DEFAULT,
+    path.join(rootPath, 'ref.wav'),
+    path.join(rootPath, 'assets', 'ref.wav'),
+  );
+
+  const seen = new Set();
+  for (const p of tryList) {
+    const abs = _absRefPath(p) || path.normalize(String(p || '').trim());
+    if (!abs || seen.has(abs)) continue;
+    seen.add(abs);
+    try {
+      if (fs.existsSync(abs)) return abs;
+    } catch (_) { /* ignore */ }
+  }
+  return null;
+}
+
+app.post('/tts', async (req, res) => {
+  // #region agent log
+  try {
+    const tl = String((req.body && req.body.text) || '').length;
+    agentDebugLog({ hypothesisId: 'TTS-C', location: 'server.js:tts.enter', message: 'POST /tts', data: { textLen: tl } });
+  } catch (_) {}
+  // #endregion
+  try {
+    const refWav = resolveSoVitsRef(req.body);
+    if (!refWav) {
+      const hint = SOVITS_ROOT
+        ? `未找到参考音频。请确认 ${SOVITS_ROOT} 下有 ref.wav，或设置 AMADEUS_SOVITS_REF。`
+        : '未找到参考音频。请设置 AMADEUS_SOVITS_ROOT 或 AMADEUS_SOVITS_REF（GPT-SoVITS 安装目录下的 ref.wav）。';
+      return res.status(400).json({ error: hint });
+    }
+    // SoVITS：speed_factor≠1 时常与并行/分桶冲突并 400；情绪语速改由前端 audio.playbackRate 承担
+    const wantParallel = req.body.parallel_infer !== false;
+    const body = {
+      ...req.body,
+      text: String(req.body.text || '')
+        .replace(/[、，,]+/g, '、')
+        .replace(/[…]+/g, '。')
+        .replace(/[、]\s*([。！？!?])/g, '$1')
+        .replace(/([。！？!?]){2,}/g, '$1')
+        .trim(),
+      text_lang: 'ja',
+      text_language: 'ja',
+      prompt_lang: 'ja',
+      prompt_language: 'ja',
+      ref_audio_path: refWav,
+      refer_wav_path: refWav,
+      prompt_text: req.body.prompt_text || '',
+      text_split_method: 'cut0',
+      speed_factor: 1,
+      parallel_infer: wantParallel,
+      split_bucket: false,
+      batch_size: 1,
+      return_fragment: false,
+      streaming_mode: false,
+      seed: Number.isFinite(Number(req.body.seed)) ? Math.trunc(Number(req.body.seed)) : SOVITS_TTS_SEED,
+    };
+    if (!body.text) return res.status(400).json({ error: 'empty tts text' });
+    const sovitsTtsUrl = `${SOVITS_URL.replace(/\/$/, '')}/tts`;
+    const synthTimeoutMs = Math.min(90000, 28000 + body.text.length * 140);
+    let r = null;
+    let lastSynthErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 450 + attempt * 650));
+      try {
+        r = await fetch(sovitsTtsUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(synthTimeoutMs),
+        });
+        if (r.ok) break;
+        const errBody = await r.text().catch(() => '');
+        lastSynthErr = { status: r.status, errBody };
+        if (r.status < 502 || attempt >= 2) break;
+      } catch (e) {
+        lastSynthErr = { error: e };
+        const code = e && (e.code || (e.cause && e.cause.code));
+        const msg = String((e && e.message) || e);
+        const refused = code === 'ECONNREFUSED' || /ECONNREFUSED|fetch failed|connect/i.test(msg);
+        if (!refused || attempt >= 2) throw e;
+      }
+    }
+    if (!r || !r.ok) {
+      const errBody = lastSynthErr && lastSynthErr.errBody
+        ? lastSynthErr.errBody
+        : String((lastSynthErr && lastSynthErr.error && lastSynthErr.error.message) || '');
+      const status = (r && r.status) || 502;
+      console.error('[tts-proxy] SoVITS error:', status, errBody.substring(0, 200));
+      // #region agent log
+      agentDebugLog({ hypothesisId: 'TTS-B', location: 'server.js:tts.sovitsErr', message: 'SoVITS non-ok', data: { status, sovitsUrl: SOVITS_URL, errSlice: errBody.substring(0, 160) } });
+      // #endregion
+      return res.status(status).json({ error: `SoVITS: ${errBody.substring(0, 100)}` });
+    }
+    res.setHeader('Content-Type', r.headers.get('content-type') || 'audio/wav');
+    // 使用管道流式传输，减少内存占用并降低首包延迟
+    const reader = r.body.getReader();
+    // 由于 Node.js fetch 返回的是 web stream，我们手动读取并写入 Express 的 res (Node writable stream)
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+    res.end();
+    // #region agent log
+    agentDebugLog({ hypothesisId: 'TTS-B', location: 'server.js:tts.ok', message: 'SoVITS streaming started', data: { sovitsUrl: SOVITS_URL } });
+    // #endregion
+  } catch (e) {
+    const code = e && (e.code || (e.cause && e.cause.code));
+    const msg = String((e && e.message) || e);
+    const refused = code === 'ECONNREFUSED' || /ECONNREFUSED|fetch failed|connect/i.test(msg);
+    const hint = refused
+      ? '无法连接 GPT-SoVITS（9880）。若 api_v2 在 TTSPipeline 初始化就崩溃，需先修复 SoVITS 环境再启动服务。'
+      : msg;
+    console.error('[tts-proxy]', msg, code || '');
+    // #region agent log
+    agentDebugLog({ hypothesisId: 'TTS-B', location: 'server.js:tts.catch', message: 'tts proxy error', data: { errMsg: msg.slice(0, 200), code: code || null, sovitsUrl: SOVITS_URL, refused } });
+    // #endregion
+    res.status(502).json({ error: hint });
+  }
+});
+
+// ★ 用户档案 — 让她知道在和谁对话
+app.get('/whoami', (req, res) => {
+  try {
+    res.json(ensureWhoamiOnDisk(whoamiPath));
+  } catch (e) {
+    res.json(ensureWhoamiOnDisk(whoamiPath));
+  }
+});
+
+app.post('/whoami', (req, res) => {
+  try {
+    const current = ensureWhoamiOnDisk(whoamiPath);
+    const { name, traits, preference, basic_key, basic_value, relationship_note } = req.body;
+    if (name) current.name = name;
+    if (traits && Array.isArray(traits)) {
+      for (const t of traits) {
+        if (t && !current.traits.includes(t)) current.traits.push(t);
+      }
+      if (current.traits.length > 20) current.traits = current.traits.slice(-20);
+    }
+    if (preference && !current.preferences.includes(preference)) {
+      current.preferences.push(preference);
+      if (current.preferences.length > 20) current.preferences = current.preferences.slice(-20);
+    }
+    if (basic_key && basic_value) current.basics[basic_key] = basic_value;
+    if (relationship_note) current.relationship_note = relationship_note;
+    current.last_updated = Date.now();
+    fs.writeFileSync(whoamiPath, JSON.stringify(current, null, 2));
+    res.json({ ok: true, profile: current });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ★ Ollama 代理，解决前端直连 CORS 问题或模型加载超时
+app.post('/ollama/:api', async (req, res) => {
+  const api = req.params.api; // e.g. chat, generate, tags
+  const url = `${OLLAMA_BASE}/api/${api}`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(120000) // 2分钟超时，允许模型加载
+    });
+    if (!r.ok) {
+      const errTxt = await r.text().catch(() => '');
+      return res.status(r.status).send(errTxt);
+    }
+    // 如果是流式，则流式转发
+    if (req.body.stream) {
+      const reader = r.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+    } else {
+      const json = await r.json();
+      res.json(json);
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`Amadeus 后端 v6.0 已就绪: http://localhost:${PORT}`);
-  console.log(`三大系统：记忆(${memorySystem.events.length}条) / 动机 / 行为决策`);
+  console.log(`Amadeus 后端 v7.0 已就绪: http://localhost:${PORT}`);
+  console.log(`系统：记忆(${memorySystem.events.length}条) / 动机 / 行为决策 / 好奇心 / 用户理解 / 学习引擎 / 元认知`);
+  const _defCtx = Number(process.env.AMADEUS_OLLAMA_NUM_CTX);
+  const _ctx = Number.isFinite(_defCtx) && _defCtx > 0 ? _defCtx : 2048;
+  const _maxP = Number(process.env.AMADEUS_MAX_PROMPT_CHARS);
+  const _cap = Number.isFinite(_maxP) && _maxP > 0 ? _maxP : 6000;
+  const _ka = String(process.env.AMADEUS_OLLAMA_KEEP_ALIVE || '2m').trim() || '2m';
+  console.log(`[ollama] 默认 num_ctx=${_ctx} maxPromptChars=${_cap} keep_alive=${_ka}（8GB 友好；覆盖请设环境变量）`);
+  console.log(`[ollama] 若 GPU 空闲：请在运行 ollama serve 的环境设置 OLLAMA_NUM_GPU=999、OLLAMA_FLASH_ATTENTION=1，见 docs/GPU_OLLAMA_SOVITS.md`);
 });

@@ -1,30 +1,134 @@
-const { app, BrowserWindow, Menu, Tray, globalShortcut, powerMonitor } = require('electron');
+const { app, BrowserWindow, Menu, Tray, globalShortcut, powerMonitor, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const net = require('net');
+const { spawn } = require('child_process');
 
 // Fix for transparency issues on some systems
 app.disableHardwareAcceleration();
 
 let tray = null;
 let mainWindow = null;
+let backendProcess = null;
+const BACKEND_PORT = Number(process.env.AMADEUS_BACKEND_PORT) || 3000;
+const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
+
+function resolveIconPath() {
+  const candidates = [
+    path.join(__dirname, 'assets', 'icon.png'),
+    path.join(__dirname, 'assets', 'Live2d', 'kurisu', '0.png'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return candidates[0];
+}
+
+function resolveBackendPaths() {
+  const root = __dirname;
+  return { root, serverPath: path.join(root, 'server.js') };
+}
+
+function isPortOpen(port, host = '127.0.0.1', timeoutMs = 800) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    socket.connect(port, host);
+  });
+}
+
+async function waitForBackend(port, timeoutMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await isPortOpen(port);
+    if (ok) return true;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return false;
+}
+
+async function ensureBackendRunning() {
+  const alreadyRunning = await isPortOpen(BACKEND_PORT);
+  if (alreadyRunning) {
+    console.log(`[main] Backend already running on ${BACKEND_URL}`);
+    return true;
+  }
+
+  const { root, serverPath } = resolveBackendPaths();
+  if (!fs.existsSync(serverPath)) {
+    console.error('[main] server.js not found:', serverPath);
+    return false;
+  }
+
+  backendProcess = spawn(process.execPath, [serverPath], {
+    cwd: root,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      AMADEUS_BACKEND_PORT: String(BACKEND_PORT),
+    },
+    stdio: 'ignore',
+    windowsHide: true,
+    detached: false,
+  });
+
+  backendProcess.once('error', (err) => {
+    console.error('[main] Failed to start backend:', err.message);
+  });
+  backendProcess.once('exit', (code, signal) => {
+    console.log(`[main] Backend exited (code=${code}, signal=${signal || 'none'})`);
+    backendProcess = null;
+  });
+
+  const ready = await waitForBackend(BACKEND_PORT, 18000);
+  if (!ready) {
+    console.warn('[main] Backend did not become ready in time; UI will still open.');
+  }
+  return ready;
+}
+
+function stopBackendProcess() {
+  if (!backendProcess || backendProcess.killed) return;
+  try {
+    backendProcess.kill();
+  } catch (e) {
+    console.warn('[main] Failed to stop backend process:', e.message);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 600,
     height: 400,
-    frame: false, // Frameless window
-    transparent: true, // Transparent background
-    alwaysOnTop: true, // Keep on top
-    resizable: false, // Fixed size
-    hasShadow: false, // Remove shadow for cleaner overlay
-    skipTaskbar: false, // Keep in taskbar for access
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    hasShadow: false,
+    skipTaskbar: false,
     webPreferences: {
-      nodeIntegration: true, // Allow node integration
-      contextIsolation: false // Required for some node integration features in renderer
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
     },
-    icon: path.join(__dirname, 'assets/icon.png') // Optional: add icon if available
+    icon: resolveIconPath(),
   });
 
-  mainWindow.loadFile('index.html');
+  mainWindow.loadURL(BACKEND_URL).catch(() => {
+    mainWindow.loadFile('amadeus_work.html');
+  });
   
   // Power Monitor Events
   powerMonitor.on('resume', () => {
@@ -64,8 +168,7 @@ function createWindow() {
 }
 
 function createTray() {
-    const iconPath = path.join(__dirname, 'assets/icon.png'); // Ensure this icon exists
-    tray = new Tray(iconPath);
+    tray = new Tray(resolveIconPath());
     const contextMenu = Menu.buildFromTemplate([
         { label: '显示/隐藏 Amadeus', click: toggleWindow },
         { label: '退出程序', click: () => {
@@ -87,16 +190,26 @@ function toggleWindow() {
     }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const ready = await ensureBackendRunning();
+  if (!ready) {
+    await dialog.showMessageBox({
+      type: 'warning',
+      title: 'Amadeus',
+      message: '后端未能启动',
+      detail: `请确认 Ollama 已启动，且端口 ${BACKEND_PORT} 未被占用。\n源码用户可运行 run_backend.bat；安装包用户请重启应用或查看 INSTALL.md。`,
+    });
+  }
   createWindow();
   createTray();
 
-  // Auto-launch configuration (Force enable)
-  app.setLoginItemSettings({
-    openAtLogin: true,
-    path: process.execPath,
-    args: []
-  });
+  if (process.env.AMADEUS_AUTO_LAUNCH === '1') {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: process.execPath,
+      args: [],
+    });
+  }
 
   // Global Shortcut
   globalShortcut.register('CommandOrControl+H', () => {
@@ -109,8 +222,9 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
-    // Unregister all shortcuts.
-    globalShortcut.unregisterAll();
+  // Unregister all shortcuts.
+  globalShortcut.unregisterAll();
+  stopBackendProcess();
 });
 
 app.on('window-all-closed', function () {
