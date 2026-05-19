@@ -1,10 +1,49 @@
 # AMADEUS System
 
-### Digital Lifeform Project ｜ 有情感连续性的 AI 伴侣
+### AI 伴侣产品雏形 ｜ 有情感连续性的本地数字陪伴
 
 > 角色设定为《命运石之门》同人创作，仅用于学习、研究与开源展示。详见 [NOTICE.md](NOTICE.md)。
 
 ![AMADEUS_Interface](https://github.com/user-attachments/assets/83d3ffa4-1d09-49ed-bf8a-acb5d780059d)
+
+---
+
+## 项目描述
+
+**Amadeus 是我对「AI 伴侣」产品形态的实验性雏形（MVP）。**
+
+在连接成本上升、精神陪伴需求抬升、部分人群情感与亲密需求长期未被满足的背景下，很多人需要的不是「更全的知识库」，而是 **私人、主动、能延续关系** 的数字存在。市面 AI 多为 **工具型**（完成任务即结束）或 **百科全书型**（正确但疏离），难以同时做到：记得你、会主动、情绪与关系随时间演化。
+
+**Amadeus 要验证的是：**
+
+> 在本地、私密、可长期运行的前提下，AI 能否形成 **有情感连续性的陪伴关系**，而不是一次性问答。
+
+### 核心优势
+
+| 维度 | 说明 |
+|------|------|
+| **情感连续性** | PAD 情绪 + 关系强度跨轮延续，重启后状态仍在 |
+| **私人化** | 记忆、用户画像、数据默认在本机（`%USERPROFILE%/amadeus_data/`） |
+| **主动性** | 空闲时可主动开口，带对话线程承接 |
+| **角色一致性** | OOC 防护 + 多轮对齐，降低变客服/变百科 |
+| **可观测** | 情绪面板、记忆宫殿、`/health` 启动自检 |
+| **本地优先** | Ollama 本地推理，不依赖云端账号即可运行 |
+
+### 架构概要
+
+**LLM（Ollama）负责生成语言；认知编排层负责「是谁、记得什么、现在什么情绪、打算怎么相处」。**
+
+```mermaid
+flowchart LR
+  UI[前端 / Electron] --> API[server.js]
+  API --> COG[认知层 PAD/动机/策略/行为]
+  API --> MIND[记忆 / 用户模型 / BDI]
+  API --> LLM[Ollama + RAG]
+  COG --> DATA[(本机数据)]
+  MIND --> DATA
+```
+
+完整设计说明与架构图见 **[Amadeus_Project/DESIGN.md](Amadeus_Project/DESIGN.md)**。
 
 ---
 
@@ -20,37 +59,7 @@ npm run dev
 
 浏览器打开 `http://localhost:3000`，或阅读 [INSTALL.md](Amadeus_Project/INSTALL.md)。
 
-Windows 安装包：见 [Releases](https://github.com/shishoumei829-cyber/makise-kurisu-agent/releases)（本地构建见 `Amadeus_Project/scripts/build-release.bat`）。
-
----
-
-## 概述
-
-**AMADEUS System** 是一个面向 AI Companion 场景的数字人格系统。
-
-项目并不只追求“更聪明的对话”，而是尝试回答：
-
-> **如果 AI 具备持续性记忆与人格一致性，它是否仍只是工具？**
-
-系统围绕：
-
-* AI 是否可以形成稳定人格结构
-* 情绪是否可以被建模为可调控变量
-* 长期记忆是否可以构成「关系」而非「数据」
-* 数字存在是否可以具备陪伴属性
-
----
-
-## 系统架构（摘要）
-
-| 模块 | 说明 |
-|------|------|
-| 情绪状态模型 PAD | P/A/D 三维向量，影响语气与策略 |
-| 长期记忆 | LangChain + HNSW 向量检索 |
-| 行为约束 | 多路径候选 + 打分 + OOC 防护 |
-| 运行时 | Node.js + Express + Ollama + Electron |
-
-详细 API 与模块说明见 [Amadeus_Project/PROJECT_STATUS.md](Amadeus_Project/PROJECT_STATUS.md)。
+Windows 安装包：见 [Releases](https://github.com/shishoumei829-cyber/makise-kurisu-agent/releases)。
 
 ---
 
@@ -58,20 +67,10 @@ Windows 安装包：见 [Releases](https://github.com/shishoumei829-cyber/makise
 
 | 文档 | 说明 |
 |------|------|
-| [Amadeus_Project/README.md](Amadeus_Project/README.md) | 主文档（中文） |
-| [Amadeus_Project/README_EN.md](Amadeus_Project/README_EN.md) | English overview |
-| [Amadeus_Project/INSTALL.md](Amadeus_Project/INSTALL.md) | 使用者安装指南 |
-| [Amadeus_Project/MVP_STATUS.md](Amadeus_Project/MVP_STATUS.md) | 产品状态（非技术版） |
-| [CONTRIBUTING.md](Amadeus_Project/CONTRIBUTING.md) | 贡献指南 |
-| [SECURITY.md](Amadeus_Project/SECURITY.md) | 安全与隐私 |
-
----
-
-## 设计哲学
-
-1. **人格不是生成的，而是约束出来的** — 在有限状态空间中维持稳定行为轨迹  
-2. **记忆不是数据库，而是重构机制** — 被当前状态重新加权后的记忆投影  
-3. **情绪不是表达，而是控制变量** — 调节输出结构与决策路径  
+| [DESIGN.md](Amadeus_Project/DESIGN.md) | 产品设计说明（背景、优势、架构） |
+| [INSTALL.md](Amadeus_Project/INSTALL.md) | 使用者安装指南 |
+| [PROJECT_STATUS.md](Amadeus_Project/PROJECT_STATUS.md) | 技术状态与 API |
+| [MVP_STATUS.md](Amadeus_Project/MVP_STATUS.md) | 产品现状（非技术版） |
 
 ---
 

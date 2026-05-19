@@ -1,14 +1,14 @@
 {
   "name": "amadeus-project",
   "version": "1.0.0",
-  "description": "Amadeus Project - Kurisu Makise AI Companion",
+  "description": "本地 AI 伴侣雏形：情感连续性、长期记忆、主动陪伴。非工具型/百科型对话，而是私人化、可延续关系的数字陪伴实验。",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "node server.js",
     "dist": "electron-builder",
     "ingest": "node ingest.js",
-    "test": "node --test \"tests/*.test.js\"",
+    "test": "node --test tests/pad.test.js tests/chatTurns.test.js tests/oocGuard.test.js tests/startupCheck.test.js",
     "release:win": "electron-builder --win",
     "check:install": "scripts\\install-check.bat"
   },

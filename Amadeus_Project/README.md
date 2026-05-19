@@ -136,6 +136,7 @@ Amadeus_Project/
 ## Documentation
 
 - `MVP_STATUS.md`: MVP 产品状态说明（非技术版）
+- `DESIGN.md`: 产品设计说明（背景、优势、架构）
 - `PROJECT_STATUS.md`: 当前系统状态与 API 概览
 - `docs/GPU_OLLAMA_SOVITS.md`: GPU/Ollama/SoVITS 调优
 - `digital_life_upgrade.md`: 长期数字生命升级路线
