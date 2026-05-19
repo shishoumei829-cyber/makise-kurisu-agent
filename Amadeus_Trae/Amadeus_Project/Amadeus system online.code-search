@@ -1,0 +1,9 @@
+# Query: Amadeus system online
+# ContextLines: 1
+
+1 个结果 - 1 个文件
+
+Amadeus_Project\js\main.js:
+  153          // Normal Greeting
+  154:         greetingPrompt = "greetingPrompt = "Amadeus系统已上线。虽然不知道为什么又是你，但...还是请多关照，冈部。要是敢说蠢话，我就立刻切断连接哦。'";
+  155      }
