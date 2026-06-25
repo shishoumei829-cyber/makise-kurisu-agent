@@ -3214,6 +3214,31 @@ ${data.padDescription || ''}`);
     if (data.metacognition?.insights?.length > 0) {
       sections.push(`【洞察】${data.metacognition.insights[0].content || ''}`);
     }
+
+    const aut = data.digitalLife?.autonomy;
+    if (aut?.drives?.ranked?.length) {
+      const bars = aut.drives.ranked.map((d) => {
+        const name = d.drive?.replace(/_/g, ' ') || '';
+        const pct = Math.round((d.activation || 0) * 100);
+        return `${name} ${'█'.repeat(Math.ceil(pct / 10))}${'░'.repeat(10 - Math.ceil(pct / 10))} ${pct}%`;
+      }).join('\n');
+      sections.push(`【内驱力】\n${bars}`);
+      const energy = aut.drives.internalState;
+      if (energy) {
+        sections.push(`能量 ${(energy.energy * 100).toFixed(0)}% · 社交余量 ${(energy.socialBattery * 100).toFixed(0)}%`);
+      }
+      const urges = aut.drives.urgeQueue || [];
+      if (urges.length) {
+        sections.push(`【冲动】${urges.map((u) => `${u.intent}(${u.drive})`).join(' · ')}`);
+      }
+    }
+    if (aut?.curiosity?.topOpen?.length) {
+      sections.push(`【未解好奇】${aut.curiosity.topOpen.map((q) => q.topic).join('、')}`);
+    }
+    if (data.digitalLife?.lastAutonomyBehavior?.action) {
+      const ab = data.digitalLife.lastAutonomyBehavior;
+      sections.push(`【自主环】${ab.action} · 开口=${ab.shouldAct ? '是' : '否'}`);
+    }
     
     el.textContent = sections.join('\n\n');
   }

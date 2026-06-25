@@ -43,9 +43,6 @@ function loadDotEnv() {
 }
 loadDotEnv();
 
-// ── 自主性增强模块（好奇心引擎）──────────────────────────────────────
-const { CuriosityEngine } = require('./autonomy_enhanced');
-
 // ── 用户理解系统 ──────────────────────────────────────────────────
 const {
   init:             initUserModel,
@@ -393,8 +390,9 @@ const selfModel     = new SelfModel(selfModelPath, debounceFileWrite);
 const goalSystem    = new InternalGoalSystem();
 const strategyLayer = new StrategyLayer(strategyPath);
 
-// ── 自主性增强实例 ──────────────────────────────────────────────────
-const curiosityEngine = new CuriosityEngine();
+// ── 数字生命编排器（模块一·自主性 由此统一提供好奇心等）────────────
+const digitalLife = new DigitalLifeOrchestrator();
+digitalLife.init(memoryDir);
 
 // ── 用户理解系统实例 ───────────────────────────────────────────
 initUserModel(memoryDir);
@@ -419,11 +417,7 @@ if (valueConsistency.values.size === 0) {
   valueConsistency.initValues();
 }
 
-// ── 数字生命编排器 ───────────────────────────────────────────────
-const digitalLife = new DigitalLifeOrchestrator();
-digitalLife.init(memoryDir);
-
-// 启动时执行记忆衰减
+// ── 启动：记忆衰减 ───────────────────────────────────────────────
 memorySystem.decay();
 console.log(`[memory] Loaded ${memorySystem.events.length} events after decay.`);
 console.log(`[conversation] Loaded ${conversationMemory.turns.length} dialogue turns.`);
@@ -725,6 +719,7 @@ app.post('/chat', async (req, res) => {
       || (threadHint.active && !autonomyInitiative);
     const proactiveAnchor = String(req.body.proactiveAnchor || threadHint.anchor || '').trim();
     const clientPersonaProvided = Boolean(parsed.clientSystem && parsed.clientSystem.trim()) && !autonomyInitiative;
+    let autonomyDecision = null;
 
     const recentUserLinesForMem = (parsed.userLines && parsed.userLines.length)
       ? parsed.userLines.filter((l) => l && !/^（想说话）|^（转移话题）|^（以下是最近对话/.test(String(l).trim())).slice(-14)
@@ -799,6 +794,10 @@ app.post('/chat', async (req, res) => {
       if (idleCycle.dream) {
         console.log(`[dream] ${idleCycle.dream.text.slice(0, 80)}`);
       }
+      if (idleCycle.autonomy) {
+        autonomyDecision = idleCycle.autonomy;
+        console.log(`[autonomy-loop] ${autonomyDecision.action} speak=${autonomyDecision.shouldAct} urge=${autonomyDecision.primaryUrge?.drive || 'none'}`);
+      }
     }
 
     // ══ ① 记忆系统：单一主事件 + PAD（不在此处落盘 pad_state）══
@@ -817,6 +816,9 @@ app.post('/chat', async (req, res) => {
       userText: cognitiveInput,
       userModel: userModelInst,
       mainEvent,
+      selfModel,
+      relScore: effectiveRelScore(memorySystem.getRelationshipScore()),
+      idleMs: idleMsSinceUser,
     });
     if (lastDigitalLifeTurn?.padDelta) {
       const d = lastDigitalLifeTurn.padDelta;
@@ -887,9 +889,12 @@ app.post('/chat', async (req, res) => {
         memorySystem.getRecentSignificant(3).join('; ')
       );
       const selfCtx = selfModel.toPromptContext();
-      goalSystem.generateGoals(currentPAD, selfModel, relScore, memorySystem, curiosityEngine, {
+      goalSystem.generateGoals(currentPAD, selfModel, relScore, memorySystem, digitalLife.autonomy.curiosity, {
         replyingToProactive,
       });
+      if (lastDigitalLifeTurn?.goalSeeds?.length) {
+        goalSystem.ingestUrgeGoals(lastDigitalLifeTurn.goalSeeds);
+      }
       goalSystem.tick(behaviorResult.behaviorId, evDelta);
       const goalInjection = goalSystem.getActiveInjection();
       console.log(`[goal] 活跃目标: ${goalSystem.getSummary()}`);
@@ -985,12 +990,14 @@ app.post('/chat', async (req, res) => {
         latestInsight,
         digitalLifeCtx: digitalLife.buildPromptContext({
           pad: currentPAD,
+          memory: memorySystem,
+          selfModel,
+          relScore: effectiveRelScore(st.relScore),
           userText: cognitiveInput,
-          userModel: userModelInst,
           resonanceLine: lastDigitalLifeTurn?.resonanceLine || '',
+          autonomyHint: autonomyDecision?.speakHint || lastDigitalLifeTurn?.autonomyPrompt || '',
           metacognitionInsight: latestInsight,
           includeDream: autonomyInitiative || idleMsSinceUser > 20 * 60 * 1000,
-          lastEvent: mainEvent?.content || '',
         }),
       };
     });

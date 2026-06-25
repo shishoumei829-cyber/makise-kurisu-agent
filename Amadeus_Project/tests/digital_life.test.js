@@ -62,7 +62,7 @@ test('AutonomousBehaviorEngine should produce behavior boosts', () => {
   assert.ok(Object.keys(boosts).length > 0);
 });
 
-test('DigitalLifeOrchestrator onUserTurn returns drive boosts', () => {
+test('DigitalLifeOrchestrator onUserTurn returns drive boosts and goal seeds', () => {
   const dl = new DigitalLifeOrchestrator();
   const out = dl.onUserTurn({
     pad: { P: 0, A: 0.4, S: 0.3, D: 0.3 },
@@ -71,7 +71,10 @@ test('DigitalLifeOrchestrator onUserTurn returns drive boosts', () => {
     userText: '量子物理有意思吗',
     userModel: { model: { patterns: { emotion_history: [] }, relationship: { closeness: 0.3 } } },
     mainEvent: { type: 'scientific', content: '量子' },
+    selfModel: { get: () => ({ identity_tags: [], relationship_perception: '' }) },
+    relScore: 0.2,
   });
   assert.ok(out.driveBoosts);
+  assert.ok(out.goalSeeds?.length >= 0);
   assert.ok(out.recognized.emotion);
 });

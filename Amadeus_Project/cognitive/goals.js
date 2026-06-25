@@ -169,6 +169,26 @@ class InternalGoalSystem {
     return this.goals.some(g => g.id === id);
   }
 
+  /**
+   * 由内驱力/好奇心子系统注入的目标种子
+   * @param {object[]} seeds
+   */
+  ingestUrgeGoals(seeds) {
+    if (!Array.isArray(seeds)) return;
+    for (const g of seeds) {
+      if (!g || !g.id) continue;
+      const baseId = String(g.id).replace(/_\d+$/, '');
+      if (this._hasActiveGoal(g.id) || this._hasActiveGoal(baseId)) continue;
+      if (this.goals.length >= 4) break;
+      this.goals.push({
+        turns_remaining: g.turns_remaining ?? 3,
+        behavior_hint: g.behavior_hint || '',
+        ...g,
+      });
+      console.log(`[goal] 内驱注入: ${g.label} (priority:${Number(g.priority || 0).toFixed(2)})`);
+    }
+  }
+
   tick(behaviorId, padDelta) {
     const completed = [];
     this.goals = this.goals.filter(g => {

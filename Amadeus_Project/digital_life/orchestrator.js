@@ -2,8 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { AutonomousBehaviorEngine } = require('./drive_engine');
-const { CreativityModule } = require('./creativity');
+const { AutonomySubsystem } = require('./autonomy');
 const { MemoryReorganization } = require('./memory_reorganization');
 const { DreamEngine } = require('./dream_engine');
 const { BeliefRevision } = require('./belief_revision');
@@ -12,12 +11,12 @@ const { TimePerception } = require('./time_perception');
 const { EnvironmentUnderstanding } = require('./environment');
 
 /**
- * 数字生命编排器：统一调度各子系统并持久化。
+ * 数字生命编排器
+ * 模块一（自主性）由 AutonomySubsystem 深度实现；其余模块待逐轮打磨
  */
 class DigitalLifeOrchestrator {
   constructor() {
-    this.drive = new AutonomousBehaviorEngine();
-    this.creativity = new CreativityModule();
+    this.autonomy = new AutonomySubsystem();
     this.memoryReorg = new MemoryReorganization();
     this.dream = new DreamEngine();
     this.beliefs = new BeliefRevision();
@@ -27,10 +26,12 @@ class DigitalLifeOrchestrator {
     this._dataDir = '';
     this._saveTimer = null;
     this._lastConsolidation = 0;
+    this._lastAutonomyBehavior = null;
   }
 
   init(dataDir) {
     this._dataDir = dataDir;
+    this.autonomy.init(dataDir);
     this.load();
   }
 
@@ -43,15 +44,16 @@ class DigitalLifeOrchestrator {
       const p = this._statePath();
       if (!fs.existsSync(p)) return;
       const data = JSON.parse(fs.readFileSync(p, 'utf8'));
-      this.drive.load(data.drive);
-      this.creativity.load(data.creativity);
-      this.memoryReorg.load(data.memoryReorg);
-      this.dream.load(data.dream);
-      this.beliefs.load(data.beliefs);
-      this.resonance.load(data.resonance);
-      this.time.load(data.time);
-      this.environment.load(data.environment);
+      if (data.memoryReorg) this.memoryReorg.load(data.memoryReorg);
+      if (data.dream) this.dream.load(data.dream);
+      if (data.beliefs) this.beliefs.load(data.beliefs);
+      if (data.resonance) this.resonance.load(data.resonance);
+      if (data.time) this.time.load(data.time);
+      if (data.environment) this.environment.load(data.environment);
       this._lastConsolidation = data._lastConsolidation || 0;
+      if (data.drive && !fs.existsSync(this.autonomy._statePath())) {
+        this.autonomy.loadLegacy(data.drive);
+      }
     } catch { /* ignore */ }
   }
 
@@ -62,8 +64,6 @@ class DigitalLifeOrchestrator {
       this._saveTimer = null;
       try {
         const payload = {
-          drive: this.drive.snapshot(),
-          creativity: this.creativity.snapshot(),
           memoryReorg: this.memoryReorg.snapshot(),
           dream: this.dream.snapshot(),
           beliefs: this.beliefs.snapshot(),
@@ -79,10 +79,18 @@ class DigitalLifeOrchestrator {
   }
 
   onUserTurn(ctx = {}) {
-    const { pad, memory, motivationState, userText, userModel, mainEvent } = ctx;
+    const { pad, memory, motivationState, userText, userModel, mainEvent, selfModel, relScore, behaviorId, idleMs } = ctx;
 
-    this.drive.updateInternalState(pad, memory, motivationState);
-    this.drive.generateUrge();
+    const autonomyOut = this.autonomy.onConversationTurn({
+      pad,
+      memory,
+      motivationState,
+      userText,
+      selfModel,
+      relScore,
+      behaviorId,
+      idleMs,
+    });
 
     const recognized = this.resonance.recognizeEmotion(
       userText,
@@ -95,23 +103,47 @@ class DigitalLifeOrchestrator {
 
     if (mainEvent) this.beliefs.updateWorldview(mainEvent);
 
-    this.creativity.learnAssociation(
-      ...(String(userText || '').match(/[\u4e00-\u9fa5]{2,}/g) || []).slice(0, 2),
-    );
-
     this._save();
     return {
       recognized,
       padDelta,
-      driveBoosts: this.drive.behaviorBoosts(),
+      driveBoosts: autonomyOut.behaviorBoosts,
+      goalSeeds: autonomyOut.goalSeeds,
+      autonomyPrompt: autonomyOut.promptBlock,
       resonanceLine: this.resonance.toPromptLine(recognized),
+      openQuestions: autonomyOut.openQuestions,
     };
+  }
+
+  evaluateAutonomy(ctx = {}) {
+    const behavior = this.autonomy.onIdle({
+      pad: ctx.pad,
+      memory: ctx.memory || ctx.memorySystem,
+      memorySystem: ctx.memorySystem,
+      motivationState: ctx.motivationState,
+      relScore: ctx.relScore,
+      idleMs: ctx.idleMs,
+      userPresenceActive: ctx.userPresenceActive,
+      dnd: ctx.dnd,
+      proactiveQuotaOk: ctx.proactiveQuotaOk,
+      sheSpokeRecently: ctx.sheSpokeRecently,
+    });
+    this._lastAutonomyBehavior = behavior;
+    this._save();
+    return behavior;
   }
 
   runIdleCycle(ctx = {}) {
     const { idleMs, pad, memory, memorySystem } = ctx;
     const idleMin = Math.floor((Number(idleMs) || 0) / 60000);
-    const result = { consolidated: false, dream: null, insights: [] };
+    const result = { consolidated: false, dream: null, insights: [], autonomy: null };
+
+    const relScore = memorySystem?.getRelationshipScore?.() ?? 0;
+    result.autonomy = this.evaluateAutonomy({
+      ...ctx,
+      relScore,
+      memorySystem,
+    });
 
     if (Date.now() - this._lastConsolidation > 15 * 60 * 1000 && memorySystem) {
       const pack = this.memoryReorg.consolidate(memorySystem);
@@ -132,8 +164,6 @@ class DigitalLifeOrchestrator {
       });
     }
 
-    this.drive.updateInternalState(pad, memorySystem, ctx.motivationState);
-    this.drive.generateUrge();
     this._save();
     return result;
   }
@@ -147,11 +177,16 @@ class DigitalLifeOrchestrator {
 
   buildPromptContext(ctx = {}) {
     const lines = [];
-    const driveLine = this.drive.toPromptLine();
-    if (driveLine) lines.push(driveLine);
 
-    const creative = this.creativity.toPromptLine(ctx);
-    if (creative) lines.push(creative);
+    const autonomyBlock = this.autonomy.buildPromptBlock({
+      pad: ctx.pad,
+      memory: ctx.memory,
+      selfModel: ctx.selfModel,
+      relScore: ctx.relScore,
+      userText: ctx.userText,
+      autonomyHint: ctx.autonomyHint,
+    });
+    if (autonomyBlock) lines.push(autonomyBlock);
 
     const resonance = ctx.resonanceLine || '';
     if (resonance) lines.push(resonance);
@@ -166,7 +201,7 @@ class DigitalLifeOrchestrator {
     if (envLine) lines.push(envLine);
 
     const dreamLine = this.dream.latestDreamLine();
-    if (dreamLine && (ctx.includeDream !== false)) lines.push(dreamLine);
+    if (dreamLine && ctx.includeDream !== false) lines.push(dreamLine);
 
     if (ctx.metacognitionInsight) {
       lines.push(`自省碎片：${String(ctx.metacognitionInsight).slice(0, 80)}`);
@@ -177,15 +212,20 @@ class DigitalLifeOrchestrator {
 
   getPublicState() {
     return {
-      drive: this.drive.snapshot(),
-      creativity: this.creativity.snapshot(),
+      autonomy: this.autonomy.getPublicState(),
       memoryReorg: this.memoryReorg.snapshot(),
       dream: this.dream.snapshot(),
       beliefs: this.beliefs.snapshot(),
       resonance: this.resonance.snapshot(),
       time: this.time.snapshot(),
       environment: this.environment.snapshot(),
+      lastAutonomyBehavior: this._lastAutonomyBehavior,
     };
+  }
+
+  /** 兼容旧字段 drive */
+  get drive() {
+    return this.autonomy.drives;
   }
 }
 
