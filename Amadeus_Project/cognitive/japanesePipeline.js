@@ -173,12 +173,91 @@ function validateChineseReply(text, conversationLog, partnerName) {
   return { ok: issues.length === 0, issues };
 }
 
+/**
+ * JP-first：先定稿日语（角色口吻），校验后再译中文显示。
+ * 用于 AMADEUS_JP_FIRST=1 时的后处理（非流式生成阶段）。
+ */
+function buildJapaneseFirstPrompt(ctx = {}) {
+  const {
+    userText = '',
+    conversationLog = '',
+    partnerName = '',
+    situation = '',
+  } = ctx;
+  return {
+    system: `你是牧濑红莉栖。只输出一句自然日语口语对白（含平假名），不要中文、不要解释、不要 JP: 前缀。
+规则：对熟人别问「你是谁」；别自称 AI；若实录无记录别断言「我们聊过」；语气像微信熟人。`,
+    user: `对方刚说：${String(userText || '').slice(0, 400)}
+
+${situation ? `情境：${situation}\n` : ''}${partnerName ? `对方：${partnerName}\n` : ''}
+实录摘录：
+${String(conversationLog || '').slice(-1400)}
+
+只输出一句日语对白。`,
+  };
+}
+
+async function runJapaneseFirstPipeline(ctx = {}) {
+  const {
+    userText,
+    conversationLog,
+    partnerName,
+    situation,
+    generateJapanese,
+    translateToChinese,
+    llmSelfCheck,
+  } = ctx;
+
+  if (typeof generateJapanese !== 'function') {
+    return { ok: false, skipped: 'no_generator', chinese: '', japanese: '' };
+  }
+
+  const { system, user } = buildJapaneseFirstPrompt({
+    userText,
+    conversationLog,
+    partnerName,
+    situation,
+  });
+  let jp = await generateJapanese(system, user);
+  jp = String(jp || '').trim();
+  if (!jp) return { ok: false, issues: ['日语生成为空'], chinese: '', japanese: '' };
+
+  let validation = validateJapaneseLine(jp, { conversationLog, partnerName });
+  if (validation.ok && typeof llmSelfCheck === 'function') {
+    const llmResult = await llmSelfCheck(jp, conversationLog);
+    if (llmResult && llmResult.ok === false) {
+      validation = { ok: false, issues: llmResult.issues || ['LLM自检未通过'], jp };
+    }
+  }
+  if (!validation.ok) {
+    return { ok: false, issues: validation.issues, chinese: '', japanese: jp };
+  }
+
+  let cn = '';
+  if (typeof translateToChinese === 'function') {
+    cn = await translateToChinese(jp);
+  }
+  cn = String(cn || '').trim();
+  if (!cn) {
+    return { ok: false, issues: ['中文译出为空'], chinese: '', japanese: jp };
+  }
+
+  const cnVal = validateChineseReply(cn, conversationLog, partnerName);
+  if (!cnVal.ok) {
+    return { ok: false, issues: cnVal.issues, chinese: cn, japanese: jp };
+  }
+
+  return { ok: true, chinese: cn, japanese: jp, issues: [] };
+}
+
 module.exports = {
   validateJapaneseLine,
   validateChineseReply,
   buildSelfCheckPrompt,
   parseSelfCheckJson,
   runJapaneseValidationPipeline,
+  buildJapaneseFirstPrompt,
+  runJapaneseFirstPipeline,
   checkAddressee,
   checkLogConsistency,
 };

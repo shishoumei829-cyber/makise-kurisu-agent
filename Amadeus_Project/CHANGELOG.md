@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 架构深化 Phase 2（2026-06-25）
+
+- **clientContext 管道**：前端视觉/冲动/宫殿/情境经 `POST /chat` 的 `clientContext` 注入后端 `buildPrompt`，修复此前本地 `_buildSystemPrompt` 被忽略导致上下文丢失的问题。
+- **实录统一**：设计/自主/换题等路径改用 `dialogue-log/append`；主对话仍由服务端 `/chat` 落盘。
+- **JP-first**：`AMADEUS_JP_FIRST=1` 时回复后先日语定稿、校验、再译中文（可选，较慢）。
+- **行为感知**：前端监听页面可见性/焦点/长时间静默，经 `behavior-report` 写入 `BehaviorIngest`。
+- **测试**：`architecture.test.js` 增至 64 项。
+
 ### 数字生命五大模块深度实现（2026-06-25）
 
 > 分支：`cursor/module-01-autonomy-3e20` · PR #3  

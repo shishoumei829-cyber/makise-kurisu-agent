@@ -492,6 +492,7 @@ class AmadeusConsciousness {
     // ★ 不调用 _generateGreeting()，静默上线
     this._startAutonomyLoop();
     this._startPADSync();
+    this._startBehaviorReporter();
     if (this._startupReady) void this._probeSoVITS();
   }
 
@@ -519,6 +520,77 @@ class AmadeusConsciousness {
     if (!t) return;
     this.working.push({ role: r, text: t, proactive: meta.proactive });
     if (this.working.length > 24) this.working.shift();
+  }
+
+  /** 前端 situational 上下文 → 后端 buildPrompt（不再本地拼 system） */
+  _buildClientContext(opts = {}) {
+    return {
+      situation: String(opts.situation || '').trim(),
+      impulse: String(opts.impulse || '').trim(),
+      vision: String(opts.vision || '').trim(),
+      palace: String(opts.palace || '').trim(),
+      wantLongMemory: opts.wantLongMemory === true,
+      skipTopic: opts.skipTopic === true,
+    };
+  }
+
+  async _appendDialogueToServer(role, text, meta = {}) {
+    const r = role === 'user' ? 'user' : 'kurisu';
+    const t = String(text || '').trim();
+    if (!t) return;
+    this._pushDialogue(r, t, meta);
+    try {
+      await fetch(`${this.config.apiBase}/dialogue-log/append`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: r === 'user' ? 'user' : 'assistant',
+          text: t,
+          proactive: meta.proactive === true,
+          source: meta.source || 'client',
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch (e) {
+      this._log(`Dialogue append: ${e.message}`, 'warn');
+    }
+  }
+
+  _startBehaviorReporter() {
+    if (this._behaviorReporterStarted) return;
+    this._behaviorReporterStarted = true;
+    this._behaviorLastReport = 0;
+    this._behaviorVisible = document.visibilityState === 'visible';
+
+    const report = (note, events = []) => {
+      const now = Date.now();
+      if (!note && now - this._behaviorLastReport < 50000) return;
+      this._behaviorLastReport = now;
+      void fetch(`${this.config.apiBase}/behavior-report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'web', note: String(note || '').slice(0, 200), events }),
+        signal: AbortSignal.timeout(6000),
+      }).catch(() => {});
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      const vis = document.visibilityState === 'visible';
+      if (vis !== this._behaviorVisible) {
+        this._behaviorVisible = vis;
+        report(vis ? '他回到聊天页面了' : '他切走或最小化了窗口');
+      }
+    });
+    window.addEventListener('focus', () => report('窗口重新获得焦点'));
+    window.addEventListener('blur', () => report('窗口失去焦点'));
+
+    setInterval(() => {
+      const last = this.autonomy.lastUserMessageAt || this.state.lastUserActive || Date.now();
+      const idleMin = (Date.now() - last) / 60000;
+      if (idleMin >= 10 && document.visibilityState === 'visible' && !this.state.isThinking) {
+        report(`他在页面上但没说话，约 ${Math.round(idleMin)} 分钟`);
+      }
+    }, 180000);
   }
 
   _enqueueChatTask(taskFn) {
@@ -1567,8 +1639,7 @@ class AmadeusConsciousness {
       }
       msgDiv.querySelector('.mt').textContent = text;
       msgDiv.querySelector('.mtime').textContent = ts();
-      this.working.push({ role: 'kurisu', text, proactive: true });
-      if (this.working.length > 14) this.working.shift();
+      void this._appendDialogueToServer('kurisu', text, { proactive: true, source: 'autonomy' });
       if (i === list.length - 1) {
         this.autonomy.lastProactiveKurisuText = text;
         this.autonomy.awaitingProactiveReply = true;
@@ -1694,6 +1765,7 @@ class AmadeusConsciousness {
   }
 
   _buildSystemPrompt(situation, recentCtx, palaceCtx, visionCtx, impulse, lenHint, useLongMemory, promptMeta = {}, userText = '') {
+    /** @deprecated 主对话已改由后端 buildPrompt；请用 _buildClientContext + /chat */
     const wantMem = useLongMemory === true;
     const autonomyMono = promptMeta && promptMeta.autonomyMonologue;
     const KURISU_ANCHOR =
@@ -2238,7 +2310,7 @@ ${KURISU_ANCHOR}`;
     ], temp, onToken, onDone, onSentence);
   }
 
-  async _callStreamMessages(messages, temp, onToken, onDone, onSentence) {
+  async _callStreamMessages(messages, temp, onToken, onDone, onSentence, extra = {}) {
     const last = messages[messages.length - 1];
     if (!last || last.role !== 'user' || !String(last.content || '').trim()) {
       onDone('');
@@ -2263,6 +2335,7 @@ ${KURISU_ANCHOR}`;
       replyingToProactive,
       proactiveAnchor,
       userPresence: this._userPresencePayload(),
+      clientContext: extra.clientContext || null,
     });
 
     const reader  = res.body.getReader();
@@ -2448,7 +2521,8 @@ ${KURISU_ANCHOR}`;
         spoken,
         'いいわ。まず設計方針を出す。生成より先に、美意識と構造を固めるべきね。'
       );
-      this.working.push({ role:'user', text }, { role:'kurisu', text:spoken });
+      void this._appendDialogueToServer('user', text, { source: 'design' });
+      void this._appendDialogueToServer('kurisu', spoken, { source: 'design' });
       this._markKurisuSpoke();
     } catch (e) {
       mt.textContent = `设计模块失败：${e.message}`;
@@ -2672,9 +2746,6 @@ ${KURISU_ANCHOR}`;
       const visionCtx = wantVisual && vr?.confident && vr.text
         ? `当前摄像头视觉观察：${vr.text}。这是你此刻真正能依据的画面。`
         : '';
-      const recentCtx = this.working.slice(-6)
-        .map((m) => `${m.role === 'user' ? '他' : 'Kurisu'}: ${m.text}`)
-        .join('\n');
       const userText = String(text).replace(/\r?\n/g, ' ').trim();
       const replyingToProactive = this.autonomy.awaitingProactiveReply === true;
       const proactiveAnchor = replyingToProactive ? String(this.autonomy.lastProactiveKurisuText || '') : '';
@@ -2682,25 +2753,29 @@ ${KURISU_ANCHOR}`;
         this._log('承接她上一轮主动话题', 'sys');
       }
 
-      const sysMsg = this._buildSystemPrompt(
-        '他在和你说话。', recentCtx, palaceCtx,
-        visionCtx, impulse, '', wantMem,
-        { replyingToProactive, proactiveAnchor },
-        userText
-      );
+      const clientContext = this._buildClientContext({
+        situation: '他在和你说话。',
+        impulse,
+        vision: visionCtx,
+        palace: palaceCtx,
+        wantLongMemory: wantMem,
+      });
 
       document.getElementById(tid)?.remove();
       const msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
       let rawFull  = '';
-      const apiMessages = this._buildChatApiMessages(sysMsg, userText);
+      const apiMessages = this._buildChatApiMessages(null, userText);
       await this._callStreamMessages(apiMessages, this.getStreamTemp(),
         (cleanedAcc) => this._onKurisuStreamToken(msgDiv, cleanedAcc),
-        (raw) => { rawFull = raw; }
+        (raw) => { rawFull = raw; },
+        undefined,
+        { clientContext },
       );
-
-      const { cn: cnText, modelJp } = await this._finalizeReplyPairFromRaw(rawFull, userText, recentCtx);
-
+      const recentCtx = this.working.slice(-6)
+        .map((m) => `${m.role === 'user' ? '他' : 'Kurisu'}: ${m.text}`)
+        .join('\n');
       const lastKBefore = this._lastKurisuLine();
+      const { cn: cnText, modelJp } = await this._finalizeReplyPairFromRaw(rawFull, userText, recentCtx);
       this._agentClientLog('REP-TTS', 'amadeus_work.html:userSend', 'afterRepair', {
         rawLen: (rawFull || '').length,
         rawHead: String(rawFull || '').slice(0, 120),
@@ -2762,28 +2837,30 @@ ${KURISU_ANCHOR}`;
     try {
       const lastUser = [...this.working].reverse().find((m) => m && m.role === 'user');
       const wantMem = this.needsLongTermMemory(lastUser ? lastUser.text : '');
-      const recentCtx = this.working.slice(-4)
-        .map((m) => `${m.role === 'user' ? '他' : 'Kurisu'}: ${m.text}`)
-        .join('\n');
       const palaceCtx = wantMem ? this._navigatePalace(lastUser ? lastUser.text : '') : '';
-      const sysMsg = this._buildSystemPrompt(
-        '你觉得当前话题没意思，或者聊不下去了，想换个话题或者干脆不想聊了。',
-        '',
-        palaceCtx,
-        '',
-        '',
-        '',
-        wantMem
-      );
+      const clientContext = this._buildClientContext({
+        situation: '她觉得当前话题没意思，想换话题或收束。',
+        palace: palaceCtx,
+        wantLongMemory: wantMem,
+        skipTopic: true,
+      });
 
       document.getElementById(tid)?.remove();
       const msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
       let rawFull = '';
 
-      await this._callStreamMessages(this._buildChatApiMessages(sysMsg, '（转移话题）'), 0.9,
+      await this._callStreamMessages(
+        this._buildChatApiMessages(null, '（转移话题）'),
+        0.9,
         (cleanedAcc) => this._onKurisuStreamToken(msgDiv, cleanedAcc),
-        (raw) => { rawFull = raw; }
+        (raw) => { rawFull = raw; },
+        undefined,
+        { clientContext },
       );
+
+      const recentCtx = this.working.slice(-4)
+        .map((m) => `${m.role === 'user' ? '他' : 'Kurisu'}: ${m.text}`)
+        .join('\n');
 
       const { cn: cnText, modelJp } = await this._finalizeReplyPairFromRaw(
         rawFull,
@@ -2795,9 +2872,8 @@ ${KURISU_ANCHOR}`;
       document.getElementById('scn').textContent = cnText;
       try { document.getElementById('sjp').textContent = ''; } catch (_) {}
 
-      this.working.push({ role:'kurisu', text:cnText });
+      await this._loadDialogueFromServer();
       this._markKurisuSpoke();
-      if (this.working.length > 14) this.working.shift();
 
       this._startBackgroundJapaneseTTS(cnText, modelJp, ttsTurnId);
 
@@ -2812,12 +2888,12 @@ ${KURISU_ANCHOR}`;
       this.state.isThinking = false;
       this._setState('STANDBY');
       document.getElementById('ci').focus();
+      void this._loadDialogueFromServer();
     }
   }
 
   // ══════════════════════════════════════════════
   //  ★★ 自我修改 Soul ★★
-  //
   //  检测用户是否在要求她改变自己的某个设定
   //  如果是，调用LLM生成新的soul补充内容并持久化
   // ══════════════════════════════════════════════

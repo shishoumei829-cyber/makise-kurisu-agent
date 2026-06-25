@@ -36,10 +36,11 @@ const VARIANTS = {
   ],
 };
 
-function pickBand(pad = {}, innerSix = {}) {
+function pickBand(pad = {}, innerSix = {}, opts = {}) {
   const P = pad.P || 0;
   const A = pad.A || 0;
   const s = innerSix.state || innerSix;
+  if (opts.relHigh === true && (s.connection || 0) > 0.5) return 'warm';
   if (P < -0.3 || (s.weight || 0) > 0.62) return 'low';
   if ((s.boundary || 0) > 0.7 && (s.connection || 0) < 0.45) return 'guarded';
   if (A > 0.55 && P > 0) return 'sharp';
@@ -48,8 +49,8 @@ function pickBand(pad = {}, innerSix = {}) {
   return 'guarded';
 }
 
-function buildExpressionVariantBlock(pad = {}, innerSix = {}) {
-  const band = pickBand(pad, innerSix);
+function buildExpressionVariantBlock(pad = {}, innerSix = {}, opts = {}) {
+  const band = pickBand(pad, innerSix, opts);
   const pool = VARIANTS[band] || VARIANTS.guarded;
   const n = 3 + Math.floor(Math.random() * 2);
   const picked = [];

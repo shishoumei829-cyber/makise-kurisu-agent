@@ -97,6 +97,10 @@ Amadeus_Project/
 | `learning_state.json` | 强化学习偏置 |
 | `personality_evolution.json` | 人格演化状态 |
 | `metacognition_*.json` | 元认知状态 |
+| `inner_state_six.json` | 六维情感状态 |
+| `behavior_context.json` | 行为感知摘要 |
+| `conversation_log.json` | 统一对话实录 |
+| `autonomy_subsystem.json` 等 | 数字生命子系统状态 |
 
 ---
 
@@ -106,6 +110,10 @@ Amadeus_Project/
 |------|------|------|
 | `/` | GET | 主页（amadeus_work.html） |
 | `/chat` | POST | 主对话接口（流式/非流式） |
+| `/chat/lite` | POST | 主动开口轻量通道 |
+| `/dialogue-log` | GET | 统一对话实录（最近 N 条） |
+| `/dialogue-log/append` | POST | 追加实录条目 |
+| `/behavior-report` | POST | 行为感知上报（Web/手动） |
 | `/pad-state` | GET | PAD 情感状态 |
 | `/internal-state` | GET | 完整内部状态（含学习/元认知） |
 | `/save-memory` | POST | 保存观察记录 |
@@ -159,7 +167,7 @@ npm start
 |------|--------|------|
 | `AMADEUS_OLLAMA_BASE` | `http://127.0.0.1:11434` | Ollama 地址 |
 | `AMADEUS_OLLAMA_NUM_CTX` | `2048` | 上下文长度（8GB 显存建议） |
-| `AMADEUS_MAX_PROMPT_CHARS` | `6000` | 最大 Prompt 字符数 |
+| `AMADEUS_MAX_PROMPT_CHARS` | `8000` | 最大 Prompt 字符数 |
 | `AMADEUS_CHAT_HISTORY_MSGS` | `24` | 发给 Ollama 的多轮条数上限（user+assistant 合计） |
 | `AMADEUS_OLLAMA_KEEP_ALIVE` | `2m` | 模型保活时间 |
 | `AMADEUS_OLLAMA_REPEAT_PENALTY` | `1.12` | 重复惩罚系数 |

@@ -32,7 +32,7 @@ function scoreMode(text, ctx = {}) {
   }
   const rel = Number(ctx.relScore) || 0;
   const S = Number(ctx.pad?.S) || 0.5;
-  if (rel > 0.45 || S > 0.55) scores.lover += 0.25;
+  if (rel > 0.45 || S > 0.55 || ctx.relHigh === true) scores.lover += 0.25;
   if (/科学|研究|实验|论文/.test(t)) scores.researcher += 0.2;
   if (/\?|？|怎么|为何|什么/.test(t) && t.length > 12) scores.lecturer += 0.15;
   if (ctx.recentScientific) scores.researcher += 0.15;

@@ -23,6 +23,7 @@ const { createDesignTask } = require('./design_engine');
 const { MemorySystem } = require('./lib/memory');
 const { UnifiedDialogueLog, needsConversationRecall } = require('./lib/unifiedDialogueLog');
 const { BehaviorIngest } = require('./lib/behaviorIngest');
+const { normalizeClientContext, buildClientContextBlock } = require('./lib/clientContext');
 const { InnerStateSix } = require('./cognitive/innerStateSix');
 const { buildSocialIdentityPrompt } = require('./cognitive/socialIdentity');
 const { buildExpressionVariantBlock } = require('./cognitive/expressionVariants');
@@ -31,6 +32,7 @@ const {
   buildSelfCheckPrompt,
   parseSelfCheckJson,
   runJapaneseValidationPipeline,
+  runJapaneseFirstPipeline,
 } = require('./cognitive/japanesePipeline');
 
 /** 加载项目根目录 .env（不覆盖已有系统/进程环境变量） */
@@ -1234,6 +1236,12 @@ app.post('/chat', async (req, res) => {
     });
     const relHigh = relScore > 0.38;
 
+    const clientCtxRaw = normalizeClientContext(req.body.clientContext || {});
+    const clientContextBlock = buildClientContextBlock({
+      ...clientCtxRaw,
+      wantLongMemory: clientCtxRaw.wantLongMemory || useLongTermMemory,
+    });
+
     let whoamiCtx = '';
     let whoamiRecord = {};
     try {
@@ -1318,10 +1326,12 @@ app.post('/chat', async (req, res) => {
         userText: cognitiveInput,
         pad: currentPAD,
         relScore,
+        relHigh,
         recentEvents: memorySystem.events.slice(-6),
       }),
-      expressionVariantBlock: buildExpressionVariantBlock(currentPAD, innerStateSix),
+      expressionVariantBlock: buildExpressionVariantBlock(currentPAD, innerStateSix, { relHigh }),
       behaviorContextLine: behaviorIngest.toPromptLine(),
+      clientContextBlock,
       ragCtx: useLongTermMemory && ragCtx ? `【背景知识】\n${ragCtx}` : '',
       conversationCtx,
       conversationRecall: recallTurn,
@@ -1426,7 +1436,7 @@ app.post('/chat', async (req, res) => {
         : {};
       content = applyOocRepair(content, userContent, '', oocOpts);
       // 回复后分析情感并更新PAD
-      _postReplyPadUpdate(content, userContent).catch(() => {});
+      _postReplyPadUpdate(content, userContent, { situation: clientCtxRaw.situation }).catch(() => {});
       return res.json({
         response: content,
         choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content}}],
@@ -1462,7 +1472,7 @@ app.post('/chat', async (req, res) => {
         } else if (trimmed !== cleaned) {
           fullResponse = cleaned.length >= trimmed.length ? cleaned : trimmed;
         }
-        _postReplyPadUpdate(fullResponse, userContent).catch(() => {});
+        _postReplyPadUpdate(fullResponse, userContent, { situation: clientCtxRaw.situation }).catch(() => {});
       }
       if (!res.writableEnded) {
         res.write('data: [DONE]\n\n');
@@ -1560,7 +1570,23 @@ async function _ollamaSelfCheckJapanese(jp, conversationLog) {
   }
 }
 
-async function _polishReplyWithValidation(reply, userContent = '') {
+async function _ollamaChatOnce(model, messages, options = {}) {
+  const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      messages,
+      options,
+    }),
+  });
+  if (!res.ok) throw new Error(`ollama ${res.status}`);
+  const data = await res.json();
+  return String((data.message && data.message.content) || '').trim();
+}
+
+async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
   let cn = String(reply || '').trim();
   if (!cn) return cn;
   const logBlock = unifiedDialogueLog.toPromptBlock({ maxChars: 2000 });
@@ -1577,12 +1603,51 @@ async function _polishReplyWithValidation(reply, userContent = '') {
     }
   }
 
+  if (process.env.AMADEUS_JP_VALIDATE === '0' && process.env.AMADEUS_JP_FIRST !== '1') {
+    return cn;
+  }
+
+  const translateModel = process.env.AMADEUS_LITE_MODEL || 'kurisu:latest';
+
+  if (process.env.AMADEUS_JP_FIRST === '1') {
+    try {
+      const jpFirst = await runJapaneseFirstPipeline({
+        userText: userContent,
+        conversationLog: logBlock,
+        partnerName: whoamiName,
+        situation: String(extra.situation || '').slice(0, 200),
+        generateJapanese: async (system, user) => _ollamaChatOnce(
+          translateModel,
+          [{ role: 'system', content: system }, { role: 'user', content: user }],
+          { temperature: 0.72, num_predict: 180, num_ctx: 2048 },
+        ),
+        translateToChinese: async (jp) => _ollamaChatOnce(
+          translateModel,
+          [
+            { role: 'system', content: '把日语台词译成自然中文口语（角色在说话）。只输出中文正文。' },
+            { role: 'user', content: jp },
+          ],
+          { temperature: 0.2, num_predict: 200, num_ctx: 1024 },
+        ),
+        llmSelfCheck: (jp, log) => _ollamaSelfCheckJapanese(jp, log),
+      });
+      if (jpFirst.ok && jpFirst.chinese) {
+        console.log('[jp-pipeline] JP-first 定稿通过');
+        return jpFirst.chinese;
+      }
+      if (jpFirst.issues?.length) {
+        console.log(`[jp-pipeline] JP-first 未采用: ${jpFirst.issues.join('；')}`);
+      }
+    } catch (e) {
+      console.warn('[jp-pipeline] JP-first', e.message);
+    }
+  }
+
   if (process.env.AMADEUS_JP_VALIDATE === '0') {
     return cn;
   }
 
   try {
-    const translateModel = process.env.AMADEUS_LITE_MODEL || 'kurisu:latest';
     const toJpRes = await fetch(`${OLLAMA_BASE}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1618,10 +1683,10 @@ async function _polishReplyWithValidation(reply, userContent = '') {
 }
 
 /** 回复后的PAD反馈更新（分析AI回复的情感倾向） */
-async function _postReplyPadUpdate(reply, userContent = '') {
+async function _postReplyPadUpdate(reply, userContent = '', extra = {}) {
   let finalReply = reply;
-  if (reply && process.env.AMADEUS_JP_VALIDATE !== '0') {
-    finalReply = await _polishReplyWithValidation(reply, userContent);
+  if (reply && (process.env.AMADEUS_JP_VALIDATE !== '0' || process.env.AMADEUS_JP_FIRST === '1')) {
+    finalReply = await _polishReplyWithValidation(reply, userContent, extra);
   }
   if (finalReply) {
     unifiedDialogueLog.append('assistant', finalReply);

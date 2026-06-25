@@ -235,6 +235,7 @@ function buildPrompt(context, symbolicRules = []) {
     context.socialIdentityBlock ? _clipInnerPrompt(context.socialIdentityBlock, 360) : '',
     context.expressionVariantBlock ? _clipInnerPrompt(context.expressionVariantBlock, 280) : '',
     context.behaviorContextLine ? _clipInnerPrompt(context.behaviorContextLine, 200) : '',
+    context.clientContextBlock ? _clipInnerPrompt(context.clientContextBlock, 900) : '',
     context.autonomyContinuity ? _clipInnerPrompt(context.autonomyContinuity, 360) : '',
     context.proactiveContinuity ? _clipInnerPrompt(context.proactiveContinuity, 280) : '',
     context.companionBlock ? _clipInnerPrompt(context.companionBlock, 300) : '',
