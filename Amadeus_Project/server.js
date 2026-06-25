@@ -71,6 +71,9 @@ const {
 // ── BDI 引擎（信念/欲望/意图推断，异步周期性触发）────────────────────
 const { inferUserBdi } = require('./bdi_engine');
 
+// ── 数字生命编排（内驱力/梦境/信念/具身感知等）────────────────────────
+const { DigitalLifeOrchestrator } = require('./digital_life');
+
 // ── cognitive/ 子系统模块 ─────────────────────────────────────────
 const { MotivationSystem }   = require('./cognitive/motivation');
 const { InternalGoalSystem } = require('./cognitive/goals');
@@ -339,6 +342,10 @@ let chatTurnCounter = 0;
 
 /** 上一轮 /chat 选中的行为 ID，供回复后 RL 偏置更新 */
 let lastChatBehaviorId = '';
+/** 上一轮行为决策时的 RL 状态键 */
+let lastRlStateKey = '';
+/** 本轮数字生命侧输出（共情/内驱等） */
+let lastDigitalLifeTurn = null;
 
 /**
  * Prompt 构建函数：按优先级拼装 system 侧上下文
@@ -411,6 +418,10 @@ valueConsistency.load();
 if (valueConsistency.values.size === 0) {
   valueConsistency.initValues();
 }
+
+// ── 数字生命编排器 ───────────────────────────────────────────────
+const digitalLife = new DigitalLifeOrchestrator();
+digitalLife.init(memoryDir);
 
 // 启动时执行记忆衰减
 memorySystem.decay();
@@ -576,10 +587,32 @@ app.get('/internal-state', (req, res) => {
       
       // 时间
       time: timeContext,
+
+      // 数字生命子系统
+      digitalLife: digitalLife.getPublicState(),
     });
   } catch (e) {
     console.error('[internal-state]', e.message);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────
+//  POST /inner-life-cycle — 独处时记忆整理与梦境（可由前端空闲时触发）
+// ──────────────────────────────────────────────────────────────
+app.post('/inner-life-cycle', (req, res) => {
+  try {
+    const idleMs = Math.max(0, Number(req.body.idleMs) || 0);
+    const result = digitalLife.runIdleCycle({
+      idleMs,
+      pad: currentPAD,
+      memorySystem,
+      memory: memorySystem,
+      motivationState,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
@@ -753,6 +786,19 @@ app.post('/chat', async (req, res) => {
         savePAD(padPath, currentPAD);
         console.log(`[autonomy] 久未回复 PAD 波动 idleMin≈${(idleMsSinceUser / 60000).toFixed(1)} A+${idlePad.A.toFixed(2)}`);
       }
+      const idleCycle = digitalLife.runIdleCycle({
+        idleMs: idleMsSinceUser,
+        pad: currentPAD,
+        memorySystem,
+        memory: memorySystem,
+        motivationState,
+      });
+      if (idleCycle.consolidated && idleCycle.insights.length) {
+        console.log(`[memory-reorg] 整理洞察: ${idleCycle.insights.slice(0, 2).join('；')}`);
+      }
+      if (idleCycle.dream) {
+        console.log(`[dream] ${idleCycle.dream.text.slice(0, 80)}`);
+      }
     }
 
     // ══ ① 记忆系统：单一主事件 + PAD（不在此处落盘 pad_state）══
@@ -763,6 +809,21 @@ app.post('/chat', async (req, res) => {
       memorySystem.addEvent(mainEvent.type, mainEvent.content, mainEvent.importance, evDelta);
     }
     updateMotivationFromMemory();
+
+    lastDigitalLifeTurn = digitalLife.onUserTurn({
+      pad: currentPAD,
+      memory: memorySystem,
+      motivationState,
+      userText: cognitiveInput,
+      userModel: userModelInst,
+      mainEvent,
+    });
+    if (lastDigitalLifeTurn?.padDelta) {
+      const d = lastDigitalLifeTurn.padDelta;
+      if (d.P || d.A || d.D) {
+        currentPAD = updatePAD(currentPAD, d, 0.2);
+      }
+    }
 
     // ══ ⑦ 用户理解（习惯提取等；不向模型注入「该怎样说话」的个性化脚本）══
     const analyticsResult = analyticsInst.analyze(cognitiveInput);
@@ -809,10 +870,15 @@ app.post('/chat', async (req, res) => {
     const statePromise = Promise.resolve().then(() => {
       const memBias = memorySystem.getLongTermPadBias();
       const relScore = effectiveRelScore(memorySystem.getRelationshipScore());
+      lastRlStateKey = reinforcementLearning.buildStateKey(currentPAD, relScore);
       motivSystem.update(currentPAD, memBias, relScore);
       const motivSummary = motivSystem.getSummary();
       const behaviorResult = behaviorSys.decide(
-        currentPAD, motivSystem, memorySystem, cognitiveInput, reinforcementLearning
+        currentPAD, motivSystem, memorySystem, cognitiveInput, reinforcementLearning,
+        {
+          driveBoosts: lastDigitalLifeTurn?.driveBoosts || {},
+          rlStateKey: lastRlStateKey,
+        },
       );
       lastChatBehaviorId = behaviorResult.behaviorId;
       selfModel.update(
@@ -846,11 +912,22 @@ app.post('/chat', async (req, res) => {
       }
       let latestInsight = '';
       const chatMinimal = String(process.env.AMADEUS_CHAT_MINIMAL || '1').trim() !== '0';
-      if (!chatMinimal && chatTurnCounter % 20 === 0) {
+      if (!chatMinimal && chatTurnCounter % 10 === 0) {
         const insight = selfReflection.generateInsight();
         if (insight) {
           latestInsight = insight.content;
           console.log(`[metacognition] 洞察: ${insight.content}`);
+          const injection = selfReflection.insightToGoalInjection(insight);
+          if (injection) {
+            goalSystem.goals.unshift({
+              id: 'METACOG_INSIGHT',
+              label: '元认知修正',
+              priority: 0.55,
+              turns_remaining: 2,
+              behavior_hint: injection,
+              prompt_injection: injection,
+            });
+          }
         }
       }
       let whoamiName = '';
@@ -906,6 +983,15 @@ app.post('/chat', async (req, res) => {
         personalityCtx: evolvedPersonalityLine,
         keywordConflicts,
         latestInsight,
+        digitalLifeCtx: digitalLife.buildPromptContext({
+          pad: currentPAD,
+          userText: cognitiveInput,
+          userModel: userModelInst,
+          resonanceLine: lastDigitalLifeTurn?.resonanceLine || '',
+          metacognitionInsight: latestInsight,
+          includeDream: autonomyInitiative || idleMsSinceUser > 20 * 60 * 1000,
+          lastEvent: mainEvent?.content || '',
+        }),
       };
     });
 
@@ -1059,6 +1145,7 @@ app.post('/chat', async (req, res) => {
       turnStyleBlock: st.turnStyleBlock || '',
       companionBlock,
       latestInsight: clientPersonaProvided ? '' : (st.latestInsight || ''),
+      digitalLifeCtx: clientPersonaProvided ? '' : (st.digitalLifeCtx || ''),
       personalityCtx: clientPersonaProvided ? '' : (st.personalityCtx || ''),
       valueBlock: clientPersonaProvided ? '' : valueBlock,
       ragCtx: useLongTermMemory && ragCtx ? `【背景知识】\n${ragCtx}` : '',
@@ -1313,6 +1400,13 @@ function _postReplyPadUpdate(reply, userContent = '') {
     userAskedQuestion: userAskedQuestion,
   });
   reinforcementLearning.updateBehaviorBiasFromReward(lastChatBehaviorId, reward);
+  if (lastRlStateKey && lastChatBehaviorId) {
+    const nextKey = reinforcementLearning.buildStateKey(
+      currentPAD,
+      effectiveRelScore(memorySystem.getRelationshipScore()),
+    );
+    reinforcementLearning.updatePolicy(lastRlStateKey, lastChatBehaviorId, reward, nextKey);
+  }
 }
 
 /** 分析用户情感 */
@@ -1425,6 +1519,7 @@ app.post('/vision', async (req, res) => {
 
       // ★ 视觉→内部状态处理
       _processVisionForPAD(raw);
+      digitalLife.onVision(raw);
       savePAD(padPath, currentPAD);
     }
     res.json(lastVision);

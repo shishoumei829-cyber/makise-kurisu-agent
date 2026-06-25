@@ -215,6 +215,7 @@ function buildPrompt(context, symbolicRules = []) {
   if (context.selfCtx)      innerLines.push(`自省：${_clipInnerPrompt(context.selfCtx.replace(/\n/g, ' '), clientPersona ? 140 : 220)}`);
   if (context.motivSummary) innerLines.push(`驱动：${_clipInnerPrompt(context.motivSummary, clientPersona ? 80 : 100)}`);
   if (context.latestInsight) innerLines.push(`碎片：${_clipInnerPrompt(context.latestInsight, 80)}`);
+  if (context.digitalLifeCtx) innerLines.push(`生命层：${_clipInnerPrompt(context.digitalLifeCtx, 220)}`);
 
   const symbolicBlock = Array.isArray(symbolicRules) && symbolicRules.length
     ? `【情境触发】${symbolicRules.map((r) => r.reason).filter(Boolean).join('；')}`

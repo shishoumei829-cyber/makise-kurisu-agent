@@ -44,7 +44,7 @@ class SelfReflection {
     // 分析决策过程
     reflection.analysis = this._analyzeDecisionProcess(decision);
 
-    reflection.possibleBiases = [];
+    reflection.possibleBiases = this._detectBiases(decision);
 
     // 记录反思
     this.reflectionHistory.push(reflection);
@@ -119,6 +119,28 @@ class SelfReflection {
   /**
    * 分析决策过程
    */
+  _detectBiases(decision) {
+    const biases = [];
+    const action = String(decision?.action || '');
+    const factors = decision?.factors || [];
+    if (action === 'DEFEND' && factors.length <= 1) {
+      biases.push({ type: '过度防御', weight: 0.6 });
+    }
+    if (action === 'WITHDRAW' && this.reflectionHistory.slice(-3).every((r) => r.decision === 'WITHDRAW')) {
+      biases.push({ type: '退缩惯性', weight: 0.7 });
+    }
+    if (action === 'APPROACH' && factors.some((f) => /情感|直球/.test(String(f)))) {
+      biases.push({ type: '亲近冲动', weight: 0.5 });
+    }
+    return biases;
+  }
+
+  /** 元认知洞察 → 可注入目标系统的行为修正 */
+  insightToGoalInjection(insight) {
+    if (!insight || !insight.content) return '';
+    return `内部修正：${insight.content}——下一句注意不要重复同一偏见。`;
+  }
+
   _analyzeDecisionProcess(decision) {
     const analysis = {
       complexity: 'medium',

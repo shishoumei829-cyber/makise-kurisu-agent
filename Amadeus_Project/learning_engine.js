@@ -39,6 +39,17 @@ class ReinforcementLearning {
     return typeof v === 'number' && Number.isFinite(v) ? v : 0;
   }
 
+  /** 离散化 PAD + 关系，供 Q-learning 状态键 */
+  buildStateKey(pad, relScore) {
+    const P = Number(pad?.P) || 0;
+    const A = Number(pad?.A) || 0;
+    const r = Number(relScore) || 0;
+    const pB = P > 0.2 ? 'P+' : P < -0.2 ? 'P-' : 'P0';
+    const aB = A > 0.3 ? 'A+' : A < 0 ? 'A-' : 'A0';
+    const rB = r > 0.3 ? 'R+' : r < -0.1 ? 'R-' : 'R0';
+    return `${pB}_${aB}_${rB}`;
+  }
+
   /**
    * 根据一轮对话的启发式奖励，更新上一轮选中行为的偏置（供 BehaviorDecision 加分）
    */

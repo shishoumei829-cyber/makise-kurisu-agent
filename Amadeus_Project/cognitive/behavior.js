@@ -72,7 +72,7 @@ class BehaviorDecision {
     this._lastBehaviorCount = 0;
   }
 
-  decide(pad, motivation, memory, userInput, rlHelper) {
+  decide(pad, motivation, memory, userInput, rlHelper, opts = {}) {
     const { P, A, D, S } = pad;
     const relScore = memory.getRelationshipScore();
     const memBias = memory.getLongTermPadBias();
@@ -88,6 +88,26 @@ class BehaviorDecision {
           c.score += b;
           c.reasons.push(`学习偏置${b >= 0 ? '+' : ''}${b.toFixed(3)}`);
         }
+      }
+    }
+
+    const driveBoosts = opts.driveBoosts || {};
+    for (const c of candidates) {
+      const db = driveBoosts[c.id];
+      if (db) {
+        c.score += db;
+        c.reasons.push(`内驱+${db.toFixed(2)}`);
+      }
+    }
+
+    const rlStateKey = opts.rlStateKey;
+    if (rlHelper && rlStateKey && typeof rlHelper.selectAction === 'function') {
+      const actionIds = candidates.map((c) => c.id);
+      const rlPick = rlHelper.selectAction(rlStateKey, actionIds);
+      const rlCand = get(rlPick);
+      if (rlCand) {
+        rlCand.score += 0.12;
+        rlCand.reasons.push(`策略记忆倾向${rlPick}`);
       }
     }
 

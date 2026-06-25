@@ -2863,6 +2863,13 @@ ${KURISU_ANCHOR}`;
       this._scheduleAutonomyPause(150000);
       return;
     }
+    if (idleMin >= 25) {
+      fetch(`${this.config.apiBase}/inner-life-cycle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idleMs }),
+      }).catch(() => {});
+    }
     if (!this._autonomyQuotaOk()) {
       this._scheduleAutonomyPause(300000);
       return;

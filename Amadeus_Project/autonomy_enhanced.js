@@ -113,3 +113,6 @@ module.exports = {
   DRIVE_TYPES,
   CuriosityEngine,
 };
+
+// 向后兼容：创造性模块已迁至 digital_life/creativity.js
+module.exports.CreativityModule = require('./digital_life/creativity').CreativityModule;
