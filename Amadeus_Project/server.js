@@ -21,7 +21,17 @@ const path    = require('path');
 const os      = require('os');
 const { createDesignTask } = require('./design_engine');
 const { MemorySystem } = require('./lib/memory');
-const { ConversationMemory, needsConversationRecall } = require('./lib/conversationMemory');
+const { UnifiedDialogueLog, needsConversationRecall } = require('./lib/unifiedDialogueLog');
+const { BehaviorIngest } = require('./lib/behaviorIngest');
+const { InnerStateSix } = require('./cognitive/innerStateSix');
+const { buildSocialIdentityPrompt } = require('./cognitive/socialIdentity');
+const { buildExpressionVariantBlock } = require('./cognitive/expressionVariants');
+const {
+  validateJapaneseLine,
+  buildSelfCheckPrompt,
+  parseSelfCheckJson,
+  runJapaneseValidationPipeline,
+} = require('./cognitive/japanesePipeline');
 
 /** 加载项目根目录 .env（不覆盖已有系统/进程环境变量） */
 function loadDotEnv() {
@@ -383,7 +393,11 @@ function updateMotivationFromMemory() {
 //  全局实例
 // ══════════════════════════════════════════════════════════════════
 const memorySystem  = new MemorySystem(memoryDir, eventLogPath);
-const conversationMemory = new ConversationMemory(memoryDir);
+const unifiedDialogueLog = new UnifiedDialogueLog(memoryDir);
+/** @deprecated 别名，统一实录 */
+const conversationMemory = unifiedDialogueLog;
+const behaviorIngest = new BehaviorIngest(memoryDir);
+const innerStateSix = new InnerStateSix(memoryDir);
 const motivSystem   = new MotivationSystem();
 const behaviorSys   = new BehaviorDecision();
 const selfModel     = new SelfModel(selfModelPath, debounceFileWrite);
@@ -420,7 +434,7 @@ if (valueConsistency.values.size === 0) {
 // ── 启动：记忆衰减 ───────────────────────────────────────────────
 memorySystem.decay();
 console.log(`[memory] Loaded ${memorySystem.events.length} events after decay.`);
-console.log(`[conversation] Loaded ${conversationMemory.turns.length} dialogue turns.`);
+console.log(`[conversation] Loaded ${unifiedDialogueLog.entriesCount} unified dialogue entries.`);
 
 // 当前PAD状态
 let currentPAD = loadPAD(padPath);
@@ -585,6 +599,9 @@ app.get('/internal-state', (req, res) => {
       // 数字生命子系统
       digitalLife: digitalLife.getPublicState(),
       expression: digitalLife.embodiment.expression.snapshot(),
+      innerStateSix: innerStateSix.snapshot(),
+      dialogueLog: unifiedDialogueLog.snapshot(),
+      behaviorContext: behaviorIngest.snapshot(),
     });
   } catch (e) {
     console.error('[internal-state]', e.message);
@@ -608,6 +625,107 @@ app.post('/inner-life-cycle', (req, res) => {
     res.json({ ok: true, ...result });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── 统一对话实录 API ─────────────────────────────────────────────
+app.get('/dialogue-log', (req, res) => {
+  try {
+    const limit = Math.min(80, Math.max(1, Number(req.query.limit) || 24));
+    res.json({
+      ok: true,
+      entries: unifiedDialogueLog.getRecent(limit),
+      snapshot: unifiedDialogueLog.snapshot(),
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/dialogue-log/append', (req, res) => {
+  try {
+    const role = req.body.role === 'assistant' ? 'assistant' : 'user';
+    const text = String(req.body.text || '');
+    const item = unifiedDialogueLog.append(role, text, {
+      proactive: req.body.proactive,
+      autonomy: req.body.autonomy,
+      lite: req.body.lite,
+      source: req.body.source || 'client',
+    });
+    res.json({ ok: true, item });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── 行为数据上报（无原生采集，仅接收管道）────────────────────────
+app.post('/behavior-report', (req, res) => {
+  try {
+    const result = behaviorIngest.ingest(req.body || {});
+    res.json({ ok: true, ...result, snapshot: behaviorIngest.snapshot() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── 主动开口 lite 通道（低 token、快响应）────────────────────────
+app.post('/chat/lite', async (req, res) => {
+  try {
+    const userLine = String(req.body.userText || req.body.message || '（想说话）').trim();
+    const anchor = String(req.body.proactiveAnchor || '').slice(0, 200);
+    const idleMs = Math.max(0, Number(req.body.idleMsSinceUser) || 0);
+    const model = req.body.model || process.env.AMADEUS_LITE_MODEL || 'kurisu:latest';
+    const temp = Number(req.body.temperature) || 0.82;
+    const maxTok = Math.min(180, Number(req.body.max_tokens) || 120);
+
+    if (userLine && !/^（想说话）/.test(userLine)) {
+      unifiedDialogueLog.append('user', userLine, { source: 'lite' });
+    }
+
+    const dialogue = unifiedDialogueLog.toOllamaDialogue({ maxMsgs: 8 });
+    const conversationCtx = unifiedDialogueLog.toPromptBlock({ maxChars: 900, userText: userLine });
+    const relScore = effectiveRelScore(memorySystem.getRelationshipScore());
+
+    const litePrompt = [
+      cachedVoiceContent ? `【口吻】\n${_clipInnerPrompt(cachedVoiceContent, 1200)}` : '',
+      conversationCtx,
+      digitalLife.buildPromptContext({
+        pad: currentPAD,
+        memory: memorySystem,
+        relScore,
+        includeDream: idleMs > 20 * 60 * 1000,
+      }),
+      anchor ? `【主动延续】你刚才说的是：${anchor}` : '【主动】像偶尔想起来才发一句，短、自然，禁止查岗连发。',
+      `亲近 ${relScore.toFixed(2)} · 内在 ${padTelemetry(currentPAD)}`,
+      '只写中文口语 1～2 句。禁止旁白与 Markdown。',
+    ].filter(Boolean).join('\n\n');
+
+    const ollamaMessages = buildOllamaMessages(litePrompt, dialogue, 3200, 4);
+    const ollamaRes = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: ollamaMessages,
+        stream: false,
+        options: { temperature: temp, num_predict: maxTok, num_ctx: 1536 },
+      }),
+    });
+    if (!ollamaRes.ok) {
+      const detail = await ollamaRes.text().catch(() => '');
+      throw new Error(detail || `Ollama HTTP ${ollamaRes.status}`);
+    }
+    const data = await ollamaRes.json();
+    let reply = stripChatMarkdown((data.message && data.message.content) || data.response || '').trim();
+    reply = stripRoleplayActions(reply);
+
+    if (reply) {
+      unifiedDialogueLog.append('assistant', reply, { proactive: true, autonomy: true, lite: true, source: 'lite' });
+    }
+
+    res.json({ ok: true, response: reply, choices: [{ message: { role: 'assistant', content: reply } }] });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: e.message, response: '' });
   }
 });
 
@@ -692,26 +810,23 @@ app.post('/chat', async (req, res) => {
     const maxTok   = req.body.max_tokens  ?? 384;
 
     const parsed = parseIncomingChat(req.body);
-    let systemContent = parsed.clientSystem;
     let userContent = String(parsed.lastUser || '').trim();
 
     const histCap = Number(process.env.AMADEUS_CHAT_HISTORY_MSGS);
-    let dialogueForOllama = capDialogue(parsed.dialogue, Number.isFinite(histCap) && histCap > 0 ? histCap : 24);
+    const maxHist = Number.isFinite(histCap) && histCap > 0 ? histCap : 24;
+
+    // 单一 prompt 源：忽略前端 system，仅用服务端 soul
+    let systemContent = cachedSoulContent;
+    if (cachedCharacterRules) {
+      systemContent = systemContent + '\n\n' + cachedCharacterRules;
+    }
+    systemContent = systemContent.trim();
 
     if (!userContent) {
       userContent = String(req.body.userMsg || req.body.message || '').trim();
-      if (userContent && dialogueForOllama.length === 0) {
-        dialogueForOllama = [{ role: 'user', content: userContent }];
-      }
     }
 
-    if (!systemContent) {
-      systemContent = cachedSoulContent;
-      if (cachedCharacterRules) {
-        systemContent = systemContent + '\n\n' + cachedCharacterRules;
-      }
-    }
-    systemContent = systemContent.trim();
+    unifiedDialogueLog.syncFromDialogue(parsed.dialogue);
 
     const autonomyInitiative = req.body.autonomyInitiative === true;
     const idleMsSinceUser = Math.max(0, Number(req.body.idleMsSinceUser) || 0);
@@ -719,8 +834,8 @@ app.post('/chat', async (req, res) => {
     const replyingToProactive = req.body.replyingToProactive === true
       || (threadHint.active && !autonomyInitiative);
     const proactiveAnchor = String(req.body.proactiveAnchor || threadHint.anchor || '').trim();
-    const clientPersonaProvided = Boolean(parsed.clientSystem && parsed.clientSystem.trim()) && !autonomyInitiative;
     let autonomyDecision = null;
+    let dialogueForOllama = [];
 
     const recentUserLinesForMem = (parsed.userLines && parsed.userLines.length)
       ? parsed.userLines.filter((l) => l && !/^（想说话）|^（转移话题）|^（以下是最近对话/.test(String(l).trim())).slice(-14)
@@ -759,18 +874,25 @@ app.post('/chat', async (req, res) => {
       return res.json({ response:'', choices:[{message:{role:'assistant',content:''}}] });
     }
 
-    const synced = conversationMemory.syncFromDialogue(dialogueForOllama);
+    const synced = unifiedDialogueLog.syncFromDialogue(parsed.dialogue);
     if (synced > 0) {
       console.log(`[conversation] 从多轮历史补录 ${synced} 条`);
     }
     const userLine = cognitiveInput || userContent;
-    const lastConv = conversationMemory.turns[conversationMemory.turns.length - 1];
+    const lastEntry = unifiedDialogueLog.getRecent(1)[0];
     const userNorm = String(userLine || '').trim();
-    const alreadyLogged = lastConv
-      && lastConv.role === 'user'
-      && String(lastConv.text || '').trim() === userNorm;
-    if (!alreadyLogged) {
-      conversationMemory.addTurn('user', userLine);
+    const alreadyLogged = lastEntry
+      && lastEntry.role === 'user'
+      && String(lastEntry.text || '').trim() === userNorm;
+    if (!alreadyLogged && userNorm) {
+      unifiedDialogueLog.append('user', userLine);
+    }
+
+    dialogueForOllama = unifiedDialogueLog.toOllamaDialogue({ maxMsgs: maxHist });
+    if (userNorm && (!dialogueForOllama.length || dialogueForOllama[dialogueForOllama.length - 1].role !== 'user'
+      || dialogueForOllama[dialogueForOllama.length - 1].content !== userNorm)) {
+      dialogueForOllama.push({ role: 'user', content: userNorm });
+      if (dialogueForOllama.length > maxHist) dialogueForOllama = dialogueForOllama.slice(-maxHist);
     }
 
     chatTurnCounter++;
@@ -956,6 +1078,14 @@ app.post('/chat', async (req, res) => {
           });
         }
       }
+      innerStateSix.updateFromTurn({
+        pad: currentPAD,
+        relScore,
+        userEmotion: lastDigitalLifeTurn?.recognized?.emotion || _analyzeUserEmotion(cognitiveInput),
+        mainEvent,
+        userText: cognitiveInput,
+        behaviorId: behaviorResult.behaviorId,
+      });
       let whoamiName = '';
       let whoamiSnippet = '';
       let whoamiForPresence = {};
@@ -1050,7 +1180,7 @@ app.post('/chat', async (req, res) => {
     const convChars = Number(process.env.AMADEUS_CONVERSATION_CHARS) || 1400;
     const convRecallChars = Number(process.env.AMADEUS_CONVERSATION_RECALL_CHARS) || 2600;
     const recallTurn = needsConversationRecall(userContent);
-    const conversationCtx = conversationMemory.toPromptBlock({
+    const conversationCtx = unifiedDialogueLog.toPromptBlock({
       hours: convHours,
       sinceStartOfDay: true,
       maxChars: recallTurn ? convRecallChars : convChars,
@@ -1155,7 +1285,6 @@ app.post('/chat', async (req, res) => {
     const behaviorContext = {
       soulContent: systemContent,
       voiceContent: cachedVoiceContent,
-      clientPersonaProvided,
       useLongTermMemory,
       utteranceFocus,
       proactiveContinuity,
@@ -1173,27 +1302,32 @@ app.post('/chat', async (req, res) => {
       },
       motivation: motivationState,
       userProfile: whoamiCtx,
-      userModelCtx: clientPersonaProvided ? '' : (userModelCtx ? `【用户理解】\n${userModelCtx}` : ''),
-      motivSummary: clientPersonaProvided ? '' : (st.motivSummary || ''),
-      selfCtx: clientPersonaProvided ? '' : (st.selfCtx || ''),
+      userModelCtx: userModelCtx ? `【用户理解】\n${userModelCtx}` : '',
+      motivSummary: st.motivSummary || '',
+      selfCtx: st.selfCtx || '',
       behaviorDirective: st.behaviorDirective || '',
       presenceCtx: st.presenceCtx || '',
       turnStyleBlock: st.turnStyleBlock || '',
       companionBlock,
-      latestInsight: clientPersonaProvided ? '' : (st.latestInsight || ''),
-      digitalLifeCtx: clientPersonaProvided ? '' : (st.digitalLifeCtx || ''),
-      personalityCtx: clientPersonaProvided ? '' : (st.personalityCtx || ''),
-      valueBlock: clientPersonaProvided ? '' : valueBlock,
+      latestInsight: st.latestInsight || '',
+      digitalLifeCtx: st.digitalLifeCtx || '',
+      personalityCtx: st.personalityCtx || '',
+      valueBlock,
+      innerStateSixBlock: innerStateSix.toPromptBlock(),
+      socialIdentityBlock: buildSocialIdentityPrompt({
+        userText: cognitiveInput,
+        pad: currentPAD,
+        relScore,
+        recentEvents: memorySystem.events.slice(-6),
+      }),
+      expressionVariantBlock: buildExpressionVariantBlock(currentPAD, innerStateSix),
+      behaviorContextLine: behaviorIngest.toPromptLine(),
       ragCtx: useLongTermMemory && ragCtx ? `【背景知识】\n${ragCtx}` : '',
       conversationCtx,
       conversationRecall: recallTurn,
       memCtx: memCtxCombined,
-      strategyContext: clientPersonaProvided
-        ? (relHigh && useLongTermMemory ? _clipInnerPrompt(st.strategyCtx, 140) : '')
-        : (useLongTermMemory ? st.strategyCtx : ''),
-      goalInjection: clientPersonaProvided
-        ? (relHigh && useLongTermMemory ? _clipInnerPrompt(st.goalInjection, 120) : '')
-        : (useLongTermMemory ? st.goalInjection : ''),
+      strategyContext: useLongTermMemory ? st.strategyCtx : '',
+      goalInjection: useLongTermMemory ? st.goalInjection : '',
     };
 
     behaviorContext.recentUserLines = recentUserLinesForMem.slice(-8);
@@ -1210,7 +1344,7 @@ app.post('/chat', async (req, res) => {
     console.log(`[chat] PAD=${padDesc} rel=${relScore.toFixed(2)} events=${memorySystem.events.length} behavior=${st.behaviorResult.label}`);
     const fullPrompt = systemPrompt;
     let maxPromptChars = Number(process.env.AMADEUS_MAX_PROMPT_CHARS);
-    if (!Number.isFinite(maxPromptChars) || maxPromptChars <= 0) maxPromptChars = 6000;
+    if (!Number.isFinite(maxPromptChars) || maxPromptChars <= 0) maxPromptChars = 8000;
 
     const numCtxEnv = Number(process.env.AMADEUS_OLLAMA_NUM_CTX);
     const numCtx = Number.isFinite(numCtxEnv) && numCtxEnv > 0 ? numCtxEnv : 2048;
@@ -1292,7 +1426,7 @@ app.post('/chat', async (req, res) => {
         : {};
       content = applyOocRepair(content, userContent, '', oocOpts);
       // 回复后分析情感并更新PAD
-      _postReplyPadUpdate(content, userContent);
+      _postReplyPadUpdate(content, userContent).catch(() => {});
       return res.json({
         response: content,
         choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content}}],
@@ -1328,7 +1462,7 @@ app.post('/chat', async (req, res) => {
         } else if (trimmed !== cleaned) {
           fullResponse = cleaned.length >= trimmed.length ? cleaned : trimmed;
         }
-        _postReplyPadUpdate(fullResponse, userContent);
+        _postReplyPadUpdate(fullResponse, userContent).catch(() => {});
       }
       if (!res.writableEnded) {
         res.write('data: [DONE]\n\n');
@@ -1395,12 +1529,104 @@ app.post('/chat', async (req, res) => {
   }
 });
 
-/** 回复后的PAD反馈更新（分析AI回复的情感倾向） */
-function _postReplyPadUpdate(reply, userContent = '') {
-  if (reply) {
-    conversationMemory.addTurn('assistant', reply);
+/** 中文回复规则校验（与日语管道共享实录一致性逻辑） */
+function validateChineseReply(text, conversationLog, partnerName) {
+  return require('./cognitive/japanesePipeline').validateChineseReply(text, conversationLog, partnerName);
+}
+
+async function _ollamaSelfCheckJapanese(jp, conversationLog) {
+  if (process.env.AMADEUS_JP_LLM_CHECK === '0') return { ok: true };
+  const model = process.env.AMADEUS_LITE_MODEL || 'kurisu:latest';
+  const { system, user } = buildSelfCheckPrompt(jp, conversationLog);
+  try {
+    const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        options: { temperature: 0.1, num_predict: 120, num_ctx: 2048 },
+      }),
+    });
+    if (!res.ok) return { ok: true, skipped: true };
+    const data = await res.json();
+    const raw = (data.message && data.message.content) || '';
+    const parsed = parseSelfCheckJson(raw);
+    if (!parsed) return { ok: true, skipped: true };
+    return parsed;
+  } catch {
+    return { ok: true, skipped: true };
   }
-  if (!reply) return;
+}
+
+async function _polishReplyWithValidation(reply, userContent = '') {
+  let cn = String(reply || '').trim();
+  if (!cn) return cn;
+  const logBlock = unifiedDialogueLog.toPromptBlock({ maxChars: 2000 });
+  let whoamiName = '';
+  try {
+    whoamiName = resolvePartnerDisplayName(ensureWhoamiOnDisk(whoamiPath)) || '';
+  } catch { /* ignore */ }
+
+  const cnVal = validateChineseReply(cn, logBlock, whoamiName);
+  if (!cnVal.ok) {
+    console.log(`[jp-pipeline] 中文规则校验: ${cnVal.issues.join('；')}`);
+    if (/那还能是谁|你是哪位/.test(cn)) {
+      cn = cn.replace(/那还能是谁[？?]?/g, '……你明知故问。');
+    }
+  }
+
+  if (process.env.AMADEUS_JP_VALIDATE === '0') {
+    return cn;
+  }
+
+  try {
+    const translateModel = process.env.AMADEUS_LITE_MODEL || 'kurisu:latest';
+    const toJpRes = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: translateModel,
+        stream: false,
+        messages: [
+          { role: 'system', content: '将中文台词译成自然日语口语，只输出日语正文，必须含平假名。' },
+          { role: 'user', content: cn },
+        ],
+        options: { temperature: 0.25, num_predict: 160, num_ctx: 1024 },
+      }),
+    });
+    if (!toJpRes.ok) return cn;
+    const jpData = await toJpRes.json();
+    const jp = String((jpData.message && jpData.message.content) || '').trim();
+    if (!jp) return cn;
+
+    let validation = validateJapaneseLine(jp, { conversationLog: logBlock, partnerName: whoamiName });
+    if (validation.ok) {
+      const llm = await _ollamaSelfCheckJapanese(jp, logBlock);
+      if (llm && llm.ok === false) validation = { ok: false, issues: llm.issues || ['LLM自检失败'], jp };
+    }
+    if (!validation.ok) {
+      console.log(`[jp-pipeline] 日语校验未通过: ${(validation.issues || []).join('；')}`);
+      return cn;
+    }
+    console.log('[jp-pipeline] 日语校验通过');
+  } catch (e) {
+    console.warn('[jp-pipeline]', e.message);
+  }
+  return cn;
+}
+
+/** 回复后的PAD反馈更新（分析AI回复的情感倾向） */
+async function _postReplyPadUpdate(reply, userContent = '') {
+  let finalReply = reply;
+  if (reply && process.env.AMADEUS_JP_VALIDATE !== '0') {
+    finalReply = await _polishReplyWithValidation(reply, userContent);
+  }
+  if (finalReply) {
+    unifiedDialogueLog.append('assistant', finalReply);
+  }
+  if (!finalReply) return finalReply;
   // 她自己说了什么，反过来影响自己的状态
   if (/笨蛋|哼|蠢|讨厌/.test(reply)) {
     currentPAD = updatePAD(currentPAD, { A:0.04 }, 0.2);
@@ -1443,6 +1669,7 @@ function _postReplyPadUpdate(reply, userContent = '') {
     );
     reinforcementLearning.updatePolicy(lastRlStateKey, lastChatBehaviorId, reward, nextKey);
   }
+  return finalReply;
 }
 
 /** 分析用户情感 */

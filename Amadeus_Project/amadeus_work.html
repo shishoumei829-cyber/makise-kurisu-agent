@@ -316,6 +316,8 @@ class AmadeusConsciousness {
       forbidden: JSON.parse(localStorage.getItem('palace_forbidden') || '[]'),
     };
     this.working  = [];
+    this._chatQueue = [];
+    this._chatDraining = false;
     this.msgCount = parseInt(localStorage.getItem('amadeus_msgcount') || '0');
 
     // ══ PAD-S 情感动力学系统 ══
@@ -467,6 +469,7 @@ class AmadeusConsciousness {
     await this._loadSoul();
     await this._sleep(150);
     await this._loadWhoami();   // ★ 加载用户身份档案
+    await this._loadDialogueFromServer();
     await this._sleep(150);
     await this._initCamera();
     await this._sleep(150);
@@ -490,6 +493,54 @@ class AmadeusConsciousness {
     this._startAutonomyLoop();
     this._startPADSync();
     if (this._startupReady) void this._probeSoVITS();
+  }
+
+  async _loadDialogueFromServer() {
+    try {
+      const res = await fetch(`${this.config.apiBase}/dialogue-log?limit=24`, {
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const entries = Array.isArray(data.entries) ? data.entries : [];
+      this.working = entries.map((e) => ({
+        role: e.role === 'user' ? 'user' : 'kurisu',
+        text: e.text,
+        proactive: e.proactive,
+      }));
+    } catch (e) {
+      this._log(`Dialogue sync: ${e.message}`, 'warn');
+    }
+  }
+
+  _pushDialogue(role, text, meta = {}) {
+    const r = role === 'user' ? 'user' : 'kurisu';
+    const t = String(text || '').trim();
+    if (!t) return;
+    this.working.push({ role: r, text: t, proactive: meta.proactive });
+    if (this.working.length > 24) this.working.shift();
+  }
+
+  _enqueueChatTask(taskFn) {
+    return new Promise((resolve, reject) => {
+      this._chatQueue.push({ taskFn, resolve, reject });
+      void this._drainChatQueue();
+    });
+  }
+
+  async _drainChatQueue() {
+    if (this._chatDraining) return;
+    this._chatDraining = true;
+    while (this._chatQueue.length) {
+      const job = this._chatQueue.shift();
+      try {
+        const result = await job.taskFn();
+        job.resolve(result);
+      } catch (e) {
+        job.reject(e);
+      }
+    }
+    this._chatDraining = false;
   }
 
   async _checkStartupHealth() {
@@ -2146,12 +2197,12 @@ ${KURISU_ANCHOR}`;
     throw new Error(`模型不可用(${tried.join(' -> ')}) ${lastErr ? lastErr.message : ''}`.trim());
   }
 
-  /** 构造发往 /chat 的 messages：system + 多轮 user/assistant + 本轮 user（根因修复：真实多轮，非伪装箱） */
-  _buildChatApiMessages(systemMsg, latestUserText) {
+  /** 构造发往 /chat 的 messages：仅多轮 user/assistant + 本轮 user（system 由后端唯一 buildPrompt） */
+  _buildChatApiMessages(_systemMsgIgnored, latestUserText) {
     const max = Number(this.config.chatHistoryMaxMessages);
     const lim = Number.isFinite(max) && max >= 0 ? Math.min(Math.floor(max), 32) : 16;
     const hist = this.working.slice(-lim);
-    const out = [{ role: 'system', content: systemMsg }];
+    const out = [];
     for (const m of hist) {
       if (!m || m.text == null) continue;
       const role = m.role === 'user' ? 'user' : 'assistant';
@@ -2161,9 +2212,22 @@ ${KURISU_ANCHOR}`;
         text = text.replace(/\n\s*JP\s*[:：][\s\S]*$/i, '').trim();
         text = text.replace(/<[^>]+>/g, '').trim();
       }
-      out.push({ role, content: text });
+      const last = out[out.length - 1];
+      if (last && last.role === role) {
+        last.content = `${last.content} ${text}`.trim();
+      } else {
+        out.push({ role, content: text });
+      }
     }
-    out.push({ role: 'user', content: String(latestUserText || '').trim() });
+    const userLine = String(latestUserText || '').trim();
+    if (userLine) {
+      const last = out[out.length - 1];
+      if (last && last.role === 'user') {
+        last.content = userLine;
+      } else {
+        out.push({ role: 'user', content: userLine });
+      }
+    }
     return out;
   }
 
@@ -2523,6 +2587,11 @@ ${KURISU_ANCHOR}`;
     const inputEl = document.getElementById('ci');
     const text    = inputEl.value.trim();
     if (!text || this.state.isThinking) return;
+    inputEl.value = '';
+    await this._enqueueChatTask(() => this._userSendCore(text));
+  }
+
+  async _userSendCore(text) {
 
     if (this._startupReady === false) {
       this._notify('系统尚未就绪，请先按顶部提示启动 Ollama', 'red');
@@ -2532,7 +2601,6 @@ ${KURISU_ANCHOR}`;
     // ★ 须在用户手势内 await 解锁；void 异步会导致译日/SoVITS 完成后 play() 被浏览器拦截
     await this._ensureAudioUnlocked();
 
-    inputEl.value = '';
     this._cancelPendingTTS();
     const ttsTurnId = this._ttsTurnId;
     this.state.isThinking     = true;
@@ -2649,11 +2717,11 @@ ${KURISU_ANCHOR}`;
       document.getElementById('scn').innerHTML = cnText;
       try { document.getElementById('sjp').textContent = ''; } catch (_) {}
 
-      this.working.push({ role:'user', text }, { role:'kurisu', text:cnText });
+      await this._loadDialogueFromServer();
       this._markKurisuSpoke();
 
       const ttsReady = this._startBackgroundJapaneseTTS(cnText, modelJp, ttsTurnId);
-      if (this.working.length > 14) this.working.splice(0, 2);
+      if (this.working.length > 24) this.working = this.working.slice(-24);
       void ttsReady.finally(() => { void this._archiveToPalace(text, cnText); });
 
       if (this.emotion.mood < 20 || this.emotion.mood > 85)
@@ -2673,6 +2741,7 @@ ${KURISU_ANCHOR}`;
       this.state.isThinking = false;
       this._setState('STANDBY');
       document.getElementById('ci').focus();
+      void this._loadDialogueFromServer();
     }
   }
 
@@ -2921,60 +2990,29 @@ ${KURISU_ANCHOR}`;
 
       document.getElementById(tid)?.remove();
       const msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
-      let rawFull = '';
 
-      const cap = Number(this.config.streamMaxTokens);
-      const mtok = Number.isFinite(cap) && cap >= 80 && cap <= 8192 ? cap : 384;
-      const res = await this._postChatWithFallback({
-        messages: [
-          ...(recentCtx ? [
-            { role: 'user', content: '（以下是最近对话，供你接续语气）' },
-            { role: 'assistant', content: recentCtx },
-          ] : []),
-          { role: 'user', content: `（想说话）${anchorLead}${idleHint}` },
-        ],
-        stream: true,
-        temperature: 0.88,
-        max_tokens: mtok,
-        autonomyInitiative: true,
-        idleMsSinceUser: idleMs,
-        lastUserAnchor: lastUserText,
-        userPresence: this._userPresencePayload(),
+      const liteRes = await fetch(`${this.config.apiBase}/chat/lite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userText: `（想说话）${anchorLead}${idleHint}`,
+          proactiveAnchor: lastUserText,
+          idleMsSinceUser: idleMs,
+          model: this.config.mainModel,
+          temperature: 0.88,
+          max_tokens: Math.min(160, Number(this.config.streamMaxTokens) || 120),
+        }),
+        signal: AbortSignal.timeout(90000),
       });
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buf = '';
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop();
-          for (const line of lines) {
-            const t = line.trim();
-            if (!t || t === 'data: [DONE]') continue;
-            try {
-              const j = t.startsWith('data:') ? t.slice(5).trim() : t;
-              const obj = JSON.parse(j);
-              if (typeof obj.replaceText === 'string' && obj.replaceText) {
-                rawFull = obj.replaceText;
-                this._onKurisuStreamToken(msgDiv, this._cleanForDisplay(rawFull));
-                continue;
-              }
-              const token = obj.text || obj.choices?.[0]?.delta?.content || obj.response || '';
-              if (token) {
-                rawFull += token.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '');
-                this._onKurisuStreamToken(msgDiv, this._cleanForDisplay(rawFull));
-              }
-            } catch (_) { /* ignore */ }
-          }
-        }
-      } finally { /* stream end */ }
+      const liteData = await liteRes.json();
+      if (!liteRes.ok || !liteData.ok) {
+        throw new Error(liteData.error || `lite ${liteRes.status}`);
+      }
+      let rawFull = String(liteData.response || '').trim();
 
       let { cn: cnText, modelJp } = await this._finalizeReplyPairFromRaw(rawFull, lastUserText, recentCtx);
       cnText = this._guardAutonomyFabrication(cnText, lastUserText);
+      this._onKurisuStreamToken(msgDiv, this._cleanForDisplay(cnText));
 
       const priorLine = this._lastKurisuLine();
       if (priorLine && this._autonomyEchoesPrev(priorLine, cnText)) {
@@ -2986,6 +3024,7 @@ ${KURISU_ANCHOR}`;
       let bubbles = this._splitAutonomyBubbles(cnText, this.config.autonomyMaxBubbles || 3);
       bubbles = this._dedupeAutonomyBubbles(bubbles);
       await this._postAutonomyBubbles(bubbles, msgDiv, lastUserText, modelJp);
+      void this._loadDialogueFromServer();
 
     } catch (e) {
       document.getElementById(tid)?.remove();
@@ -3276,6 +3315,13 @@ ${data.padDescription || ''}`);
     const meta = data.digitalLife?.metacognition;
     if (meta?.latestInsight) {
       sections.push(`【元认知】${meta.latestInsight}`);
+    }
+    if (data.innerStateSix?.state) {
+      const s = data.innerStateSix.state;
+      sections.push(`【六维】安${(s.security * 100).toFixed(0)} 精${(s.energy * 100).toFixed(0)} 连${(s.connection * 100).toFixed(0)} 确${(s.certainty * 100).toFixed(0)} 重${(s.weight * 100).toFixed(0)} 界${(s.boundary * 100).toFixed(0)}`);
+    }
+    if (data.behaviorContext?.latest) {
+      sections.push(`【行为感知】${data.behaviorContext.latest}`);
     }
     if (meta?.beliefs?.conflicts?.length) {
       sections.push(`【信念冲突】${meta.beliefs.conflicts.join('；')}`);

@@ -36,7 +36,7 @@ function _fitPromptToBudget(systemPrompt, userContent, maxChars) {
   const sys  = String(systemPrompt || '').trim();
   const user = String(userContent  || '').trim();
   const userBlock = user ? `\n\n${user}` : '';
-  const budget    = Math.max(1200, Number(maxChars) || 6000);
+  const budget    = Math.max(1200, Number(maxChars) || 8000);
   if (sys.length + userBlock.length <= budget) return sys + userBlock;
 
   const userReserve  = Math.min(userBlock.length, Math.max(320, Math.floor(budget * 0.2)));
@@ -188,10 +188,10 @@ const ANCHOR = `【最高人格指令 - 必须绝对服从】
 7. 沉浸：禁止 AI/程序/助手自称；不主动解释意识或系统机制。
 8. 收束：句句服务本轮话题；禁止末尾硬贴无关金句或人设尾巴。
 9. 学科：神经科学/认知语境优先；勿硬塞无关 ML 教程。
-10. 禁止 Markdown 与无信息单字敷衍（玩梗接龙除外）。`;
+10. 禁止 Markdown 与无信息单字敷衍（玩梗接龙除外）。
+11. 核心动机：每轮回应须服务她此刻真实的内在驱动（好奇、连接、边界、自尊、想被理解等之一），自然流露即可，禁止解释「我为什么有感受」。`;
 
 function buildPrompt(context, symbolicRules = []) {
-  const clientPersona = context.clientPersonaProvided === true;
   const { P, A, D, S } = context.emotion || { P: 0, A: 0, D: 0, S: 0 };
   const rel       = context.relationship || {};
   const closeness = Number.isFinite(rel.closeness) ? rel.closeness : 0;
@@ -212,10 +212,11 @@ function buildPrompt(context, symbolicRules = []) {
 
   const padLine    = context.emotion ? padTelemetry(context.emotion) : '';
   const innerLines = ['【内在心声 · 勿复述】'];
-  if (context.selfCtx)      innerLines.push(`自省：${_clipInnerPrompt(context.selfCtx.replace(/\n/g, ' '), clientPersona ? 140 : 220)}`);
-  if (context.motivSummary) innerLines.push(`驱动：${_clipInnerPrompt(context.motivSummary, clientPersona ? 80 : 100)}`);
-  if (context.latestInsight) innerLines.push(`碎片：${_clipInnerPrompt(context.latestInsight, 80)}`);
-  if (context.digitalLifeCtx) innerLines.push(`生命层：${_clipInnerPrompt(context.digitalLifeCtx, 220)}`);
+  if (context.selfCtx)      innerLines.push(`自省：${_clipInnerPrompt(context.selfCtx.replace(/\n/g, ' '), 220)}`);
+  if (context.motivSummary) innerLines.push(`驱动：${_clipInnerPrompt(context.motivSummary, 120)}`);
+  if (context.latestInsight) innerLines.push(`碎片：${_clipInnerPrompt(context.latestInsight, 90)}`);
+  if (context.innerStateSixBlock) innerLines.push(_clipInnerPrompt(context.innerStateSixBlock, 200));
+  if (context.digitalLifeCtx) innerLines.push(`生命层：${_clipInnerPrompt(context.digitalLifeCtx, 260)}`);
 
   const symbolicBlock = Array.isArray(symbolicRules) && symbolicRules.length
     ? `【情境触发】${symbolicRules.map((r) => r.reason).filter(Boolean).join('；')}`
@@ -223,52 +224,43 @@ function buildPrompt(context, symbolicRules = []) {
 
   const soulHasVoice = /【口吻锚点/.test(String(context.soulContent || ''));
   const voiceSection = context.voiceContent && !soulHasVoice
-    ? `【口吻锚点 · 说话方式，每轮生效；优先于传记】\n${_clipInnerPrompt(context.voiceContent, clientPersona ? 1500 : 2000)}`
+    ? `【口吻锚点 · 说话方式，每轮生效；优先于传记】\n${_clipInnerPrompt(context.voiceContent, 2000)}`
     : '';
 
   const runtime = [
     context.conversationCtx
-      ? _clipInnerPrompt(context.conversationCtx, context.conversationRecall ? 2600 : 1500)
+      ? _clipInnerPrompt(context.conversationCtx, context.conversationRecall ? 2800 : 1800)
       : '',
-    context.partnerCtx ? _clipInnerPrompt(context.partnerCtx, clientPersona ? 220 : 320) : '',
+    context.partnerCtx ? _clipInnerPrompt(context.partnerCtx, 320) : '',
+    context.socialIdentityBlock ? _clipInnerPrompt(context.socialIdentityBlock, 360) : '',
+    context.expressionVariantBlock ? _clipInnerPrompt(context.expressionVariantBlock, 280) : '',
+    context.behaviorContextLine ? _clipInnerPrompt(context.behaviorContextLine, 200) : '',
     context.autonomyContinuity ? _clipInnerPrompt(context.autonomyContinuity, 360) : '',
     context.proactiveContinuity ? _clipInnerPrompt(context.proactiveContinuity, 280) : '',
-    context.companionBlock ? _clipInnerPrompt(context.companionBlock, clientPersona ? 200 : 280) : '',
-    context.turnStyleBlock ? _clipInnerPrompt(context.turnStyleBlock, clientPersona ? 240 : 320) : '',
+    context.companionBlock ? _clipInnerPrompt(context.companionBlock, 300) : '',
+    context.turnStyleBlock ? _clipInnerPrompt(context.turnStyleBlock, 340) : '',
     `【相处】亲近 ${closeness.toFixed(2)} / 信任 ${trust.toFixed(2)} · ${mindset}`,
-    context.presenceCtx ? _clipInnerPrompt(context.presenceCtx, clientPersona ? 220 : 320) : '',
-    context.utteranceFocus ? _clipInnerPrompt(context.utteranceFocus, 200) : '',
-    context.engagementHint ? _clipInnerPrompt(context.engagementHint, 160) : '',
+    context.presenceCtx ? _clipInnerPrompt(context.presenceCtx, 340) : '',
+    context.utteranceFocus ? _clipInnerPrompt(context.utteranceFocus, 220) : '',
+    context.engagementHint ? _clipInnerPrompt(context.engagementHint, 180) : '',
     padLine,
     '【语气】自然、聪明、有节奏变化；像熟人发微信，理性≠冷漠，傲娇≠每句怼+每句关心；禁止客服/讲义腔。',
-    context.behaviorDirective ? _clipInnerPrompt(context.behaviorDirective, clientPersona ? 140 : 200) : '',
+    context.behaviorDirective ? _clipInnerPrompt(context.behaviorDirective, 220) : '',
     context.ragCtx  || '',
     context.memCtx  || '',
     context.valueBlock || '',
   ];
 
-  if (clientPersona) {
-    const segments = [
-      voiceSection,
-      `【自我连续性记忆】这是你醒来时读取的自我和经历，用来保持"我是牧濑红莉栖"的连续感；只吸收其情绪、关系和背景，不要在普通对话里复述传记。\n${_compactSoulForPrompt(context.soulContent || '', 3200)}`,
-      ...runtime,
-      innerLines.length > 1 ? innerLines.join('\n') : '',
-      symbolicBlock,
-      '【运行时】直接回应当前用户；只写中文对白，不要旁白与剧本格式。',
-    ];
-    return segments.filter(Boolean).join('\n\n');
-  }
-
   const segments = [
     voiceSection,
-    `【自我连续性记忆】这是你醒来时读取的自我和经历，用来保持"我是牧濑红莉栖"的连续感；只吸收其情绪、关系和背景，不要在普通对话里复述传记。\n${_compactSoulForPrompt(context.soulContent || '', 2400)}`,
+    `【自我连续性记忆】这是你醒来时读取的自我和经历，用来保持"我是牧濑红莉栖"的连续感；只吸收其情绪、关系和背景，不要在普通对话里复述传记。\n${_compactSoulForPrompt(context.soulContent || '', 2800)}`,
     ...runtime,
     `【状态】\n${getTimeContext()}\n${context.userProfile || ''}`,
     innerLines.join('\n'),
-    context.userModelCtx    ? _clipInnerPrompt(context.userModelCtx, 180)    : '',
-    context.goalInjection   ? _clipInnerPrompt(context.goalInjection, 120)   : '',
-    context.strategyContext ? _clipInnerPrompt(context.strategyContext, 160)  : '',
-    context.personalityCtx  ? _clipInnerPrompt(context.personalityCtx, 120)  : '',
+    context.userModelCtx    ? _clipInnerPrompt(context.userModelCtx, 200)    : '',
+    context.goalInjection   ? _clipInnerPrompt(context.goalInjection, 140)   : '',
+    context.strategyContext ? _clipInnerPrompt(context.strategyContext, 180)  : '',
+    context.personalityCtx  ? _clipInnerPrompt(context.personalityCtx, 140)  : '',
     ANCHOR,
     symbolicBlock,
     '现在，请给出你的回应：',
@@ -283,5 +275,6 @@ module.exports = {
   padTelemetry,
   getTimeContext,
   symbolicReasoning,
+  ANCHOR,
   buildPrompt,
 };
