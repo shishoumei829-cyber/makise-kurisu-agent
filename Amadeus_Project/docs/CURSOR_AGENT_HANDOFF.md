@@ -92,7 +92,7 @@
 
 | 类型 | 结果 |
 |------|------|
-| `npm test` | **64/64 通过** |
+| `npm test` | **65/65 通过**（含 API 冒烟） |
 | API 冒烟 | `/health`、`/dialogue-log/append`、`/behavior-report` ✅ |
 | `/chat` + clientContext | 修 bug 后能走到 Ollama 调用；云环境无 Ollama → `fetch failed` 属预期 |
 | 浏览器 UI 端到端 | ❌ 云端未做 |
@@ -190,13 +190,13 @@ Amadeus_Project/
    - 主动开口 `/chat/lite` 是否自然  
 
 3. **可选深化**  
-   - 删除前端冗余 `_buildSystemPrompt` 死代码（已标 `@deprecated`）  
-   - 统一所有 `working.push` 为实录 API（部分路径已改）  
-   - JP-first 与流式体验进一步融合（当前在流式结束后跑）  
-   - README 叙事与「数字生命」对齐  
+   - ~~删除前端冗余 `_buildSystemPrompt` 死代码~~ ✅  
+   - ~~统一所有 `working.push` 为实录 API~~ ✅（经 `_appendDialogueToServer`）  
+   - ~~JP-first 与流式体验进一步融合~~ ✅（SSE `replaceText` + `modelJp`）  
+   - ~~README 叙事与「数字生命」对齐~~ ✅  
 
 4. **文档**  
-   - 根 `README.md` 仍写「AI 伴侣 MVP」，与 `digital_life_upgrade.md` 叙事未统一  
+   - ~~根 `README.md` 仍写「AI 伴侣 MVP」~~ ✅ 已改为数字生命叙事  
 
 ---
 

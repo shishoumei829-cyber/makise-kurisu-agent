@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 本机接力深化（2026-06-25）
+
+- **前端清理**：删除已废弃的 `_buildSystemPrompt` 及仅其使用的辅助函数；主对话 Prompt 唯由后端 `buildPrompt` 构建。
+- **实录统一**：用户发言与换题经 `_appendDialogueToServer` 写入 `dialogue-log/append`，与服务端 `/chat` 去重逻辑对齐。
+- **JP-first 流式融合**：流式结束后 `await` 日语定稿/校验，经 SSE `replaceText` + `modelJp` 一次性回传；实录与界面定稿一致。
+- **API 冒烟**：新增 `tests/apiSmoke.test.js`（子进程启动 server，探测 `/health`、`/dialogue-log`、`/behavior-report`）。
+- **README**：根文档叙事与「数字生命五模块」对齐。
+
 ### 架构深化 Phase 2（2026-06-25）
 
 - **clientContext 管道**：前端视觉/冲动/宫殿/情境经 `POST /chat` 的 `clientContext` 注入后端 `buildPrompt`，修复此前本地 `_buildSystemPrompt` 被忽略导致上下文丢失的问题。

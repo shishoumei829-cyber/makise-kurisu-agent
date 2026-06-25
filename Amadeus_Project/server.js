@@ -1435,11 +1435,11 @@ app.post('/chat', async (req, res) => {
         ? { autonomy: true, userAnchor: lastRealUserLine }
         : {};
       content = applyOocRepair(content, userContent, '', oocOpts);
-      // 回复后分析情感并更新PAD
-      _postReplyPadUpdate(content, userContent, { situation: clientCtxRaw.situation }).catch(() => {});
+      const polished = await _postReplyPadUpdate(content, userContent, { situation: clientCtxRaw.situation });
+      const out = polished.chinese || content;
       return res.json({
-        response: content,
-        choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content}}],
+        response: out,
+        choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content: out}}],
       });
     }
 
@@ -1454,8 +1454,11 @@ app.post('/chat', async (req, res) => {
     let buf='', isThinking=false, fullResponse='', replyUpdated=false;
     let ollamaPieceCarry = { accum: '' };
 
+    let streamFinalizePromise = null;
     const finalizeStream = () => {
-      if (!replyUpdated) {
+      if (streamFinalizePromise) return streamFinalizePromise;
+      streamFinalizePromise = (async () => {
+        if (replyUpdated) return;
         replyUpdated = true;
         const userCorpus = recentUserLinesForMem.join('\n');
         const cleaned = stripRoleplayActions(stripChatMarkdown(stripModelThinkingAll(fullResponse)));
@@ -1464,20 +1467,34 @@ app.post('/chat', async (req, res) => {
           ? { autonomy: true, userAnchor: lastRealUserLine }
           : {};
         trimmed = stripRoleplayActions(applyOocRepair(trimmed, userContent, cleaned, oocOpts));
-        if (shouldReplaceStreamText(cleaned, trimmed) && trimmed.length > 0) {
-          fullResponse = trimmed;
-          try {
-            res.write(`data: ${JSON.stringify({ replaceText: trimmed })}\n\n`);
-          } catch (_) {}
-        } else if (trimmed !== cleaned) {
-          fullResponse = cleaned.length >= trimmed.length ? cleaned : trimmed;
+        const oocFixed = trimmed || cleaned;
+        fullResponse = oocFixed;
+        try {
+          const polished = await _postReplyPadUpdate(oocFixed, userContent, { situation: clientCtxRaw.situation });
+          const finalCn = polished.chinese || oocFixed;
+          const finalJp = polished.japanese || '';
+          if (finalCn) fullResponse = finalCn;
+          const shouldReplace = (finalCn.length > 0)
+            && (shouldReplaceStreamText(cleaned, finalCn)
+              || finalCn !== cleaned
+              || process.env.AMADEUS_JP_FIRST === '1');
+          if (shouldReplace) {
+            const payload = { replaceText: finalCn };
+            if (finalJp) payload.modelJp = finalJp;
+            res.write(`data: ${JSON.stringify(payload)}\n\n`);
+          }
+        } catch (e) {
+          console.warn('[chat] stream finalize polish', e.message);
+          if (shouldReplaceStreamText(cleaned, oocFixed) && oocFixed.length > 0) {
+            res.write(`data: ${JSON.stringify({ replaceText: oocFixed })}\n\n`);
+          }
         }
-        _postReplyPadUpdate(fullResponse, userContent, { situation: clientCtxRaw.situation }).catch(() => {});
-      }
-      if (!res.writableEnded) {
-        res.write('data: [DONE]\n\n');
-        res.end();
-      }
+        if (!res.writableEnded) {
+          res.write('data: [DONE]\n\n');
+          res.end();
+        }
+      })();
+      return streamFinalizePromise;
     };
 
     while (true) {
@@ -1507,13 +1524,13 @@ app.post('/chat', async (req, res) => {
             res.write(`data: ${JSON.stringify({ text:token })}\n\n`);
           }
           if (obj.done) {
-            finalizeStream();
+            await finalizeStream();
             return;
           }
         } catch {}
       }
     }
-    finalizeStream();
+    await finalizeStream();
 
   } catch (err) {
     console.error('[chat]', err.stack || err.message);
@@ -1586,9 +1603,16 @@ async function _ollamaChatOnce(model, messages, options = {}) {
   return String((data.message && data.message.content) || '').trim();
 }
 
+function _polishResult(chinese, japanese = '') {
+  return {
+    chinese: String(chinese || '').trim(),
+    japanese: String(japanese || '').trim(),
+  };
+}
+
 async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
   let cn = String(reply || '').trim();
-  if (!cn) return cn;
+  if (!cn) return _polishResult('');
   const logBlock = unifiedDialogueLog.toPromptBlock({ maxChars: 2000 });
   let whoamiName = '';
   try {
@@ -1604,7 +1628,7 @@ async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
   }
 
   if (process.env.AMADEUS_JP_VALIDATE === '0' && process.env.AMADEUS_JP_FIRST !== '1') {
-    return cn;
+    return _polishResult(cn);
   }
 
   const translateModel = process.env.AMADEUS_LITE_MODEL || 'kurisu:latest';
@@ -1633,7 +1657,7 @@ async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
       });
       if (jpFirst.ok && jpFirst.chinese) {
         console.log('[jp-pipeline] JP-first 定稿通过');
-        return jpFirst.chinese;
+        return _polishResult(jpFirst.chinese, jpFirst.japanese);
       }
       if (jpFirst.issues?.length) {
         console.log(`[jp-pipeline] JP-first 未采用: ${jpFirst.issues.join('；')}`);
@@ -1644,7 +1668,7 @@ async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
   }
 
   if (process.env.AMADEUS_JP_VALIDATE === '0') {
-    return cn;
+    return _polishResult(cn);
   }
 
   try {
@@ -1661,10 +1685,10 @@ async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
         options: { temperature: 0.25, num_predict: 160, num_ctx: 1024 },
       }),
     });
-    if (!toJpRes.ok) return cn;
+    if (!toJpRes.ok) return _polishResult(cn);
     const jpData = await toJpRes.json();
     const jp = String((jpData.message && jpData.message.content) || '').trim();
-    if (!jp) return cn;
+    if (!jp) return _polishResult(cn);
 
     let validation = validateJapaneseLine(jp, { conversationLog: logBlock, partnerName: whoamiName });
     if (validation.ok) {
@@ -1673,25 +1697,29 @@ async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
     }
     if (!validation.ok) {
       console.log(`[jp-pipeline] 日语校验未通过: ${(validation.issues || []).join('；')}`);
-      return cn;
+      return _polishResult(cn);
     }
     console.log('[jp-pipeline] 日语校验通过');
+    return _polishResult(cn, jp);
   } catch (e) {
     console.warn('[jp-pipeline]', e.message);
   }
-  return cn;
+  return _polishResult(cn);
 }
 
 /** 回复后的PAD反馈更新（分析AI回复的情感倾向） */
 async function _postReplyPadUpdate(reply, userContent = '', extra = {}) {
-  let finalReply = reply;
-  if (reply && (process.env.AMADEUS_JP_VALIDATE !== '0' || process.env.AMADEUS_JP_FIRST === '1')) {
-    finalReply = await _polishReplyWithValidation(reply, userContent, extra);
+  let finalReply = String(reply || '').trim();
+  let modelJp = '';
+  if (finalReply && (process.env.AMADEUS_JP_VALIDATE !== '0' || process.env.AMADEUS_JP_FIRST === '1')) {
+    const polished = await _polishReplyWithValidation(finalReply, userContent, extra);
+    finalReply = polished.chinese || finalReply;
+    modelJp = polished.japanese || '';
   }
   if (finalReply) {
     unifiedDialogueLog.append('assistant', finalReply);
   }
-  if (!finalReply) return finalReply;
+  if (!finalReply) return _polishResult('');
   // 她自己说了什么，反过来影响自己的状态
   if (/笨蛋|哼|蠢|讨厌/.test(reply)) {
     currentPAD = updatePAD(currentPAD, { A:0.04 }, 0.2);
@@ -1734,7 +1762,7 @@ async function _postReplyPadUpdate(reply, userContent = '', extra = {}) {
     );
     reinforcementLearning.updatePolicy(lastRlStateKey, lastChatBehaviorId, reward, nextKey);
   }
-  return finalReply;
+  return _polishResult(finalReply, modelJp);
 }
 
 /** 分析用户情感 */

@@ -1,14 +1,14 @@
 {
   "name": "amadeus-project",
   "version": "1.0.0",
-  "description": "本地 AI 伴侣雏形：情感连续性、长期记忆、主动陪伴。非工具型/百科型对话，而是私人化、可延续关系的数字陪伴实验。",
+  "description": "本地数字生命体实验：情感连续性、长期记忆、自主陪伴。基于 digital_life 五模块与 Ollama 本地推理。",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "node server.js",
     "dist": "electron-builder",
     "ingest": "node ingest.js",
-    "test": "node --test tests/pad.test.js tests/chatTurns.test.js tests/oocGuard.test.js tests/startupCheck.test.js tests/digital_life.test.js tests/autonomy.test.js tests/evolution.test.js tests/understanding.test.js tests/embodiment.test.js tests/metacognition.test.js tests/architecture.test.js",
+    "test": "node --test tests/pad.test.js tests/chatTurns.test.js tests/oocGuard.test.js tests/startupCheck.test.js tests/digital_life.test.js tests/autonomy.test.js tests/evolution.test.js tests/understanding.test.js tests/embodiment.test.js tests/metacognition.test.js tests/architecture.test.js tests/apiSmoke.test.js",
     "release:win": "electron-builder --win",
     "check:install": "scripts\\install-check.bat"
   },
