@@ -70,6 +70,7 @@ Windows 安装包：见 [Releases](https://github.com/shishoumei829-cyber/makise
 | [DESIGN.md](Amadeus_Project/DESIGN.md) | 产品设计说明（背景、优势、架构） |
 | [INSTALL.md](Amadeus_Project/INSTALL.md) | 使用者安装指南 |
 | [PROJECT_STATUS.md](Amadeus_Project/PROJECT_STATUS.md) | 技术状态与 API |
+| [CURSOR_AGENT_HANDOFF.md](Amadeus_Project/docs/CURSOR_AGENT_HANDOFF.md) | 云端 Agent 对话摘要与接力待办 |
 | [MVP_STATUS.md](Amadeus_Project/MVP_STATUS.md) | 产品现状（非技术版） |
 
 ---
