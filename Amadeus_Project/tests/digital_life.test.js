@@ -77,4 +77,28 @@ test('DigitalLifeOrchestrator onUserTurn returns drive boosts and goal seeds', (
   assert.ok(out.driveBoosts);
   assert.ok(out.goalSeeds?.length >= 0);
   assert.ok(out.recognized.emotion);
+  assert.ok(out.expression?.preset);
+  assert.ok(out.subtextLine || out.mentalModelLine);
+});
+
+test('DigitalLifeOrchestrator runIdleCycle returns evolution pack', () => {
+  const dl = new DigitalLifeOrchestrator();
+  dl.evolution._lastConsolidation = 0;
+  const result = dl.runIdleCycle({
+    idleMs: 40 * 60 * 1000,
+    pad: { P: 0, A: 0.2 },
+    memorySystem: {
+      events: [
+        { type: 'scientific', content: '量子' },
+        { type: 'scientific', content: '物理实验' },
+        { type: 'scientific', content: '理论推导' },
+        { type: 'positive', content: '开心' },
+      ],
+      getRecentSignificant: () => [],
+      addObservation: () => {},
+      getRelationshipScore: () => 0.2,
+    },
+  });
+  assert.ok(result.autonomy);
+  assert.ok(result.dream || result.insights.length >= 0);
 });

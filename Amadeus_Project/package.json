@@ -8,7 +8,7 @@
     "dev": "node server.js",
     "dist": "electron-builder",
     "ingest": "node ingest.js",
-    "test": "node --test tests/pad.test.js tests/chatTurns.test.js tests/oocGuard.test.js tests/startupCheck.test.js tests/digital_life.test.js tests/autonomy.test.js",
+    "test": "node --test tests/pad.test.js tests/chatTurns.test.js tests/oocGuard.test.js tests/startupCheck.test.js tests/digital_life.test.js tests/autonomy.test.js tests/evolution.test.js tests/understanding.test.js tests/embodiment.test.js tests/metacognition.test.js",
     "release:win": "electron-builder --win",
     "check:install": "scripts\\install-check.bat"
   },

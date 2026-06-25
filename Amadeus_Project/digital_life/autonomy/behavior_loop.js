@@ -28,6 +28,7 @@ class AutonomousBehaviorLoop {
       dnd = false,
       proactiveQuotaOk = true,
       sheSpokeRecently = false,
+      dreamCarryover = null,
     } = ctx;
 
     const idleMin = idleMs / 60000;
@@ -41,6 +42,14 @@ class AutonomousBehaviorLoop {
     let speakHint = '';
     let suppressProactive = false;
     const goalSeeds = [];
+
+    if (!primary && dreamCarryover?.proactiveEligible && idleMin >= 20) {
+      action = AUTONOMY_ACTIONS.SPEAK;
+      shouldAct = true;
+      speakHint = `梦境残念：${dreamCarryover.hint || dreamCarryover.mood || '有话想说'}`;
+      this._logDecision({ action, reason: 'dream_carryover', primary: null });
+      return this._pack(action, shouldAct, speakHint, false, goalSeeds, null);
+    }
 
     if (userPresenceActive || dnd) {
       action = AUTONOMY_ACTIONS.WAIT;

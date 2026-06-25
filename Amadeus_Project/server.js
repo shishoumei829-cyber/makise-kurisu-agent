@@ -584,6 +584,7 @@ app.get('/internal-state', (req, res) => {
 
       // 数字生命子系统
       digitalLife: digitalLife.getPublicState(),
+      expression: digitalLife.embodiment.expression.snapshot(),
     });
   } catch (e) {
     console.error('[internal-state]', e.message);
@@ -819,6 +820,9 @@ app.post('/chat', async (req, res) => {
       selfModel,
       relScore: effectiveRelScore(memorySystem.getRelationshipScore()),
       idleMs: idleMsSinceUser,
+      rl: reinforcementLearning,
+      previousBehaviorId: lastChatBehaviorId,
+      externalTraits: personalityEvolution.traits,
     });
     if (lastDigitalLifeTurn?.padDelta) {
       const d = lastDigitalLifeTurn.padDelta;
@@ -904,6 +908,8 @@ app.post('/chat', async (req, res) => {
       const recentEvent = { type: mainEvent.type || 'neutral' };
       personalityEvolution.updateTraits(recentEvent);
       personalityEvolution.updateValues(recentEvent);
+      digitalLife.evolution.personality.ingestExternalTraits(personalityEvolution.traits);
+      digitalLife.evolution.personality.updateFromEvent(recentEvent);
       const evolvedPersonalityLine = personalityEvolution.getDescription();
       console.log(`[personality] ${evolvedPersonalityLine}`);
       selfReflection.reflectOnDecision({
@@ -911,28 +917,43 @@ app.post('/chat', async (req, res) => {
         reasoning: behaviorResult.reasoning,
         factors: behaviorResult.reasons || [],
       });
+      const dlMetacog = digitalLife.afterBehaviorDecision({
+        mainEvent,
+        decision: {
+          action: behaviorResult.behaviorId,
+          behaviorId: behaviorResult.behaviorId,
+          reasoning: behaviorResult.reasoning,
+          factors: behaviorResult.reasons || [],
+        },
+        chatTurnCounter,
+        chatMinimal: String(process.env.AMADEUS_CHAT_MINIMAL || '1').trim() !== '0',
+      });
       const keywordConflicts = valueConsistency.detectConflicts({ description: userContent });
       if (keywordConflicts.length > 0) {
         console.log(`[metacognition] 价值观关键词冲突: ${keywordConflicts.map(c => c.description).join('; ')}`);
       }
-      let latestInsight = '';
+      let latestInsight = dlMetacog?.insight?.content || '';
       const chatMinimal = String(process.env.AMADEUS_CHAT_MINIMAL || '1').trim() !== '0';
-      if (!chatMinimal && chatTurnCounter % 10 === 0) {
+      if (!latestInsight && !chatMinimal && chatTurnCounter % 10 === 0) {
         const insight = selfReflection.generateInsight();
         if (insight) {
           latestInsight = insight.content;
           console.log(`[metacognition] 洞察: ${insight.content}`);
-          const injection = selfReflection.insightToGoalInjection(insight);
-          if (injection) {
-            goalSystem.goals.unshift({
-              id: 'METACOG_INSIGHT',
-              label: '元认知修正',
-              priority: 0.55,
-              turns_remaining: 2,
-              behavior_hint: injection,
-              prompt_injection: injection,
-            });
-          }
+        }
+      }
+      if (latestInsight) {
+        console.log(`[metacognition] 洞察: ${latestInsight}`);
+        const injection = dlMetacog?.insightInjection
+          || selfReflection.insightToGoalInjection({ content: latestInsight });
+        if (injection) {
+          goalSystem.goals.unshift({
+            id: 'METACOG_INSIGHT',
+            label: '元认知修正',
+            priority: 0.55,
+            turns_remaining: 2,
+            behavior_hint: injection,
+            prompt_injection: injection,
+          });
         }
       }
       let whoamiName = '';
@@ -992,13 +1013,21 @@ app.post('/chat', async (req, res) => {
           pad: currentPAD,
           memory: memorySystem,
           selfModel,
+          userModel: userModelInst,
           relScore: effectiveRelScore(st.relScore),
+          closeness: userModelInst.model?.relationship?.closeness ?? effectiveRelScore(st.relScore),
           userText: cognitiveInput,
+          idleMs: idleMsSinceUser,
           resonanceLine: lastDigitalLifeTurn?.resonanceLine || '',
+          subtextLine: lastDigitalLifeTurn?.subtextLine || '',
+          mentalModelLine: lastDigitalLifeTurn?.mentalModelLine || '',
+          pendingNeed: lastDigitalLifeTurn?.pendingNeed || '',
+          timeLine: lastDigitalLifeTurn?.timeLine || '',
           autonomyHint: autonomyDecision?.speakHint || lastDigitalLifeTurn?.autonomyPrompt || '',
           metacognitionInsight: latestInsight,
           includeDream: autonomyInitiative || idleMsSinceUser > 20 * 60 * 1000,
         }),
+        expression: lastDigitalLifeTurn?.expression || digitalLife.embodiment.expression.snapshot(),
       };
     });
 

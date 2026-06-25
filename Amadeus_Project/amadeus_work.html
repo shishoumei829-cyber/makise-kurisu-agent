@@ -3239,8 +3239,63 @@ ${data.padDescription || ''}`);
       const ab = data.digitalLife.lastAutonomyBehavior;
       sections.push(`【自主环】${ab.action} · 开口=${ab.shouldAct ? '是' : '否'}`);
     }
+
+    const evo = data.digitalLife?.evolution;
+    if (evo?.dream?.carryover?.hint) {
+      sections.push(`【梦境残念】${evo.dream.carryover.hint.slice(0, 60)}`);
+    }
+    if (evo?.personality?.description) {
+      sections.push(`【人格漂移】${evo.personality.description}`);
+    }
+    if (evo?.memory?.top?.length) {
+      sections.push(`【记忆联想】${evo.memory.top.map((t) => t.pair).join(' · ')}`);
+    }
+
+    const und = data.digitalLife?.understanding;
+    if (und?.subtext?.pendingNeed) {
+      sections.push(`【言外之意】${und.subtext.pendingNeed}`);
+    }
+    if (und?.mentalModel?.topPreferences?.length) {
+      sections.push(`【心智模型】兴趣 ${und.mentalModel.topPreferences.map((p) => p.topic).join('、')}`);
+    }
+    if (und?.resonance?.regulationMode) {
+      sections.push(`【共情模式】${und.resonance.regulationMode} · ${(und.resonance.empathyLevel || 0).toFixed(2)}`);
+    }
+
+    const emb = data.digitalLife?.embodiment;
+    if (emb?.expression?.currentPreset) {
+      sections.push(`【表情】${emb.expression.currentPreset} · sprite=${emb.expression.spriteIndex}`);
+    }
+    if (emb?.environment?.userState?.note) {
+      sections.push(`【环境】${emb.environment.userState.note}`);
+    }
+    if (emb?.time?.now?.period) {
+      sections.push(`【时间感】${emb.time.now.period}·周${emb.time.now.weekday}`);
+    }
+
+    const meta = data.digitalLife?.metacognition;
+    if (meta?.latestInsight) {
+      sections.push(`【元认知】${meta.latestInsight}`);
+    }
+    if (meta?.beliefs?.conflicts?.length) {
+      sections.push(`【信念冲突】${meta.beliefs.conflicts.join('；')}`);
+    }
+
+    if (data.expression?.currentPreset) {
+      this._applyExpression(data.expression);
+    }
     
     el.textContent = sections.join('\n\n');
+  }
+
+  _applyExpression(expr) {
+    const ki = document.getElementById('ki');
+    if (!ki || !expr) return;
+    const idx = Number(expr.spriteIndex) || 0;
+    const base = 'assets/Live2d/kurisu/';
+    ki.src = `${base}${idx}.png`;
+    ki.onerror = () => { ki.src = `${base}0.png`; };
+    if (expr.filter) ki.style.filter = expr.filter;
   }
 
   injectMemory() {
