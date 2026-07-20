@@ -9,7 +9,9 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('amadeus', {
+// ★ 禁止暴露为 window.amadeus：页面主脚本也用 const amadeus = new AmadeusConsciousness()，
+// Electron contextBridge 会把同名 API 注册成渲染进程词法绑定，直接 SyntaxError，整页卡在初始化。
+contextBridge.exposeInMainWorld('amadeusDesktop', {
   /**
    * 订阅系统唤醒事件（系统从休眠/锁屏恢复时触发）
    * @param {(type: 'resume' | 'unlock') => void} callback
