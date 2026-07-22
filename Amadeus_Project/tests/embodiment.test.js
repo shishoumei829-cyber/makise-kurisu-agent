@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const { EnvironmentSense } = require('../digital_life/embodiment/environment');
 const { TimeSense } = require('../digital_life/embodiment/time_perception');
 const { ExpressionMapper } = require('../digital_life/embodiment/expression_mapper');
+const { SpritePolicy } = require('../digital_life/embodiment/sprite_policy');
 const { EmbodimentSubsystem } = require('../digital_life/embodiment');
 
 test('EnvironmentSense: infers busy focused state', () => {
@@ -30,6 +31,31 @@ test('ExpressionMapper: maps PAD to preset and sprite', () => {
   assert.ok(warm.spriteIndex >= 0);
   const cold = ex.mapFromPad({ P: -0.5, A: -0.1, D: 0.4, S: 0.5 });
   assert.equal(cold.preset, 'cold');
+});
+
+test('SpritePolicy: blocks unapproved expressive assets', () => {
+  const policy = new SpritePolicy({ minHoldMs: 0 });
+  const out = policy.decide({
+    userText: '你这样有点可爱，害羞了？',
+    pad: { P: 0.3, A: 0.4, D: -0.2, S: 0.6 },
+    preset: 'shy',
+    now: 1000,
+  });
+  assert.equal(out.spriteId, 'neutral');
+  assert.equal(out.hold, true);
+  assert.equal(out.blockedSpriteId, 'shy_denial');
+  assert.equal(out.changeReason, 'asset_not_approved');
+});
+
+test('ExpressionMapper: returns sprite policy metadata', () => {
+  const ex = new ExpressionMapper();
+  const out = ex.mapFromPad(
+    { P: 0.2, A: 0.4, D: -0.4, S: 0.6 },
+    { userText: '别露出那种害羞表情' }
+  );
+  assert.equal(out.assetApproved, true);
+  assert.equal(out.spriteId, 'neutral');
+  assert.equal(out.blockedSpriteId, 'shy_denial');
 });
 
 test('EmbodimentSubsystem: vision and conversation turn', () => {

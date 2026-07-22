@@ -18,6 +18,7 @@ const path = require('path');
 
 let _log = [];
 let _dataDir = '';
+let _persistedModel = null;
 
 // ── 情绪关键词库 ──────────────────────────────────────────────────
 const EMOTION_KEYWORDS = {
@@ -39,11 +40,14 @@ const TOPIC_KEYWORDS = {
 
 function init(dir) {
   _dataDir = dir;
+  _log = [];
+  _persistedModel = null;
   try {
     const p = path.join(dir, 'user_model.json');
     if (fs.existsSync(p)) {
       const d = JSON.parse(fs.readFileSync(p, 'utf8'));
       if (d._log) _log = d._log;
+      _persistedModel = d && typeof d === 'object' ? d : null;
     }
   } catch {}
 }
@@ -63,7 +67,7 @@ function _save(data) {
 // ── 用户模型类 ──────────────────────────────────────────────────
 class UserModel {
   constructor() {
-    this.model = {
+    const defaults = {
       stats: { 
         total_messages: 0,
         first_interaction: null,
@@ -94,6 +98,17 @@ class UserModel {
         history: [],       // 关系事件历史
       },
       pending_confirmations: [], // 待确认的推测
+    };
+    const { _log: _ignoredLog, ...saved } = _persistedModel || {};
+    this.model = {
+      ...defaults,
+      ...saved,
+      stats: { ...defaults.stats, ...(saved.stats || {}) },
+      preferences: { ...defaults.preferences, ...(saved.preferences || {}), topics: { ...(saved.preferences?.topics || {}) }, styles: { ...(saved.preferences?.styles || {}) } },
+      patterns: { ...defaults.patterns, ...(saved.patterns || {}) },
+      inferred_bdi: { ...defaults.inferred_bdi, ...(saved.inferred_bdi || {}) },
+      relationship: { ...defaults.relationship, ...(saved.relationship || {}) },
+      pending_confirmations: Array.isArray(saved.pending_confirmations) ? saved.pending_confirmations : [],
     };
   }
 
@@ -181,6 +196,19 @@ class UserModel {
     if (this.model.pending_confirmations.length === 0) return null;
     return this.model.pending_confirmations.shift();
   }
+
+  purgeContaminatedTopics(fragments = []) {
+    const list = fragments.map(String).filter(Boolean);
+    const hit = (value) => list.some((fragment) => String(value || '').includes(fragment));
+    const bdi = this.model.inferred_bdi || {};
+    bdi.beliefs = (bdi.beliefs || []).filter((item) => !hit(item));
+    bdi.desires = (bdi.desires || []).filter((item) => !hit(item));
+    bdi.intentions = (bdi.intentions || []).filter((item) => !hit(item));
+    this.model.pending_confirmations = (this.model.pending_confirmations || [])
+      .filter((item) => !hit(JSON.stringify(item)));
+    _log = _log.filter((item) => !hit(item.text));
+    _save(this.model);
+  }
 }
 
 // ── 对话分析类 ──────────────────────────────────────────────────
@@ -190,7 +218,7 @@ class ConversationAnalytics {
     this._log = _log;
   }
 
-  analyze(text) {
+  analyze(text, options = {}) {
     const m = this.userModel.model;
     m.stats.total_messages++;
     m.stats.last_interaction = Date.now();
@@ -234,7 +262,7 @@ class ConversationAnalytics {
     
     // 记录日志
     _log.push({
-      text: text.substring(0, 100), // 只存前100字
+      text: options.persistText === false ? '' : text.substring(0, 100),
       intent,
       sentiment: sentiment.score,
       topics,

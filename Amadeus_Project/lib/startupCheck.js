@@ -2,6 +2,7 @@
 
 const DEFAULT_CHAT_MODEL = 'kurisu:latest';
 const DEFAULT_EMBED_MODEL = 'nomic-embed-text';
+const DEFAULT_VISION_MODELS = ['llama3.2-vision:latest', 'llama3.2-vision', 'qwen2.5vl:7b'];
 
 function summarizeHealth(checks) {
   const blockers = checks.filter((c) => c.required && !c.ok);
@@ -43,6 +44,7 @@ function buildUserHints(summary) {
     if (c.id === 'rag') hints.push('长期记忆索引未建立：在项目目录运行 npm run ingest（不影响基础聊天）');
     else if (c.id === 'embed_model') hints.push(`RAG 需要嵌入模型 ${DEFAULT_EMBED_MODEL}（可选）`);
     else if (c.id === 'tts') hints.push('语音服务未连接（可选，文字对话不受影响）');
+    else if (c.id === 'vision') hints.push('视觉模型未安装：当前摄像头只能预览，不能理解画面（可选）');
   }
   return hints;
 }
@@ -51,6 +53,9 @@ async function runStartupChecks(opts = {}) {
   const ollamaBase = opts.ollamaBase || 'http://127.0.0.1:11434';
   const chatModel = opts.chatModel || DEFAULT_CHAT_MODEL;
   const embedModel = opts.embedModel || DEFAULT_EMBED_MODEL;
+  const visionModels = Array.isArray(opts.visionModels) && opts.visionModels.length
+    ? opts.visionModels
+    : DEFAULT_VISION_MODELS;
   const ragIndexed = !!opts.ragIndexed;
   const sovitsUrl = String(opts.sovitsUrl || 'http://localhost:9880').replace(/\/$/, '');
   const fetchFn = opts.fetchFn || fetch;
@@ -66,13 +71,28 @@ async function runStartupChecks(opts = {}) {
     message: ollama.ok ? 'Ollama 已连接' : `Ollama 未就绪：${ollama.error}`,
   });
 
-  const chatOk = ollama.ok && hasModel(ollama.models, chatModel);
+  const visionModel = ollama.ok
+    ? visionModels.find((name) => hasModel(ollama.models, name)) || null
+    : null;
+  checks.push({
+    id: 'vision',
+    label: '视觉理解',
+    required: false,
+    ok: !!visionModel,
+    message: visionModel ? `视觉模型 ${visionModel} 可用` : '未检测到视觉模型（摄像头预览仍可用）',
+  });
+
+  const compatibleKurisuModel = ollama.ok && /^kurisu(?:-|:|$)/i.test(chatModel)
+    ? ollama.models.find((name) => /^kurisu(?:-|:|$)/i.test(String(name))) || null
+    : null;
+  const resolvedChatModel = hasModel(ollama.models, chatModel) ? chatModel : compatibleKurisuModel;
+  const chatOk = ollama.ok && !!resolvedChatModel;
   checks.push({
     id: 'chat_model',
     label: '对话模型',
     required: true,
     ok: chatOk,
-    message: chatOk ? `对话模型 ${chatModel} 可用` : `缺少对话模型 ${chatModel}`,
+    message: chatOk ? `对话模型 ${resolvedChatModel} 可用` : `缺少对话模型 ${chatModel}`,
   });
 
   const embedOk = ollama.ok && hasModel(ollama.models, embedModel);
@@ -114,14 +134,23 @@ async function runStartupChecks(opts = {}) {
     blockers: summary.blockers.map((c) => ({ id: c.id, message: c.message })),
     warnings: summary.warnings.map((c) => ({ id: c.id, message: c.message })),
     hints: buildUserHints(summary),
-    chatModel,
+    chatModel: resolvedChatModel || chatModel,
     ollamaBase,
+    visionModel,
+    capabilities: {
+      cameraPreview: true,
+      visionUnderstanding: !!visionModel,
+      tts: ttsOk,
+      memory: ragIndexed,
+      proactiveDialogue: chatOk,
+    },
   };
 }
 
 module.exports = {
   DEFAULT_CHAT_MODEL,
   DEFAULT_EMBED_MODEL,
+  DEFAULT_VISION_MODELS,
   probeOllama,
   hasModel,
   summarizeHealth,

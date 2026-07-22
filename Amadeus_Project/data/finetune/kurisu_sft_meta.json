@@ -1,0 +1,11 @@
+{
+  "builtAt": "2026-06-29T14:24:37.663Z",
+  "total": 62,
+  "train": 54,
+  "eval": 8,
+  "systemChars": 143,
+  "bySource": {
+    "amadeus": 50,
+    "dialogue_pairs": 12
+  }
+}

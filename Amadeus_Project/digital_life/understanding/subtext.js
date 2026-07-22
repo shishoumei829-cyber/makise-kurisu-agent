@@ -11,7 +11,7 @@ class SubtextDetector {
     this._pendingNeeds = [];
   }
 
-  analyze(text, recognized = {}) {
+  analyze(text, recognized = {}, options = {}) {
     const t = String(text || '');
     const hits = [];
 
@@ -48,13 +48,15 @@ class SubtextDetector {
       at: Date.now(),
     };
 
-    if (result.primaryNeed) {
+    if (options.persist !== false && result.primaryNeed) {
       this._pendingNeeds.push(result.primaryNeed);
       if (this._pendingNeeds.length > 10) this._pendingNeeds.shift();
     }
 
-    this.recent.push(result);
-    if (this.recent.length > 20) this.recent.shift();
+    if (options.persist !== false) {
+      this.recent.push(result);
+      if (this.recent.length > 20) this.recent.shift();
+    }
     return result;
   }
 

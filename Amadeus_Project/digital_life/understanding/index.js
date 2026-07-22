@@ -66,11 +66,15 @@ class UnderstandingSubsystem {
     const padDelta = this.resonance.adjustEmotionalState(recognized, closeness);
     const resonanceLine = this.resonance.toPromptLine(recognized, closeness);
 
-    this.mentalModel.ingestUserText(userText, userModel);
+    if (!ctx.memoryAdmission || ctx.memoryAdmission.allowProfile === true || ctx.memoryAdmission.allowInference === true) {
+      this.mentalModel.ingestUserText(userText, userModel, ctx.memoryAdmission);
+    }
     if (ctx.inferredBdi) this.mentalModel.applyInferredBdi(ctx.inferredBdi);
     const hypothesis = this.mentalModel.buildHypothesis(recognized);
 
-    const subtextAnalysis = this.subtext.analyze(userText, recognized);
+    const subtextAnalysis = this.subtext.analyze(userText, recognized, {
+      persist: !ctx.memoryAdmission || ctx.memoryAdmission.allowInference === true,
+    });
     const subtextLine = this.subtext.toPromptLine(subtextAnalysis);
 
     this._lastRecognized = recognized;

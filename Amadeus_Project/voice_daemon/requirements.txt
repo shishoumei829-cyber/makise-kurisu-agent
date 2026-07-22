@@ -1,0 +1,8 @@
+faster-whisper>=1.1.1
+numpy>=1.26
+requests>=2.32
+sounddevice>=0.5.1
+soundfile>=0.12.1
+speechbrain>=1.0.2
+torch>=2.3
+torchaudio>=2.3

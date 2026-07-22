@@ -72,6 +72,44 @@ function estimateMessageChars(messages) {
 }
 
 /**
+ * 按 Ollama num_ctx 反推安全字符预算（中日文 prompt 约 1.45 字/token）。
+ * 避免 AMADEUS_MAX_PROMPT_CHARS 过大导致 exceed_context_size。
+ */
+function resolvePromptCharBudget({ numCtx, maxTok, envMaxChars }) {
+  const ctx = Math.max(512, Number(numCtx) || 2048);
+  const predict = Math.max(64, Number(maxTok) || 384);
+  const configured = Number(envMaxChars);
+  const envMax = Number.isFinite(configured) && configured > 0 ? configured : 8000;
+  const reserve = Math.max(96, Math.min(256, Math.floor(ctx * 0.05)));
+  const promptTokens = Math.max(384, ctx - predict - reserve);
+  const cptEnv = Number(process.env.AMADEUS_CHARS_PER_TOKEN);
+  const charsPerToken = Number.isFinite(cptEnv) && cptEnv > 0 ? cptEnv : 1.45;
+  const ctxCap = Math.floor(promptTokens * charsPerToken);
+  return Math.min(envMax, Math.max(900, ctxCap));
+}
+
+function calculatePromptCharBudget(numCtx, maxTokens, configuredCap = 8000) {
+  return resolvePromptCharBudget({ numCtx, maxTok: maxTokens, envMaxChars: configuredCap });
+}
+
+/**
+ * A short social acknowledgement should not pay the latency of the full
+ * research/task prompt. This is deliberately conservative: anything that
+ * looks like a request, analysis, or multi-part question stays on the full
+ * path so capability and reasoning quality are never traded for speed.
+ */
+function isFastConversationTurn(text, options = {}) {
+  if (options.autonomy || options.useLongTermMemory || options.hasTask) return false;
+  const value = String(text || '').trim();
+  if (value.length < 1 || value.length > 42 || /[\r\n]/.test(value)) return false;
+  const needsFullContext = /(?:为什么|為什麼|怎么|怎麼|如何|帮我|幫我|提醒|创建|創建|删除|刪除|打开|打開|搜索|搜尋|查一下|计划|計劃|任务|任務|文件|邮件|郵件|日历|日曆|代码|代碼|bug|debug|分析|比较|比較|计算|計算|证明|證明|方案|设计|設計|research|search|create|delete|open|remind|plan|code|debug)/i;
+  if (needsFullContext.test(value)) return false;
+  // Long compound questions need continuity even when they do not contain a
+  // keyword above. Simple greetings, thanks, reactions and short follow-ups do not.
+  return (value.match(/[？?]/g) || []).length <= 1;
+}
+
+/**
  * system + 多轮 user/assistant，超长时从最早轮次裁切（保留至少 minTurns 条）
  * @param {string} systemPrompt
  * @param {Array<{ role: string, content: string }>} dialogue
@@ -109,6 +147,9 @@ module.exports = {
   parseIncomingChat,
   capDialogue,
   estimateMessageChars,
+  resolvePromptCharBudget,
+  calculatePromptCharBudget,
+  isFastConversationTurn,
   buildOllamaMessages,
   fitSystemForDialogue,
 };

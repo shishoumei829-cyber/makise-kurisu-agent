@@ -7,13 +7,19 @@ const { DriveDynamics, Urge } = require('../digital_life/autonomy/drive_dynamics
 const { CuriosityEngine } = require('../digital_life/autonomy/curiosity');
 const { CreativityModule } = require('../digital_life/autonomy/creativity');
 const { AutonomousBehaviorLoop } = require('../digital_life/autonomy/behavior_loop');
-const { AutonomySubsystem } = require('../digital_life/autonomy');
+const { AutonomySubsystem, shouldSeedCuriosity } = require('../digital_life/autonomy');
 const { ACTION_INTENTS } = require('../digital_life/autonomy/constants');
 
 test('DriveDynamics: CONNECTION rises with idle time', () => {
   const d = new DriveDynamics();
   d.tick(0, { pad: { P: 0, A: 0, S: 0.4 }, relScore: 0.4, idleMs: 45 * 60 * 1000 });
   assert.ok(d.activations.CONNECTION > 0.4);
+});
+
+test('short casual chatter does not become a long-term curiosity task', () => {
+  assert.equal(shouldSeedCuriosity('\u5237\u6296\u97f3\u5427'), false);
+  assert.equal(shouldSeedCuriosity('\u6211\u6700\u8fd1\u53d1\u73b0\u81ea\u5df1\u603b\u662f\u7761\u4e0d\u7740'), true);
+  assert.equal(shouldSeedCuriosity('\u8bb0\u5fc6\u7684\u672c\u8d28\u662f\u4ec0\u4e48\uff1f'), true);
 });
 
 test('DriveDynamics: cross-inhibition between CONNECTION and AUTONOMY', () => {

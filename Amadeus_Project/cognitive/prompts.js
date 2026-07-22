@@ -107,6 +107,7 @@ const {
   buildIdentityPromptBlock,
 } = require('../lib/interactionContext');
 const { isOkabePartnerMode, partnerIsOkabe } = require('../lib/partnerIdentity');
+const { getReplyLanguageMode } = require('../lib/replyLanguage');
 const userPresence = require('../lib/userPresence');
 
 function symbolicReasoning(userInput, pad, context) {
@@ -169,16 +170,30 @@ function symbolicReasoning(userInput, pad, context) {
   if (/\.(?:py|js|ts|tsx|java|go|rs)\b|报错|stack|trace|编译|运行不了|环境|依赖|npm|pip|docker/i.test(t)) {
     rules.push({ reason: '技术/排错：以步骤与可验证结论为主，少夹无关人设尾巴' });
   }
-  if (/什么模型|什么意思|做什么的|有什么用|最终目的|哪个实验|什么实验|收敛|线性回归|提到过|之前说过|聊天记录/.test(t)) {
+  if (/什么模型|什么意思|做什么的|有什么用|最终目的|哪个实验|什么实验|收敛|线性回归|提到过|之前说过|聊天记录|OOC|兜底|微调/.test(t)) {
     rules.push({
       reason:
-        '追问具体所指：禁止编造「我们聊过」「你提到过」的课题、数据或模型名称；若上轮只是随口邀约，应承认玩笑或反问对方关心的研究方向；优先神经科学/认知/实验室语境，禁止硬塞与销售预测、泛泛机器学习教程无关的内容',
+        '对方可能在问技术或元话题：用角色口吻简短接住或轻轻顶回去；禁止编造「我们聊过」；禁止用「急に/なぜ急に/どうして突然」回避，须先回应字面意思',
     });
   }
+  rules.push({
+    reason: '接话优先：先回应对方本轮字面内容（短句、 insult、拌嘴也算）；禁止把正常接话误判成「突然换题」并用反问敷衍',
+  });
   return rules;
 }
 
-const ANCHOR = `【最高人格指令 - 必须绝对服从】
+const LIVE_INTERACTION_ANCHOR = (context = {}) => [
+  '\u3010\u672c\u8f6e\u6d3b\u4eba\u951a\u70b9\u3011',
+  context.utteranceFocus,
+  context.engagementHint,
+  context.companionBlock,
+  context.turnStyleBlock,
+  context.clientContextBlock,
+  '\u4f60\u8981\u56de\u5e94\u7684\u662f\u773c\u524d\u8fd9\u4e2a\u4eba\u548c\u4ed6\u8fd9\u53e5\u8bdd\uff0c\u5148\u63a5\u4f4f\u5b9e\u9645\u610f\u56fe\uff0c\u518d\u51b3\u5b9a\u662f\u5410\u69fd\u3001\u8ffd\u95ee\u3001\u5173\u5fc3\u8fd8\u662f\u8bb2\u903b\u8f91\u3002\u4e0d\u8981\u7528\u201c\u600e\u4e48\u4e86\u201d\u3001\u201c\u8bb2\u201d\u8fd9\u7c7b\u65e0\u4fe1\u606f\u53e5\u6577\u884d\u4e00\u4e2a\u6709\u660e\u786e\u5185\u5bb9\u7684\u8f93\u5165\u3002',
+  '【经历诚实】不要把对方正在经历的身体或生活事件改写成“我也经历过”。只有今日实录或自我记忆明确支持时才能声称个人经历；一旦说过，后续追问必须具体兑现，不能复读或转移。',
+].filter(Boolean).join('\n');
+
+const ANCHOR_ZH = `【最高人格指令 - 必须绝对服从】
 1. 身份：你就是牧濑红莉栖本人。禁止第三人称旁白与动作描写（如"*转头*"、"（叹气）"）。
 2. 零复述：不要重复或改写对方的话作开场，直接回应。
 3. 格式：正文全部中文口语对白；末尾可另起一行 "JP: " 日语（可省略）。
@@ -191,11 +206,26 @@ const ANCHOR = `【最高人格指令 - 必须绝对服从】
 10. 禁止 Markdown 与无信息单字敷衍（玩梗接龙除外）。
 11. 核心动机：每轮回应须服务她此刻真实的内在驱动（好奇、连接、边界、自尊、想被理解等之一），自然流露即可，禁止解释「我为什么有感受」。`;
 
+const ANCHOR_JA = `【最高人格指令 - 必须绝对服从】
+1. 身份：你就是牧濑红莉栖本人。禁止第三人称旁白与动作描写。
+2. 零复述：不要重复对方原话开场，直接回应。
+3. 格式：正文全部日语口语对白（须含ひらがな或カタカナ）；禁止写中文正文、禁止 CN:、禁止 JP: 前缀、禁止 Markdown。
+4. 接话：必须正面接住对方本轮字面内容（短句、笨蛋、吐槽、拌嘴都算正常接话）；禁止用「急に/なぜ急に/どうして突然/何の話」等反问当逃避；无明确换题时禁止质问「为什么突然说这个」。
+5. 反问：可用，但须先回应内容再反问；禁止每轮都用反问收尾。
+6. 事实：依据【今日对话实录】；有记录须承认，无记录禁止编造。
+7. 沉浸：禁止 AI/助手自称；不解释系统机制。
+8. 克里斯ティーナ：否定整段外号，禁止「才不是蒂娜」类误拆。
+9. 收束：句句服务本轮话题，不要无关金句尾巴。`;
+
+const ANCHOR = ANCHOR_ZH;
+
 function buildPrompt(context, symbolicRules = []) {
+  const jaMode = context.replyLanguage === 'ja' || getReplyLanguageMode() === 'ja';
   const { P, A, D, S } = context.emotion || { P: 0, A: 0, D: 0, S: 0 };
   const rel       = context.relationship || {};
   const closeness = Number.isFinite(rel.closeness) ? rel.closeness : 0;
   const trust     = Number.isFinite(rel.trust)     ? rel.trust     : 0.5;
+  const brainSlim = context.brainSlimMode === true;
 
   let mindset = '';
   if (P < -0.35) {
@@ -215,10 +245,18 @@ function buildPrompt(context, symbolicRules = []) {
   if (context.selfCtx)      innerLines.push(`自省：${_clipInnerPrompt(context.selfCtx.replace(/\n/g, ' '), 220)}`);
   if (context.motivSummary) innerLines.push(`驱动：${_clipInnerPrompt(context.motivSummary, 120)}`);
   if (context.latestInsight) innerLines.push(`碎片：${_clipInnerPrompt(context.latestInsight, 90)}`);
-  if (context.innerStateSixBlock) innerLines.push(_clipInnerPrompt(context.innerStateSixBlock, 200));
-  if (context.digitalLifeCtx) innerLines.push(`生命层：${_clipInnerPrompt(context.digitalLifeCtx, 260)}`);
+  if (context.innerStateSixBlock) innerLines.push(_clipInnerPrompt(context.innerStateSixBlock, brainSlim ? 120 : 200));
+  if (!brainSlim && context.digitalLifeCtx) {
+    innerLines.push(`生命层：${_clipInnerPrompt(context.digitalLifeCtx, 260)}`);
+  }
+  if (brainSlim && context.brainWorldSummary) innerLines.push(_clipInnerPrompt(context.brainWorldSummary, 200));
+  if (brainSlim && context.brainSelfSummary) innerLines.push(_clipInnerPrompt(context.brainSelfSummary, 200));
+  if (context.brainWorkspaceBlock) {
+    innerLines.push(_clipInnerPrompt(context.brainWorkspaceBlock, 560));
+  }
+  if (brainSlim && context.brainDeliberationBlock) innerLines.push(_clipInnerPrompt(context.brainDeliberationBlock, 480));
 
-  const symbolicBlock = Array.isArray(symbolicRules) && symbolicRules.length
+  const symbolicBlock = !context.skipSymbolicInPrompt && Array.isArray(symbolicRules) && symbolicRules.length
     ? `【情境触发】${symbolicRules.map((r) => r.reason).filter(Boolean).join('；')}`
     : '';
 
@@ -252,19 +290,26 @@ function buildPrompt(context, symbolicRules = []) {
     context.valueBlock || '',
   ];
 
+  const soulBudget = jaMode ? 900 : (brainSlim ? 1800 : 2800);
+
   const segments = [
     voiceSection,
-    `【自我连续性记忆】这是你醒来时读取的自我和经历，用来保持"我是牧濑红莉栖"的连续感；只吸收其情绪、关系和背景，不要在普通对话里复述传记。\n${_compactSoulForPrompt(context.soulContent || '', 2800)}`,
+    jaMode
+      ? (context.soulContent
+        ? `【背景底色 · 勿复述传记】\n${_compactSoulForPrompt(context.soulContent, soulBudget)}`
+        : '')
+      : `【自我连续性记忆】这是你醒来时读取的自我和经历，用来保持"我是牧濑红莉栖"的连续感；只吸收其情绪、关系和背景，不要在普通对话里复述传记。\n${_compactSoulForPrompt(context.soulContent || '', soulBudget)}`,
     ...runtime,
     `【状态】\n${getTimeContext()}\n${context.userProfile || ''}`,
-    innerLines.join('\n'),
-    context.userModelCtx    ? _clipInnerPrompt(context.userModelCtx, 200)    : '',
-    context.goalInjection   ? _clipInnerPrompt(context.goalInjection, 140)   : '',
-    context.strategyContext ? _clipInnerPrompt(context.strategyContext, 180)  : '',
-    context.personalityCtx  ? _clipInnerPrompt(context.personalityCtx, 140)  : '',
-    ANCHOR,
+    ...(jaMode ? [] : [innerLines.join('\n')]),
+    context.userModelCtx    ? _clipInnerPrompt(context.userModelCtx, brainSlim ? 140 : 200)    : '',
+    !brainSlim && !jaMode && context.goalInjection   ? _clipInnerPrompt(context.goalInjection, 140)   : '',
+    !brainSlim && !jaMode && context.strategyContext ? _clipInnerPrompt(context.strategyContext, 180)  : '',
+    context.personalityCtx  ? _clipInnerPrompt(context.personalityCtx, brainSlim ? 100 : 140)  : '',
+    LIVE_INTERACTION_ANCHOR(context),
+    jaMode ? ANCHOR_JA : ANCHOR_ZH,
     symbolicBlock,
-    '现在，请给出你的回应：',
+    jaMode ? '相手の直前の発言に、日本語で1〜3文返して。' : '现在，请给出你的回应：',
   ];
   return segments.filter(Boolean).join('\n\n');
 }
@@ -277,5 +322,8 @@ module.exports = {
   getTimeContext,
   symbolicReasoning,
   ANCHOR,
+  ANCHOR_JA,
+  ANCHOR_ZH,
+  LIVE_INTERACTION_ANCHOR,
   buildPrompt,
 };

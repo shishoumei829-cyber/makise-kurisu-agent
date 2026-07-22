@@ -7,8 +7,8 @@ if not exist "server.js" (
   exit /b 1
 )
 :: 8GB 显存友好（可被用户环境变量覆盖）
-set AMADEUS_OLLAMA_NUM_CTX=2048
-set AMADEUS_MAX_PROMPT_CHARS=6000
+set AMADEUS_OLLAMA_NUM_CTX=4096
+set AMADEUS_MAX_PROMPT_CHARS=4500
 set AMADEUS_OLLAMA_KEEP_ALIVE=2m
 :: RAG 检索超时（毫秒，越小越早放弃嵌入、加快首包；可删此行用服务端默认 900）
 set AMADEUS_RAG_MS=800

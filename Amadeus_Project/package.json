@@ -1,14 +1,20 @@
 {
   "name": "amadeus-project",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "本地数字生命体实验：情感连续性、长期记忆、自主陪伴。基于 digital_life 五模块与 Ollama 本地推理。",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "node server.js",
+    "voice:listen": "powershell -ExecutionPolicy Bypass -File scripts/start-voice-daemon.ps1",
+    "voice:devices": "powershell -ExecutionPolicy Bypass -Command \"if (Test-Path .venv-voice\\Scripts\\python.exe) { .\\.venv-voice\\Scripts\\python.exe voice_daemon\\amadeus_voice_daemon.py devices } else { python voice_daemon\\amadeus_voice_daemon.py devices }\"",
+    "voice:enroll": "powershell -ExecutionPolicy Bypass -Command \"if (Test-Path .venv-voice\\Scripts\\python.exe) { .\\.venv-voice\\Scripts\\python.exe voice_daemon\\amadeus_voice_daemon.py enroll --seconds 25 --speaker owner } else { python voice_daemon\\amadeus_voice_daemon.py enroll --seconds 25 --speaker owner }\"",
     "dist": "electron-builder",
     "ingest": "node ingest.js",
-    "test": "node --test tests/pad.test.js tests/chatTurns.test.js tests/oocGuard.test.js tests/startupCheck.test.js tests/digital_life.test.js tests/autonomy.test.js tests/evolution.test.js tests/understanding.test.js tests/embodiment.test.js tests/metacognition.test.js tests/architecture.test.js tests/apiSmoke.test.js",
+    "finetune:dataset": "node scripts/finetune/build_sft_dataset.js",
+    "finetune:validate": "node scripts/finetune/validate_dataset.js",
+    "finetune:train": "scripts\\finetune\\start_train.bat",
+    "test": "node --test tests/pad.test.js tests/chatTurns.test.js tests/chatTurnRegistry.test.js tests/oocGuard.test.js tests/replyLanguage.test.js tests/startupCheck.test.js tests/digital_life.test.js tests/autonomy.test.js tests/conversationInitiative.test.js tests/memoryAdmission.test.js tests/evolution.test.js tests/understanding.test.js tests/embodiment.test.js tests/metacognition.test.js tests/architecture.test.js tests/productContract.test.js tests/butler.test.js tests/apiSmoke.test.js tests/brain.smoke.test.js tests/brain.worldModel.test.js tests/brain.probes.test.js tests/brain.consciousness.test.js tests/finetuneDataset.test.js",
     "release:win": "electron-builder --win",
     "check:install": "scripts\\install-check.bat"
   },
@@ -68,9 +74,9 @@
     "@langchain/core": "^1.1.41",
     "@langchain/ollama": "^1.2.6",
     "@langchain/textsplitters": "^1.0.1",
+    "@mediapipe/tasks-vision": "^0.10.35",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "hnswlib-node": "^3.0.0",
     "langchain": "^1.3.4"
   }
 }

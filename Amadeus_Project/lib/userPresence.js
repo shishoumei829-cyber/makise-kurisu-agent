@@ -1,4 +1,5 @@
 'use strict';
+{
 
 /**
  * 用户在场 / 勿扰：从自然语言推断「别打扰」与解除，供主动消息与 prompt 共用。
@@ -328,4 +329,5 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 if (typeof window !== 'undefined') {
   window.AmadeusUserPresence = api;
+}
 }

@@ -158,6 +158,16 @@ class CreativityModule {
     return idea ? `创造：${idea.slice(0, 90)}` : '';
   }
 
+  purgeTopics(fragments = []) {
+    const list = fragments.map(String).filter(Boolean);
+    const hit = (value) => list.some((fragment) => String(value || '').includes(fragment));
+    for (const key of [...this.associations.keys()]) {
+      if (hit(key)) this.associations.delete(key);
+    }
+    this.ideaHistory = this.ideaHistory.filter((idea) => !hit(idea.text));
+    this.ideaBank = this.ideaBank.filter((idea) => !hit(idea.text));
+  }
+
   load(data) {
     if (!data) return;
     if (data.associations) this.associations = new Map(Object.entries(data.associations));

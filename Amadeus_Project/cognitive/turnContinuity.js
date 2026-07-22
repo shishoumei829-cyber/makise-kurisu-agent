@@ -24,12 +24,15 @@ function buildProactiveReplyFocus(userText, proactiveAnchor) {
   return [
     '【承接主动话题 · 内化，勿复述】',
     `上一轮是你主动对他说的：「${anchor}」`,
+    anchor.includes('。') || anchor.includes('！') || anchor.includes('？')
+      ? '（若连发了两句，两句都是你说的，要一起接住。）'
+      : '',
     '他现在是在接你刚抛出来的话（剧情、观点、吐槽都行）。你要顺着这条线往下聊：接细节、补一句看法、或问他一句相关的。',
     '禁止：指责他敷衍、禁止「转移话题」「打算就这么了事」式质问、禁止说他没认真回——除非他明显在骂人或完全无关且你自己先冷场。',
     u.length <= 16
       ? '他这句偏短：当作接梗或附和，你可以多接半句把话题托住，不要扣帽子。'
       : '先对齐他这句里和你主动话题相关的点，再展开。',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 /**
@@ -110,25 +113,28 @@ function detectReplyingToHerThread(dialogue) {
   if (!Array.isArray(dialogue) || dialogue.length < 2) {
     return { active: false, anchor: '' };
   }
-  let lastUser = '';
-  let lastAsst = '';
+  let lastUserIdx = -1;
   for (let i = dialogue.length - 1; i >= 0; i--) {
     const m = dialogue[i];
-    if (!m || !m.content) continue;
-    if (m.role === 'user' && !lastUser) {
-      lastUser = String(m.content).trim();
-      continue;
-    }
-    if (m.role === 'assistant' && !lastAsst && lastUser) {
-      lastAsst = String(m.content).trim();
+    if (m?.role === 'user' && String(m.content || '').trim()) {
+      lastUserIdx = i;
       break;
     }
   }
-  if (!lastAsst || !lastUser) return { active: false, anchor: '' };
+  if (lastUserIdx < 0) return { active: false, anchor: '' };
+
+  const lastUser = String(dialogue[lastUserIdx].content).trim();
   if (/^（想说话）|^（转移话题）|^（以下是最近对话/.test(lastUser)) {
     return { active: false, anchor: '' };
   }
-  if (lastAsst.length < 4) return { active: false, anchor: '' };
+
+  const assistantChunks = [];
+  for (let j = lastUserIdx - 1; j >= 0 && dialogue[j]?.role === 'assistant'; j--) {
+    const t = String(dialogue[j].content || '').trim();
+    if (t) assistantChunks.unshift(t);
+  }
+  const lastAsst = assistantChunks.join(' ').trim();
+  if (!lastAsst || lastAsst.length < 4) return { active: false, anchor: '' };
   return { active: true, anchor: lastAsst };
 }
 

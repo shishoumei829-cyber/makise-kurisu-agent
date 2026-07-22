@@ -12,7 +12,11 @@ __pycache__/
 *.pt
 *.pth
 *.onnx
+*.gguf
+*.safetensors
 .env
+Amadeus_Project/learning_state.json
+Amadeus_Project/user_model.json
 
 # OS/editor
 .DS_Store
@@ -34,6 +38,9 @@ Amadeus_Project/Amadeus_Project/
 debug-*.log
 Amadeus_Project/error.log
 Amadeus_Project/output.log
+Amadeus_Project/remote_connect.txt
+model_artifacts/
+**/checkpoint-*/
 
 # Large binary assets and shortcuts
 *.tga

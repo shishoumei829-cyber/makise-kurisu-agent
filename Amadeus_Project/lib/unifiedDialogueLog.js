@@ -22,8 +22,30 @@ function normText(s) {
   return String(s || '')
     .replace(/\r\n/g, '\n')
     .replace(/\n\s*JP\s*[:：][\s\S]*$/i, '')
+    .replace(/【意识广播[\s\S]*?(?:】|$)/g, '')
+    .replace(/\[(?:打算|注意到|感受|想要|自我|关系|想起|自检)\]\s*/g, '')
+    .replace(/我会先找话题[—\-~～]*然后就闲聊。?/g, '')
     .replace(/<[^>]+>/g, '')
     .trim();
+}
+
+/** 内部工具输出绝不能进入角色对话、Prompt 或界面。 */
+function isInternalControlLeak(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const profileFields = ['NAME:', 'TRAIT:', 'PREFER:', 'BASIC:'].filter((x) => t.includes(x)).length;
+  return profileFields >= 2
+    || /个人信息[:：]/.test(t)
+    || /信息提取器[：:]/.test(t)
+    || /NO_CONFLICT/.test(t)
+    || /压[缩縮]为\s*[≤<]?\s*\d+\s*字标签/.test(t)
+    || /只输出结果/.test(t)
+    || /有矛盾输出中文/.test(t)
+    || /^已有[：:]|\n新[：:]/.test(t)
+    || /【意识广播/.test(t)
+    || /\[打算\]/.test(t)
+    || /我会先找话题/.test(t)
+    || /本轮由内驱进入意识而开口/.test(t);
 }
 
 function formatClock(ts) {
@@ -52,14 +74,20 @@ class UnifiedDialogueLog {
     this.legacyPath = path.join(dataDir, 'conversation_log.json');
     this.entries = this._load();
     this._scheduleSave = debounceFileWrite(200, () => this._save());
+    this._eventSink = null;
+  }
+
+  /** 统一事件源接线：每条定稿对话同步进入全局 journal */
+  setEventSink(sink) {
+    this._eventSink = typeof sink === 'function' ? sink : null;
   }
 
   _load() {
     try {
       if (fs.existsSync(this.logPath)) {
         const raw = JSON.parse(fs.readFileSync(this.logPath, 'utf8'));
-        if (Array.isArray(raw.entries)) return raw.entries.filter((x) => x && x.role && x.text);
-        if (Array.isArray(raw)) return raw.filter((x) => x && x.role && x.text);
+        if (Array.isArray(raw.entries)) return raw.entries.filter((x) => x && x.role && x.text && !isInternalControlLeak(x.text));
+        if (Array.isArray(raw)) return raw.filter((x) => x && x.role && x.text && !isInternalControlLeak(x.text));
       }
       if (fs.existsSync(this.legacyPath)) {
         const legacy = JSON.parse(fs.readFileSync(this.legacyPath, 'utf8'));
@@ -112,9 +140,24 @@ class UnifiedDialogueLog {
     const r = role === 'assistant' ? 'assistant' : 'user';
     const t = normText(text);
     if (!t || t.length < 1) return null;
+    if (isInternalControlLeak(t)) return null;
     if (/^（想说话）|^（转移话题）|^（以下是最近对话/.test(t)) return null;
     const ts = meta.ts || Date.now();
     if (this._isExactDup(r, t.slice(0, MAX_TEXT_LEN), ts)) return null;
+    const turnId = String(meta.turnId || '');
+    const conversationId = String(meta.conversationId || '');
+    if (r === 'assistant' && turnId) {
+      if (this.entries.some((entry) => entry.role === 'assistant' && entry.turnId === turnId)) return null;
+      const ownerIndex = this.entries.findLastIndex((entry) => entry.role === 'user' && entry.turnId === turnId);
+      if (ownerIndex < 0) return null;
+      const newerForeignUser = this.entries.slice(ownerIndex + 1).some((entry) => (
+        entry.role === 'user'
+        && entry.conversationId === conversationId
+        && entry.turnId
+        && entry.turnId !== turnId
+      ));
+      if (newerForeignUser) return null;
+    }
 
     const item = {
       id: meta.id || `dlg_${ts}_${r}_${Math.random().toString(36).slice(2, 7)}`,
@@ -125,10 +168,15 @@ class UnifiedDialogueLog {
       autonomy: Boolean(meta.autonomy),
       lite: Boolean(meta.lite),
       source: meta.source || 'chat',
+      conversationId,
+      turnId,
     };
     this.entries.push(item);
     this._prune();
     this._scheduleSave();
+    if (this._eventSink) {
+      try { this._eventSink(item); } catch { /* 事实流写入失败不影响对话主链 */ }
+    }
     return item;
   }
 
@@ -146,7 +194,7 @@ class UnifiedDialogueLog {
   }
 
   getRecent(n = 20) {
-    return this.entries.slice(-Math.max(1, n));
+    return this.entries.filter((e) => !isInternalControlLeak(e.text)).slice(-Math.max(1, n));
   }
 
   syncFromDialogue(dialogue) {
@@ -169,6 +217,21 @@ class UnifiedDialogueLog {
       ts += 40000;
     }
     return added;
+  }
+
+  purgeInternalLeaks() {
+    const before = this.entries.length;
+    this.entries = this.entries.filter((e) => {
+      const text = String(e?.text || '').trim();
+      if (!text) return false;
+      if (isInternalControlLeak(text)) return false;
+      // 日语正文被中文幻觉碎片污染：会继续毒化下一轮上下文
+      if (/[\u3040-\u30ff]/.test(text) && /分心啊|接到电话|说你问我在干嘛/.test(text)) return false;
+      return true;
+    });
+    const removed = before - this.entries.length;
+    if (removed > 0) this._save();
+    return removed;
   }
 
   getTurnsInWindow({ hours = 14, sinceStartOfDay = false } = {}) {
@@ -194,7 +257,7 @@ class UnifiedDialogueLog {
     for (const e of pool) {
       const role = e.role === 'user' ? 'user' : 'assistant';
       const content = normText(e.text);
-      if (!content) continue;
+      if (!content || isInternalControlLeak(content)) continue;
       const last = merged[merged.length - 1];
       if (last && last.role === role) {
         last.content = `${last.content} ${content}`.trim().slice(0, MAX_TEXT_LEN * 2);
@@ -279,6 +342,7 @@ class UnifiedDialogueLog {
 
 module.exports = {
   UnifiedDialogueLog,
+  isInternalControlLeak,
   needsConversationRecall,
   normText,
 };

@@ -1,0 +1,12 @@
+# Kurisu LoRA 微调（建议 Python 3.10+，NVIDIA CUDA）
+torch>=2.2.0
+transformers>=4.44.0
+datasets>=2.20.0
+peft>=0.12.0
+trl>=0.9.6
+bitsandbytes>=0.43.0
+accelerate>=0.33.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+# 可选：Unsloth 更快且导出 Ollama 更方便（见 README）
+# unsloth

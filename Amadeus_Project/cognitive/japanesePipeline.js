@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateJapaneseOutput } = require('../lib/replyLanguage');
+
 /**
  * 日语阶段校验：说话对象是否正确、是否引用实录不存在的内容。
  * 通过后再译中文（或由调用方决定是否修复中文草稿）。
@@ -62,10 +64,25 @@ function checkLogConsistency(jpText, conversationLog = '') {
   return issues;
 }
 
+function checkDeflectionReply(jpText, userText = '') {
+  const jp = String(jpText || '');
+  const u = String(userText || '').trim();
+  if (!jp) return [];
+  const deflectRe = /急に.*(?:話|言)|なぜ急に|どうして突然|何の話|何言ってる|何を突然|为什么突然|怎么突然/;
+  if (!deflectRe.test(jp)) return [];
+  const userShifted = /换题|另外|对了|そういえば|ところで|別の|另一个|モデル|OOC|兜底|微调|系统/.test(u);
+  if (u.length <= 16 && !userShifted) {
+    return ['回避接话：对方未换题却用「突然/急に」反问'];
+  }
+  return [];
+}
+
 function validateJapaneseLine(jpText, ctx = {}) {
   const issues = [
+    ...validateJapaneseOutput(jpText).issues,
     ...checkAddressee(jpText, ctx.partnerName),
     ...checkLogConsistency(jpText, ctx.conversationLog),
+    ...checkDeflectionReply(jpText, ctx.userText),
   ];
   return {
     ok: issues.length === 0,

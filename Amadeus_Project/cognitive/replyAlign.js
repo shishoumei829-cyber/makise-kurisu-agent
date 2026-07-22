@@ -25,12 +25,27 @@ function extractTokens(t) {
 
 /**
  * @param {string} userText
- * @param {{ replyingToProactive?: boolean, proactiveAnchor?: string }} [opts]
+ * @param {{ replyingToProactive?: boolean, proactiveAnchor?: string, lastAssistant?: string }} [opts]
  * @returns {string} 单行焦点提示（写入 system，不替代用户原话）
  */
+function isContinuityFollowup(userText, lastAssistant = '') {
+  const t = String(userText || '').trim().replace(/\s+/g, ' ');
+  const previous = String(lastAssistant || '').trim();
+  return Boolean(previous && /^(讲讲(?:看)?|说说(?:看)?|然后呢|具体呢|怎么样的|怎么回事|什么经历)|你不是说|你刚(?:才)?说|刚才你说/.test(t));
+}
+
 function utteranceFocusLine(userText, opts = {}) {
   const t = String(userText || '').trim().replace(/\s+/g, ' ');
   if (!t) return '';
+  const lastAssistant = String(opts.lastAssistant || '').trim().replace(/\s+/g, ' ').slice(0, 240);
+  if (isContinuityFollowup(t, lastAssistant)) {
+    return [
+      '【上一句承诺必须兑现】',
+      `你上一句实际说的是：「${lastAssistant}」`,
+      `对方现在追问：「${t}」`,
+      '必须具体解释上一句所指；如果上一句缺乏真实依据，就直接承认刚才说得不准确并纠正。禁止复读上一句、换话题或反问对方喜好。',
+    ].join('\n');
+  }
   if (opts.replyingToProactive && opts.proactiveAnchor) {
     const { buildProactiveReplyFocus } = require('./turnContinuity');
     return buildProactiveReplyFocus(t, opts.proactiveAnchor);
@@ -40,6 +55,14 @@ function utteranceFocusLine(userText, opts = {}) {
   }
   if (/[？?]|吗$|么$|呢$|什么|怎么|为什么|为啥|如何|是不是|要不要|能不能|可以吗/i.test(t)) {
     return `【本轮焦点】对方主要在提问或确认——先正面回答命题，少岔到无关记忆或内心独白。`;
+  }
+  // 先讲糟心事、结尾已好转/解决：必须接住「结果」，不能只揪住前半段焦虑
+  if (/(?:坏了|坏掉|出问题|崩了|挂了|睡不着|心慌|担心|焦虑).{0,80}(?:好了|修好|恢复|没事了|解决了|弄好了)/.test(t)
+    || /(?:好了|修好了|恢复了|没事了).{0,40}(?:电脑|机器|系统|手机)/.test(t)) {
+    return [
+      '【本轮焦点】对方在讲一件事的经过，而且结尾已经说明结果（修好/好了/恢复）。',
+      '必须先接住这个结果或转折，再吐槽或关心；禁止只抓住前半段「担心/睡不着」假装他还在慌，禁止问「还在担心吗」这类无视结局的话。',
+    ].join('');
   }
   if (/难受|烦|累|无聊|郁闷|伤心|害怕|焦虑|压力|睡不着|想哭|孤独|寂寞|心情不好/i.test(t)) {
     return `【本轮焦点】对方在倒情绪或喊无聊——短接话即可；禁止硬推销「来实验室」「无限杯Dr Pepper」广告串。`;
@@ -69,9 +92,62 @@ function utteranceFocusLine(userText, opts = {}) {
     return `【本轮焦点】致谢或道歉——先回应这份态度，别用反问把气氛顶回去。`;
   }
   if (t.length <= 10 && !/[。！？!?]/.test(t)) {
-    return `【本轮焦点】对方话很短——短句接住；若你们够熟，可多追半句或轻轻问一句，不要只回一个字。`;
+    return `【本轮焦点】对方话很短——用日语直接接梗/回怼/接话，给有内容的1～2句；禁止「急に/なぜ急に/何の話」式空反问。`;
   }
-  return `【本轮焦点】先紧扣对方本轮字面话题；背景记忆与内心念头只能当佐料，不能盖过主题。`;
+  return `【本轮焦点】先紧扣对方本轮字面话题直接回应；背景记忆只能作佐料。禁止用「突然说这个」类反问回避接话。`;
+}
+
+/**
+ * Resolve short follow-ups next to the user turn the model is answering.
+ * This is intentionally not written back to dialogue history: it is a semantic
+ * reference annotation, not something the user said.
+ */
+function resolveFollowupForModel(userText, lastAssistant = '') {
+  const t = String(userText || '').trim().replace(/\s+/g, ' ');
+  const previous = String(lastAssistant || '').trim().replace(/\s+/g, ' ').slice(0, 240);
+  if (!t || !previous) return t;
+  if (!isContinuityFollowup(t, previous)) {
+    return t;
+  }
+  return [
+    t,
+    '',
+    '【この発話の参照先】直前のあなたの発言：',
+    `「${previous}」`,
+    '今はこの発言の中身を具体的に説明すること。根拠のない体験談なら、最初に自分の言い方が不正確だったと認めて訂正する。繰り返し、話題転換、無関係な質問は禁止。',
+  ].join('\n');
+}
+
+function buildContinuityRepairMessages({ userText = '', lastAssistant = '', previousUser = '' } = {}) {
+  const followup = String(userText || '').trim();
+  const claim = String(lastAssistant || '').trim();
+  const context = String(previousUser || '').trim();
+  if (!followup || !claim) return [];
+  const unsupportedPersonalClaim = /(?:我也|我曾经|我以前|我之前|我小时候|我的经历|我有过|我也经历|私も|私は以前|私の経験)/.test(claim);
+  return [
+    {
+      role: 'system',
+      content: [
+        '你是牧濑红莉栖，正在处理一段真实的连续对话。',
+        '只输出一句或两句自然日语台词，必须包含假名；不要中文、标签、动作描写。',
+        '先直接兑现或纠正自己上一句，再回应对方。不能复读、转移话题、用问题逃避。',
+        '只把提供的对话记录当作事实。若上一句声称有亲身经历，但记录没有依据，必须明确承认刚才说得不准确，绝不能继续编造经历。',
+        '语气可以有牧濑红莉栖的理性和一点不坦率，但诚实与上下文连续性优先。',
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: [
+        `对方之前说：${context || '（记录中没有更早内容）'}`,
+        `你上一句说：${claim}`,
+        `对方现在追问：${followup}`,
+        unsupportedPersonalClaim
+          ? '事实校验：现有记录没有证据支持你声称的这段亲身经历。必须同时完成两件事：先用日语承认上一句说得不准确、不是自己的经历；然后只针对对方之前说的具体处境表达判断或关心。不能再说自己也经历过、不能补写经历，两部分缺一不可。返答は「さっきのは」で始める。'
+          : '事实校验：只解释现有记录能支持的内容，缺少依据就坦白说明。',
+        '请继续这段对话。最后只输出日语台词：',
+      ].join('\n'),
+    },
+  ];
 }
 
 /**
@@ -182,14 +258,23 @@ function buildEngagementHint(userModelInst, userText, relScore) {
 /** 去掉全角/半角括号内的动作旁白（挑眉、叹气等） */
 function stripRoleplayActions(text) {
   let t = String(text || '');
-  t = t.replace(/（[^）\n]{0,80}）/g, '');
-  t = t.replace(/\([^)\n]{0,80}\)/g, '');
+    const actionWords = /叹气|叹息|挑眉|转头|耸肩|轻笑|冷笑|苦笑|注视|凝视|沉默|停顿|ため息|笑う|微笑|肩をすくめ|目をそら|見つめ/;
+  t = t.replace(/（([^）\n]{0,80})）/g, (whole, inner) => (
+    actionWords.test(inner) ? '' : whole
+  ));
+    t = t.replace(/\(([^)\n]{0,80})\)/g, (whole, inner) => (
+      actionWords.test(inner) ? '' : whole
+    ));
+    // thinking 模型在达到预算上限时可能只输出半个括号块；不能把内部草稿展示给用户。
+    t = t.replace(/（[^）\n]*$/g, '');
+    t = t.replace(/\([^\)\n]*$/g, '');
   t = t.replace(/(?:沉默|停顿|叹气|挑眉|转头|耸肩|轻笑|冷笑|苦笑|注视|凝视)/g, '');
   return t.replace(/\s{2,}/g, ' ').trim();
 }
 
 function hasRoleplayActions(text) {
-  return /（[^）\n]{1,80}）|\([^)\n]{1,80}\)/.test(String(text || ''));
+  const t = String(text || '');
+  return /[（(][^）)\n]{0,40}(?:叹气|叹息|挑眉|转头|耸肩|轻笑|冷笑|苦笑|注视|凝视|沉默|停顿|ため息|笑う|微笑|肩をすくめ|目をそら|見つめ)[^）)\n]{0,40}[）)]/.test(t);
 }
 
 function isGenericFillerLine(text) {
@@ -237,6 +322,9 @@ function stripOrphanClosingSentence(reply, userText, recentCorpus = '') {
   };
 
   const sents = splitKeepDelim(body);
+  if (sents.length >= 2 && sents.length <= 3 && sents.every((s) => s.length <= 56)) {
+    return raw;
+  }
   if (sents.length < 2) return raw;
 
   const last = sents[sents.length - 1];
@@ -308,7 +396,10 @@ function stripChatMarkdown(reply) {
 
 module.exports = {
   extractTokens,
+  isContinuityFollowup,
   utteranceFocusLine,
+  resolveFollowupForModel,
+  buildContinuityRepairMessages,
   filterRagHits,
   filterAutonomyRagHits,
   filterAutonomyMemCtx,

@@ -243,6 +243,19 @@ class CuriosityEngine {
       .slice(0, topK);
   }
 
+  purgeTopics(fragments = []) {
+    const list = fragments.map(String).filter(Boolean);
+    const hit = (value) => list.some((fragment) => String(value || '').includes(fragment));
+    for (const key of [...this.topicGraph.keys()]) {
+      if (hit(key)) this.topicGraph.delete(key);
+    }
+    for (const key of [...this.informationGain.keys()]) {
+      if (hit(key)) this.informationGain.delete(key);
+    }
+    this.openQuestions = this.openQuestions.filter((q) => !hit(q.topic) && !hit(q.question));
+    this.answeredQuestions = this.answeredQuestions.filter((q) => !hit(q.topic) && !hit(q.question));
+  }
+
   toPromptBlock(memory, selfModel, context = {}) {
     const qs = this.generateCuriousQuestions(context, memory);
     const open = this.getOpenQuestions(2);

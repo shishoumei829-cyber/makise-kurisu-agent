@@ -1,5 +1,7 @@
 # Amadeus 数字生命体系统 - 项目状态文档
 
+> 当前底层改造方向以 [PRODUCT_CHARTER.md](PRODUCT_CHARTER.md) 为准：人格与陪伴层继续保留，新增统一事件、目标任务、能力执行和证据验证内核。
+
 ## 项目概述
 牧濑红莉栖 AI 数字生命体伴侣系统，基于《命运石之门》角色。
 本地 LLM（Ollama）+ 自建情感/认知状态机 + RAG 长期记忆 + Electron 桌面壳。
@@ -111,6 +113,23 @@ Amadeus_Project/
 | `/` | GET | 主页（amadeus_work.html） |
 | `/chat` | POST | 主对话接口（流式/非流式） |
 | `/chat/lite` | POST | 主动开口轻量通道 |
+| `/butler/status` | GET | 管家内核、任务统计与能力状态 |
+| `/butler/events` | GET | 管家统一事件事实流 |
+| `/butler/updates` | GET | 后台任务需要确认、完成或阻塞的主动回访 |
+| `/butler/goals` | GET/POST | 长期目标查询与创建 |
+| `/butler/tasks` | GET/POST | 持久任务查询与创建 |
+| `/butler/ingest` | POST | 将自然语言委托识别并登记为任务 |
+| `/butler/tasks/:id/transition` | POST | 受约束的任务状态迁移 |
+| `/butler/tasks/:id/confirm` | POST | 用户确认或拒绝高风险动作 |
+| `/butler/tasks/:id/execute` | POST | 调用已注册能力执行任务 |
+| `/butler/tasks/:id/plan` | POST | 由规则或独立强模型生成结构化计划 |
+| `/butler/tasks/:id/run` | POST | 顺序执行计划并逐步验证 |
+| `/butler/tasks/:id/evidence` | POST | 写入真实执行证据 |
+| `/butler/tasks/:id/verify` | POST | 验证结果；通过后才允许完成 |
+| `/butler/reminders` | GET | 查询持久提醒或已到期提醒 |
+| `/butler/reminders/:id/delivered` | POST | 标记提醒已送达桌面界面 |
+| `/butler/reminders/:id/acknowledge` | POST | 标记用户已确认提醒 |
+| `/butler/trash` | GET | 查询可恢复文件记录 |
 | `/dialogue-log` | GET | 统一对话实录（最近 N 条） |
 | `/dialogue-log/append` | POST | 追加实录条目 |
 | `/behavior-report` | POST | 行为感知上报（Web/手动） |
@@ -136,7 +155,7 @@ Amadeus_Project/
 npm run dev          # node server.js
 
 # 或批处理
-一键启动.bat          # 后台启动 + 自动打开浏览器
+一键启动.bat          # 启动 SoVITS 与 Electron 桌面客户端
 run_backend.bat      # 仅后端（含 npm install --omit=dev）
 
 # 构建 RAG 索引（首次或更新 brain_data/ 后执行）

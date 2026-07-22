@@ -2,35 +2,45 @@
 setlocal EnableExtensions
 title Amadeus one-click
 
-cd /d "%~dp0"
+set "AMADEUS_ROOT=D:\Amadeus_Trae\Amadeus_Project"
+cd /d "%AMADEUS_ROOT%"
 if not exist "package.json" (
-  echo [X] 请在本项目目录运行一键启动。
+  echo [X] Amadeus project folder is missing.
   pause
   exit /b 1
 )
 
 where node >nul 2>&1
 if errorlevel 1 (
-  echo [X] 未检测到 Node.js。
+  echo [X] Node.js was not found in PATH.
   pause
   exit /b 1
 )
 
+set "AMADEUS_PORT=3000"
+if exist ".env" (
+  for /f "usebackq tokens=1,* delims==" %%A in (`findstr /b /i "AMADEUS_BACKEND_PORT=" ".env" 2^>nul`) do set "AMADEUS_PORT=%%B"
+)
+
 if not exist "node_modules\express\package.json" (
-  echo [.] 依赖未安装，先运行 run_backend.bat 完成首次安装。
-  call "%~dp0run_backend.bat"
+  echo [.] Dependencies are missing. Running first-time backend setup...
+  call "%AMADEUS_ROOT%\run_backend.bat"
   exit /b %ERRORLEVEL%
 )
 
-start "Amadeus-Backend" /D "%CD%" cmd /k "%~dp0run_backend.bat"
+if not exist "node_modules\electron\dist\electron.exe" (
+  echo [X] Electron is missing. Please run npm install.
+  pause
+  exit /b 1
+)
 
-timeout /t 3 /nobreak >nul 2>&1
-if errorlevel 1 ping -n 4 127.0.0.1 >nul
+echo [.] Starting GPT-SoVITS...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%AMADEUS_ROOT%\scripts\start-sovits.ps1"
+if errorlevel 1 (
+  echo [!] GPT-SoVITS failed to start. Text chat will still be available.
+)
 
-start "" "http://localhost:3000/amadeus_work.html"
-
-echo.
-echo 已打开浏览器。后端日志见窗口 Amadeus-Backend。
-echo.
-pause
+echo [.] Starting the desktop client. Electron owns the backend lifecycle...
+start "Amadeus" /D "%AMADEUS_ROOT%" "%AMADEUS_ROOT%\node_modules\electron\dist\electron.exe" "."
+exit /b 0
 endlocal

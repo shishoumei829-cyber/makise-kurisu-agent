@@ -8,6 +8,13 @@ const { CuriosityEngine } = require('./curiosity');
 const { CreativityModule } = require('./creativity');
 const { AutonomousBehaviorLoop } = require('./behavior_loop');
 
+function shouldSeedCuriosity(text) {
+  const value = String(text || '').replace(/\s+/g, '').trim();
+  if (!value) return false;
+  if (/[？?]|为什么|怎么回事|本质|原理|如果|假如|我发现|我觉得|我最近|其实我|实验|科学|时间|记忆|意识|关系/.test(value)) return true;
+  return value.length >= 12;
+}
+
 /**
  * 模块一 · 自主性增强 — 统一入口
  * 内驱力动力学 + 好奇心 + 创造性 + 自主行为环
@@ -74,10 +81,14 @@ class AutonomySubsystem {
       selfModel,
       relScore,
       behaviorId,
+      memoryAdmission,
     } = ctx;
 
     let tokens = [];
-    if (userText) {
+    const curiosityAllowed = memoryAdmission
+      ? memoryAdmission.allowCuriosity === true
+      : shouldSeedCuriosity(userText);
+    if (userText && curiosityAllowed && shouldSeedCuriosity(userText)) {
       this.curiosity.ingestText(userText);
       tokens = (String(userText).match(/[\u4e00-\u9fa5]{2,}/g) || []).slice(0, 3);
       if (tokens.length >= 2) this.creativity.learnAssociation(tokens[0], tokens[1]);
@@ -116,7 +127,10 @@ class AutonomySubsystem {
     return {
       behaviorBoosts: this.drives.behaviorBoostsFromUrges(),
       goalSeeds: this._buildGoalSeeds(curious, selfModel, memory, pad, relScore),
-      promptBlock: this.buildPromptBlock(ctx),
+      promptBlock: this.buildPromptBlock({
+        ...ctx,
+        userText: curiosityAllowed ? userText : '',
+      }),
       openQuestions,
     };
   }
@@ -242,4 +256,5 @@ module.exports = {
   CreativityModule,
   AutonomousBehaviorLoop,
   DRIVE_TYPES,
+  shouldSeedCuriosity,
 };

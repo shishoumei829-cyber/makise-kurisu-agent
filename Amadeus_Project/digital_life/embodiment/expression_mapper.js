@@ -1,6 +1,7 @@
 'use strict';
 
 const { EXPRESSION_PRESETS } = require('./constants');
+const { SpritePolicy, SPRITE_REGISTRY } = require('./sprite_policy');
 
 function distPad(a, b) {
   const keys = ['P', 'A', 'D'];
@@ -21,9 +22,10 @@ class ExpressionMapper {
     this.spriteIndex = 0;
     this.ttsHint = 'default';
     this._lastPad = null;
+    this.spritePolicy = new SpritePolicy();
   }
 
-  mapFromPad(pad = {}) {
+  mapFromPad(pad = {}, ctx = {}) {
     const P = Number(pad.P) || 0;
     const A = Number(pad.A) || 0;
     const D = Number(pad.D) || 0;
@@ -44,11 +46,18 @@ class ExpressionMapper {
     this.spriteIndex = this._spriteFromPad(P, A, D, S);
     this.ttsHint = this._ttsFromPreset(best.id, pad);
     this._lastPad = { P, A, D, S };
+    const sprite = this.spritePolicy.decide({
+      ...ctx,
+      pad: { P, A, D, S },
+      preset: best.id,
+    });
 
     return {
       preset: best.id,
+      currentPreset: best.id,
       label: best.label,
       spriteIndex: this.spriteIndex,
+      ...sprite,
       ttsHint: this.ttsHint,
       filter: this._cssFilter(P, A),
     };
@@ -82,14 +91,22 @@ class ExpressionMapper {
     if (data.currentPreset) this.currentPreset = data.currentPreset;
     if (typeof data.spriteIndex === 'number') this.spriteIndex = data.spriteIndex;
     if (data.ttsHint) this.ttsHint = data.ttsHint;
+    if (data.spritePolicy) this.spritePolicy.load(data.spritePolicy);
+    else if (data.spriteId) this.spritePolicy.load({ currentSpriteId: data.spriteId });
   }
 
   snapshot() {
+    const spriteState = this.spritePolicy.snapshot();
+    const sprite = SPRITE_REGISTRY[spriteState.currentSpriteId] || SPRITE_REGISTRY.neutral;
     return {
       currentPreset: this.currentPreset,
       spriteIndex: this.spriteIndex,
+      spriteId: spriteState.currentSpriteId,
+      spritePath: sprite.path,
+      assetApproved: sprite.approved === true,
       ttsHint: this.ttsHint,
       lastPad: this._lastPad,
+      spritePolicy: spriteState,
     };
   }
 }

@@ -1,4 +1,5 @@
 'use strict';
+{
 
 /**
  * 对话对象身份（默认：冈部伦太郎）。AMADEUS_PARTNER_ID=custom 可改为仅依赖 whoami 档案。
@@ -193,4 +194,5 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 if (typeof window !== 'undefined') {
   window.AmadeusPartnerIdentity = api;
+}
 }

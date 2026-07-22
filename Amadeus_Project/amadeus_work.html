@@ -7,19 +7,19 @@
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&family=Noto+Sans+JP:wght@300;400&display=swap');
 :root{
   --primary:#ff8c00;--pd:rgba(255,140,0,0.12);--green:#00FF9F;
-  --red:#FF3B3B;--blue:#00BFFF;--bg:#050709;
-  --border:rgba(255,140,0,0.2);--text:#c8d4e0;
+  --red:#FF3B3B;--blue:#00BFFF;--bg:#000000;--bg-panel:#050709;
+  --border:rgba(255,140,0,0.2);--text:#c8d4e0;--text-muted:rgba(200,212,224,.55);
   --fm:'Share Tech Mono',monospace;--fu:'Rajdhani',sans-serif;--fj:'Noto Sans JP',sans-serif;
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 body,html{width:100vw;height:100vh;background:var(--bg);font-family:var(--fm);overflow:hidden;color:var(--primary);cursor:crosshair}
-body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px);pointer-events:none;z-index:9999;animation:scr 14s linear infinite}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);pointer-events:none;z-index:9999;animation:scr 14s linear infinite}
 @keyframes scr{from{background-position:0 0}to{background-position:0 100vh}}
-#grid-bg{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(255,140,0,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,140,0,0.03) 1px,transparent 1px);background-size:48px 48px;animation:gf 5s ease-in-out infinite alternate}
+#grid-bg{display:none}
 @keyframes gf{from{opacity:.5}to{opacity:1}}
-#cvs{position:fixed;inset:0;z-index:1;pointer-events:none}
+#cvs{display:none}
 /* LEFT */
-#PL{position:fixed;top:0;left:0;width:260px;height:100vh;background:linear-gradient(135deg,rgba(5,7,9,.97),rgba(10,15,20,.92));border-right:1px solid var(--border);z-index:10;padding:18px 14px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+#PL{position:fixed;top:0;left:0;width:260px;height:100vh;background:linear-gradient(135deg,rgba(5,7,9,.98),rgba(0,0,0,.94));border-right:1px solid var(--border);z-index:10;padding:18px 14px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
 #PL::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--primary),transparent);animation:sh 3s ease-in-out infinite}
 @keyframes sh{0%,100%{opacity:.3}50%{opacity:1}}
 .syslogo{font-family:var(--fu);font-size:10px;font-weight:700;letter-spacing:4px;color:var(--primary);text-transform:uppercase;border-bottom:1px solid var(--border);padding-bottom:8px}
@@ -28,7 +28,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .egrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .ei{font-size:8px;letter-spacing:1px;font-family:var(--fu)}
 .ei span{display:block;font-family:var(--fm);font-size:10px;color:var(--green)}
-.bw{height:3px;background:rgba(255,255,255,.07);border-radius:2px;margin-top:3px;overflow:hidden}
+.bw{height:3px;background:rgba(0,0,0,.06);border-radius:2px;margin-top:3px;overflow:hidden}
 .bf{height:100%;border-radius:2px;transition:width 2s cubic-bezier(.4,0,.2,1)}
 .bm{background:linear-gradient(90deg,#ff3b3b,#ff8c00,#00ff9f)}
 .be{background:linear-gradient(90deg,#0044ff,#00bfff)}
@@ -46,8 +46,8 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .vo{background:var(--primary);box-shadow:0 0 5px var(--primary);animation-delay:.3s}
 .vb{background:var(--blue);box-shadow:0 0 5px var(--blue);animation-delay:.6s}
 /* mood display */
-#mood-text{font-size:9px;color:rgba(0,255,159,.7);line-height:1.7;font-family:var(--fm);min-height:36px;transition:opacity .5s;white-space:pre-line}
-#mood-chart{width:100%;height:56px;background:rgba(0,0,0,.35);border:1px solid var(--border);margin-top:6px}
+#mood-text{font-size:9px;color:rgba(0,184,107,.85);line-height:1.7;font-family:var(--fm);min-height:36px;transition:opacity .5s;white-space:pre-line}
+#mood-chart{width:100%;height:56px;background:rgba(0,0,0,.04);border:1px solid var(--border);margin-top:6px}
 #mood-chart-note{font-size:7px;color:rgba(255,140,0,.45);letter-spacing:1px;margin-top:3px}
 #mood-label{font-size:8px;color:rgba(255,140,0,.5);font-family:var(--fu);letter-spacing:2px;margin-bottom:4px}
 /* palace */
@@ -56,7 +56,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .room-active{background:var(--green);box-shadow:0 0 4px var(--green)}
 .room-idle{background:rgba(255,140,0,0.22)}
 .room-label{font-size:7px;letter-spacing:1px;color:rgba(255,140,0,0.5);font-family:var(--fu)}
-.room-count{margin-left:auto;font-size:7px;color:rgba(0,255,159,0.5);font-family:var(--fm)}
+.room-count{margin-left:auto;font-size:7px;color:rgba(0,184,107,0.65);font-family:var(--fm)}
 /* memory fold */
 .mhdr{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding-bottom:3px}
 .mhdr .ml{font-size:8px;letter-spacing:2px;color:var(--primary);font-family:var(--fu)}
@@ -64,24 +64,25 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .mhdr.open .ma{transform:rotate(180deg)}
 #mbdy{max-height:0;overflow:hidden;transition:max-height .4s ease}
 #mbdy.open{max-height:120px}
-#mlog{font-size:7px;color:rgba(200,212,224,.5);line-height:1.6;font-family:var(--fm);margin-top:5px;overflow-y:auto;max-height:110px}
+#mlog{font-size:7px;color:var(--text-muted);line-height:1.6;font-family:var(--fm);margin-top:5px;overflow-y:auto;max-height:110px}
 #mlog::-webkit-scrollbar{display:none}
 .me{border-left:2px solid var(--border);padding-left:5px;margin-bottom:2px}
 .me.hall{border-color:#00bfff;color:rgba(0,191,255,.7)}
 .me.lab{border-color:#8800ff;color:rgba(136,0,255,.8)}
-.me.cafe{border-color:var(--green);color:rgba(0,255,159,.7)}
+.me.cafe{border-color:var(--green);color:rgba(0,184,107,.85)}
 .me.forbidden{border-color:var(--primary);color:rgba(255,140,0,.8)}
 .me.conflict{border-color:var(--red);color:rgba(255,59,59,.8)}
-#slog{flex:1;font-size:8px;color:rgba(0,255,159,.4);overflow-y:auto;line-height:1.7;min-height:0}
+#slog{flex:1;font-size:8px;color:rgba(0,184,107,.55);overflow-y:auto;line-height:1.7;min-height:0}
 #slog::-webkit-scrollbar{display:none}
 .ll{display:flex;gap:5px}.lt{color:rgba(255,140,0,.3);flex-shrink:0}
 .abt{padding:7px 10px;background:transparent;border:none;color:rgba(255,140,0,.33);cursor:pointer;font-family:var(--fu);font-size:8px;letter-spacing:1px;transition:color .2s,background .2s;font-weight:700;text-align:left;width:100%;display:block}
 .abt:hover{color:var(--primary);background:var(--pd)}
 /* RIGHT */
 #PR{position:fixed;top:0;right:0;width:250px;height:100vh;background:linear-gradient(225deg,rgba(5,7,9,.97),rgba(10,15,20,.92));border-left:1px solid var(--border);z-index:10;padding:18px 14px;display:flex;flex-direction:column;gap:12px}
-#cc{border:1px solid var(--border);position:relative;overflow:hidden;background:#000;height:148px;flex-shrink:0}
+#cc{border:1px solid var(--border);position:relative;overflow:hidden;background:#000;height:148px;flex-shrink:0;box-shadow:inset 0 0 24px rgba(0,255,159,.06)}
 #cc::after{content:'VISION';position:absolute;bottom:5px;right:6px;font-size:7px;letter-spacing:2px;color:var(--green);font-family:var(--fu)}
-#cpv{width:100%;height:100%;object-fit:cover;opacity:.68;filter:saturate(0) brightness(.8) sepia(.18)}
+#cpv{width:100%;height:100%;object-fit:cover;opacity:.68;filter:saturate(0) brightness(.8) sepia(.18);transform:scaleX(-1)}
+#cseen{position:absolute;left:8px;bottom:5px;font-size:7px;letter-spacing:1px;color:rgba(200,212,224,.5);font-family:var(--fu)}
 .co{position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,255,159,.04),transparent);pointer-events:none}
 .cn2{position:absolute;width:10px;height:10px;border-color:var(--green);border-style:solid}
 .tl{top:4px;left:4px;border-width:2px 0 0 2px}.tr{top:4px;right:4px;border-width:2px 2px 0 0}
@@ -90,27 +91,42 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 #vbox{flex-shrink:0}
 #vbox::before{content:'// 视觉直觉';display:block;font-size:7px;letter-spacing:2px;color:rgba(255,140,0,.4);font-family:var(--fu);margin-bottom:3px}
 #vtxt{font-size:9px;font-style:italic;color:rgba(255,140,0,.52);line-height:1.6;min-height:14px;transition:opacity 1.2s ease}
-#wc{width:100%;height:40px;background:rgba(0,0,0,.5);border:1px solid var(--border);flex-shrink:0}
+#wc{width:100%;height:40px;background:rgba(0,0,0,.04);border:1px solid var(--border);flex-shrink:0}
 #thbox{flex-shrink:0}
 #thbox::before{content:'// 神经冲动';display:block;font-size:7px;letter-spacing:2px;color:rgba(255,140,0,.4);font-family:var(--fu);margin-bottom:3px}
 #thtxt{font-size:9px;font-style:italic;color:rgba(255,140,0,.58);line-height:1.65;min-height:14px;transition:opacity 1.2s ease}
 /* STAGE */
-#stage{position:fixed;bottom:0;left:50%;transform:translateX(-50%);height:95vh;z-index:5;display:flex;align-items:flex-end;pointer-events:none}
-#ki{height:100%;width:auto;object-fit:contain;filter:drop-shadow(0 0 28px rgba(255,140,0,.22));transition:filter 1s ease;transform-origin:bottom center;animation:br 5s ease-in-out infinite}
+#stage{position:fixed;bottom:0;left:50%;transform:translateX(-50%);height:95vh;z-index:5;display:flex;align-items:flex-end;pointer-events:none;--figure-accent:rgba(255,140,0,.22)}
+#figure-aura{position:absolute;inset:12% 18% 3%;border-radius:50%;background:radial-gradient(ellipse,rgba(255,140,0,.12),transparent 68%);filter:blur(18px);opacity:.7;transition:background 1s,opacity 1s,transform 1s}
+#figure-signal{position:absolute;inset:10% 14% 3%;border:1px solid rgba(255,140,0,.16);border-radius:46% 46% 20% 20%;opacity:.42;transform:scale(.98);transition:border-color 1s,opacity 1s,transform 1s}
+#ki{height:100%;width:auto;object-fit:contain;filter:drop-shadow(0 0 28px var(--figure-accent));transition:filter 1s ease,transform .7s ease;transform-origin:bottom center;animation:br 5s ease-in-out infinite}
 @keyframes br{0%,100%{transform:scaleY(1) translateY(0)}50%{transform:scaleY(1.004) translateY(-2px)}}
+#stage.talking{--figure-accent:rgba(255,140,0,.55)}
 #ki.talking{filter:drop-shadow(0 0 50px rgba(255,140,0,.55)) drop-shadow(0 0 18px rgba(255,140,0,.32));animation:none}
-#ki.thinking{filter:drop-shadow(0 0 30px rgba(0,191,255,.38))}
+#stage.talking #ki{filter:drop-shadow(0 0 50px rgba(255,140,0,.55)) drop-shadow(0 0 18px rgba(255,140,0,.32));animation:none;transform:translateY(-3px) scale(1.006)}
+#stage.thinking #ki{transform:translateX(-3px) rotate(-.35deg)}
+#stage.talking #figure-aura{opacity:1;transform:scale(1.04)}
+#stage.talking #figure-signal{opacity:.75;transform:scale(1.02);animation:signal 1.2s ease-in-out infinite}
+#stage.thinking{--figure-accent:rgba(0,191,255,.42)}
+#stage.thinking #figure-aura{background:radial-gradient(ellipse,rgba(0,191,255,.13),transparent 68%);transform:translateX(-5px)}
+#stage.thinking #figure-signal{border-color:rgba(0,191,255,.35);transform:rotate(-1deg)}
+#stage[data-expression="warm"]{--figure-accent:rgba(255,140,0,.5)}
+#stage[data-expression="shy"]{--figure-accent:rgba(255,105,180,.42)}
+#stage[data-expression="cold"]{--figure-accent:rgba(0,191,255,.26)}
+#stage[data-expression="alert"]{--figure-accent:rgba(255,59,59,.46)}
+#stage[data-expression="sad"]{--figure-accent:rgba(120,140,190,.28)}
+@keyframes signal{0%,100%{opacity:.42}50%{opacity:.9}}
 /* BUBBLE */
 #sb{position:fixed;bottom:36vh;left:50%;transform:translateX(-50%);max-width:560px;min-width:180px;z-index:25;opacity:0;transition:opacity .5s;pointer-events:none}
 #sb.visible{opacity:1}
-#si{background:rgba(4,6,9,.97);border:1px solid var(--primary);padding:14px 20px;position:relative;box-shadow:0 0 26px rgba(255,140,0,.13),inset 0 0 16px rgba(255,140,0,.02)}
+#si{background:rgba(0,0,0,.97);border:1px solid var(--primary);padding:14px 20px;position:relative;box-shadow:0 0 26px rgba(255,140,0,.10),inset 0 0 16px rgba(255,140,0,.03)}
 #si::after{content:'';position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid var(--primary)}
 .bn{font-family:var(--fu);font-size:8px;letter-spacing:3px;color:rgba(255,140,0,.6);margin-bottom:6px;font-weight:700}
 #scn{font-size:15px;color:var(--green);line-height:1.75;font-family:'Noto Sans JP',var(--fm);margin-bottom:5px;min-height:1.75em}
 /* 日语仅用于 TTS 合成，不在界面展示（避免与主模型抢 token / 首包） */
 #sjp{display:none !important}
 /* CHAT */
-#cp{position:fixed;bottom:0;left:260px;right:250px;height:36vh;background:linear-gradient(0deg,rgba(5,7,9,.98),rgba(5,7,9,.82));border-top:1px solid var(--border);z-index:20;display:flex;flex-direction:column}
+#cp{position:fixed;bottom:0;left:260px;right:250px;height:36vh;background:linear-gradient(0deg,rgba(0,0,0,.99),rgba(5,7,9,.92));border-top:1px solid var(--border);z-index:20;display:flex;flex-direction:column}
 .chdr{display:flex;align-items:center;gap:12px;padding:9px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
 .chn{font-family:var(--fu);font-size:12px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--primary)}
 .chs{font-size:8px;letter-spacing:2px;color:var(--green);opacity:.55;font-family:var(--fu)}
@@ -122,23 +138,25 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .mr{font-family:var(--fu);font-size:8px;letter-spacing:2px;flex-shrink:0;margin-top:2px;font-weight:700}
 .mr.kurisu{color:var(--primary)}.mr.user{color:var(--blue)}
 .mt{font-size:13px;line-height:1.65;font-family:'Noto Sans JP',var(--fj)}
-.mt .translation{display:block;font-size:11px;color:rgba(200,212,224,.5);margin-top:4px;font-family:var(--fm)}
-.msg.kurisu .mt{color:rgba(0,255,159,.88)}.msg.user .mt{color:rgba(0,191,255,.8)}
-.mtime{margin-left:auto;flex-shrink:0;font-size:7px;color:rgba(200,212,224,.2);margin-top:4px;font-family:var(--fm)}
+.mt .translation{display:block;font-size:11px;color:var(--text-muted);margin-top:4px;font-family:var(--fm)}
+.msg.kurisu .mt{color:rgba(0,184,107,.92)}.msg.user .mt{color:rgba(0,153,204,.88)}
+.mtime{margin-left:auto;flex-shrink:0;font-size:7px;color:rgba(74,85,104,.35);margin-top:4px;font-family:var(--fm)}
 .design-result{display:grid;gap:7px;max-width:520px}
-.design-result img{width:100%;max-height:360px;object-fit:contain;border:1px solid var(--border);background:#020305}
+.design-result img{width:100%;max-height:360px;object-fit:contain;border:1px solid var(--border);background:var(--bg-panel)}
 .design-title{font-family:var(--fu);font-size:11px;letter-spacing:1px;color:var(--primary)}
-.design-meta{font-size:9px;color:rgba(200,212,224,.58);line-height:1.55}
-.design-prompt{font-size:9px;color:rgba(0,255,159,.62);line-height:1.55;border-left:2px solid rgba(0,255,159,.35);padding-left:7px}
+.design-meta{font-size:9px;color:var(--text-muted);line-height:1.55}
+.design-prompt{font-size:9px;color:rgba(0,184,107,.75);line-height:1.55;border-left:2px solid rgba(0,184,107,.35);padding-left:7px}
 .td span{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--primary);animation:dot 1.2s infinite;margin-right:3px}
 .td span:nth-child(2){animation-delay:.2s}.td span:nth-child(3){animation-delay:.4s}
 @keyframes dot{0%,80%,100%{transform:scale(.8);opacity:.4}40%{transform:scale(1.2);opacity:1}}
 #ia{display:flex;align-items:center;border-top:1px solid var(--border);flex-shrink:0}
 #ip{padding:12px 14px;font-size:12px;color:var(--primary);opacity:.4;flex-shrink:0}
 #ci{flex:1;background:transparent;border:none;color:var(--text);font-size:14px;font-family:var(--fj);outline:none;padding:12px 0;caret-color:var(--primary)}
-#ci::placeholder{color:rgba(200,212,224,.16)}
+#ci::placeholder{color:rgba(74,85,104,.35)}
 .ib{padding:10px 12px;background:transparent;border:none;color:rgba(255,140,0,.33);cursor:pointer;font-family:var(--fu);font-size:9px;letter-spacing:1px;transition:color .2s,background .2s;font-weight:700;flex-shrink:0}
 .ib:hover{color:var(--primary);background:var(--pd)}
+#callbtn{border:1px solid rgba(0,255,159,.32);color:rgba(0,255,159,.72);padding-inline:14px}
+#callbtn.active{color:#000;background:var(--green);border-color:var(--green);box-shadow:0 0 18px rgba(0,255,159,.28)}
 #sendbtn{background:var(--primary);color:#000;padding:12px 18px;font-weight:700;transition:background .2s,box-shadow .2s;letter-spacing:1px}
 #sendbtn:hover{background:#ffaa33;box-shadow:0 0 16px rgba(255,140,0,.32)}
 /* skip button */
@@ -149,9 +167,24 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .nt.green{border-left-color:var(--green);color:var(--green)}.nt.red{border-left-color:var(--red);color:var(--red)}.nt.blue{border-left-color:var(--blue);color:var(--blue)}
 @keyframes ni{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
 @keyframes no{to{opacity:0;transform:translateX(16px)}}
-#tb{position:fixed;top:0;left:260px;right:250px;height:38px;background:rgba(5,7,9,.9);border-bottom:1px solid var(--border);z-index:15;display:flex;align-items:center;padding:0 20px;gap:18px;font-size:8px;letter-spacing:2px;color:rgba(255,140,0,.35);font-family:var(--fu)}
-#startup-banner{position:fixed;top:38px;left:260px;right:250px;z-index:16;display:none;padding:10px 20px;background:rgba(40,10,0,.92);border-bottom:1px solid rgba(255,140,0,.45);color:#ffb366;font-size:11px;line-height:1.6;font-family:var(--fu);letter-spacing:.5px}
+#tb{position:fixed;top:0;left:260px;right:250px;height:38px;background:rgba(0,0,0,.94);border-bottom:1px solid var(--border);z-index:15;display:flex;align-items:center;padding:0 20px;gap:18px;font-size:8px;letter-spacing:2px;color:rgba(255,140,0,.45);font-family:var(--fu)}
+#startup-banner{position:fixed;top:38px;left:260px;right:250px;z-index:16;display:none;padding:10px 20px;background:rgba(255,240,220,.95);border-bottom:1px solid rgba(255,140,0,.45);color:#a65a00;font-size:11px;line-height:1.6;font-family:var(--fu);letter-spacing:.5px}
 #startup-banner strong{color:#ff8c00;letter-spacing:1px}
+#first-run{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;background:rgba(2,4,6,.78);backdrop-filter:blur(8px)}
+#first-run.visible{display:flex}
+.fr-card{width:min(620px,calc(100vw - 34px));border:1px solid rgba(255,140,0,.55);background:linear-gradient(145deg,rgba(8,12,16,.98),rgba(16,10,5,.97));box-shadow:0 0 70px rgba(255,140,0,.14),inset 0 0 30px rgba(255,140,0,.035);padding:30px}
+.fr-kicker{font-size:9px;letter-spacing:4px;color:var(--green);font-family:var(--fu);margin-bottom:14px}
+.fr-title{font-family:var(--fu);font-size:30px;letter-spacing:5px;color:var(--primary);margin-bottom:10px}
+.fr-copy{font-family:var(--fj);font-size:13px;line-height:1.9;color:rgba(200,212,224,.78);max-width:520px}
+.fr-capabilities{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:22px 0}
+.fr-cap{border:1px solid rgba(255,140,0,.18);padding:10px 8px;min-height:58px;background:rgba(255,140,0,.035)}
+.fr-cap strong{display:block;font-family:var(--fu);font-size:10px;letter-spacing:1px;color:var(--primary);margin-bottom:5px}
+.fr-cap span{display:block;font-family:var(--fm);font-size:8px;line-height:1.45;color:rgba(200,212,224,.58)}
+.fr-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid rgba(255,140,0,.18);padding-top:18px}
+.fr-note{font-family:var(--fu);font-size:9px;letter-spacing:1px;color:rgba(0,255,159,.58)}
+.fr-enter{border:1px solid var(--primary);background:var(--primary);color:#050709;padding:11px 18px;font-family:var(--fu);font-weight:700;letter-spacing:2px;cursor:pointer}
+.fr-enter:hover{background:#ffb347;box-shadow:0 0 18px rgba(255,140,0,.28)}
+@media(max-width:760px){.fr-card{padding:22px}.fr-capabilities{grid-template-columns:repeat(2,1fr)}.fr-title{font-size:24px}}
 .ti{display:flex;align-items:center;gap:5px}.td2{width:4px;height:4px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
 #clk{margin-left:auto;font-family:var(--fm);color:rgba(255,140,0,.5);font-size:10px}
 ::-webkit-scrollbar{width:2px;height:2px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border)}
@@ -160,13 +193,23 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 <body>
 <div id="grid-bg"></div><canvas id="cvs"></canvas>
 <div id="tb">
-  <div class="ti"><div class="td2"></div>AMADEUS v5.4</div>
+  <div class="ti"><div class="td2"></div>AMADEUS v6.0</div>
   <div class="ti">PALACE MEMORY</div>
   <div class="ti" id="tmem">MEM: 0</div>
   <div class="ti" id="tst">STANDBY</div>
+  <div class="ti" id="autst">PRESENCE WAKING</div>
   <div id="clk">--:--:--</div>
 </div>
 <div id="startup-banner"></div>
+<div id="first-run" role="dialog" aria-modal="true" aria-labelledby="first-run-title">
+  <div class="fr-card">
+    <div class="fr-kicker">LOCAL COMPANION / CONTINUITY BUILD</div>
+    <div class="fr-title" id="first-run-title">AMADEUS IS AWAKE</div>
+    <div class="fr-copy">这里不是一次性问答窗口。她会记住相处、感知当下状态，并在能力可用时通过摄像头、声音和主动行为继续这段关系。</div>
+    <div class="fr-capabilities" id="fr-capabilities"></div>
+    <div class="fr-actions"><span class="fr-note">DATA STAYS ON THIS MACHINE</span><button class="fr-enter" type="button" onclick="amadeus.dismissFirstRun()">ENTER THE LAB</button></div>
+  </div>
+</div>
 <div id="PL">
   <div class="syslogo">AMADEUS SYSTEM</div>
   <div class="ps" data-l="PAD CORE">
@@ -179,7 +222,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 
   <!-- 心情状态：常驻显示，不自动隐藏 -->
   <div class="ps" data-l="INNER STATE">
-    <div id="mood-text" style="font-size:9px;color:rgba(0,255,159,.7);line-height:1.8;font-family:var(--fm);min-height:38px;white-space:pre-line">初始化中...</div>
+    <div id="mood-text" style="font-size:9px;color:rgba(0,184,107,.85);line-height:1.8;font-family:var(--fm);min-height:38px;white-space:pre-line">初始化中...</div>
     <canvas id="mood-chart"></canvas>
     <div id="mood-chart-note">情感公式分数(0.40*P + 0.25*A + 0.20*D + 0.15*S')</div>
   </div>
@@ -207,18 +250,18 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
     <div class="mhdr" id="mhdr" onclick="amadeus.toggleMem()">
       <span class="ml">MEMORY NODES</span><span class="ma">▼</span>
     </div>
-    <div id="mbdy"><div id="mlog"><span style="color:rgba(200,212,224,.22);font-size:8px">// 节点为空</span></div></div>
+    <div id="mbdy"><div id="mlog"><span style="color:rgba(74,85,104,.35);font-size:8px">// 节点为空</span></div></div>
   </div>
   <div class="ps" data-l="SYSTEM LOG" style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0"><div id="slog"></div></div>
   <div class="ps" data-l="ACTIONS" style="display:flex;flex-direction:column;gap:1px;flex-shrink:0">
     <button type="button" class="abt" onclick="amadeus.injectMemory()">◈ INJECT MEMORY</button>
     <button type="button" class="abt" onclick="amadeus.clearMemory()">◉ FLUSH PALACE</button>
-    <button type="button" class="abt" onclick="amadeus.forceObserve()">◎ FORCE OBSERVE</button>
+    <button type="button" class="abt" onclick="amadeus.forceObserve()">◎ TEST PROACTIVE</button>
     <button type="button" class="abt" onclick="amadeus.toggleInternalState()">◉ INTERNAL STATE</button>
   </div>
   <!-- 内部状态面板 -->
   <div class="ps" data-l="INTERNAL STATE" id="internal-state-panel" style="display:none;flex:1;overflow:auto;min-height:0">
-    <div id="internal-state-content" style="font-size:8px;color:rgba(200,212,224,.6);line-height:1.6;font-family:var(--fm)">
+    <div id="internal-state-content" style="font-size:8px;color:var(--text-muted);line-height:1.6;font-family:var(--fm)">
       // 加载中...
     </div>
   </div>
@@ -229,7 +272,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
     <div class="co"></div>
     <div class="cn2 tl"></div><div class="cn2 tr"></div>
     <div class="cn2 bl"></div><div class="cn2 br"></div>
-    <div id="cst">● REC</div>
+    <div id="cst">CAM READY</div><div id="cseen">PRESENCE UNKNOWN</div>
   </div>
   <div id="vbox"><div id="vtxt" style="opacity:.22;font-style:normal;font-size:8px">// 等待感知...</div></div>
   <canvas id="wc"></canvas>
@@ -240,7 +283,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <div id="scn"></div>
   <div id="sjp"></div>
 </div></div>
-<div id="stage"><img id="ki" src="assets/Live2d/kurisu/0.png" alt="Kurisu" onerror="this.style.display='none'"></div>
+<div id="stage"><div id="figure-aura"></div><div id="figure-signal"></div><img id="ki" src="assets/Live2d/kurisu/kurisu_stand.png" alt="Kurisu" onerror="this.src='assets/Live2d/kurisu/kurisu_stand.png'"></div>
 <div id="cp">
   <div class="chdr">
     <div><div class="chn">MAKISE KURISU</div><div class="chs" id="cst2">NEURAL LINK ESTABLISHED</div></div>
@@ -252,7 +295,7 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
     <div id="ip">&gt;&gt;</div>
     <input type="text" id="ci" placeholder="向 Amadeus 注入指令..." autocomplete="off">
     <button type="button" class="ib" id="skipbtn" onclick="amadeus.skipTopic()" title="跳过/转移话题">SKIP</button>
-    <button type="button" class="ib" id="micbtn" onclick="amadeus.toggleMic()">MIC</button>
+    <button type="button" class="ib" id="callbtn" onclick="amadeus.toggleLocalCall()" title="启动连续通话，可随时插话打断">🎙 通话</button>
     <button type="button" class="ib" id="sendbtn" onclick="amadeus.userSend()">SEND ›</button>
   </div>
 </div>
@@ -265,10 +308,9 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 <script src="lib/interactionContext.js"></script>
 <script src="lib/userPresence.js"></script>
 <script src="lib/oocGuard.js"></script>
-<script src="cognitive/turnStyle.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════════════
-//  AMADEUS v5.4
+//  AMADEUS v6.0
 //
 //  核心改动：
 //  · 主模型只出中文；日语仅后台生成供 SoVITS，页面上不展示日文
@@ -377,41 +419,86 @@ class AmadeusConsciousness {
       awaitingProactiveReply: false,
       /** 主动消息时间戳，用于每小时上限 */
       proactiveTimestamps: [],
+      /** 对话内交流意图窗口；决定可以是沉默、等待或多种主动行为 */
+      initiativeTimer: null,
+      initiativeAbortController: null,
+      initiativeToken: 0,
+      /** 本窗口打开时间：用于「见面先开口」 */
+      sessionOpenedAt: Date.now(),
+      /** 最近一次在场察觉主动（防连发） */
+      lastPresenceSpeakAt: 0,
     };
     this._autonomyTimer = null;
     this._ttsQueue = [];
     this._ttsPlaying = false;
     this._ttsTurnId = 0;
-    this._ttsPrefetch = null;
+    this._ttsPausedForGesture = false;
     this._ttsDelivery = null;
     this._audioUnlocked = false;
     this._audioUnlockPromise = null;
     this._ttsNeedsGesture = false;
+    this._activeChatAbortController = null;
+    this._conversationId = localStorage.getItem('amadeus_conversation_id') || `window_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    localStorage.setItem('amadeus_conversation_id', this._conversationId);
+    this._chatTurnSeq = 0;
     this._relScore = 0.5;
     this.isMicOn = false;
+    this._ambientMicWanted = false;
+    this._ambientMicRestartTimer = null;
+    this._lastAmbientTranscript = '';
+    this._lastAmbientTranscriptAt = 0;
+    this.isLocalCallOn = false;
+    this.callRecognition = null;
+    this._callMicStream = null;
+    this._callRecognitionSuspended = false;
+    this._callAsrBusy = false;
+    this._callAudioCtx = null;
+    this._callProcessor = null;
+    this._callSourceNode = null;
+    this._callRestartTimer = null;
+    this._callSubmitTimer = null;
+    this.isAmbientHearing = false;
+    this.ambientRecognition = null;
+    this._streamTts = { turnId: 0, sourceSegments: [], chain: Promise.resolve() };
+    this._cameraPerceptionTimer = null;
+    this._cameraPerceptionBusy = false;
+    this._cameraSignature = null;
+    this._lastVisionEventAt = 0;
+    this._cameraFacePresent = null;
+    this._faceDetector = null;
+    this._reminderTimer = null;
+    this._reminderPolling = false;
+    this._butlerUpdateTimer = null;
+    this._butlerUpdatePolling = false;
+    this._butlerUpdateCursor = Number(localStorage.getItem('amadeus_butler_update_cursor')) || Date.now();
     // 让 emotion/drift getter 能访问 this
     // eslint-disable-next-line no-global-assign
     amadeus_instance = this;
 
-    // ★ 配置：apiBase 指向后端（localhost:3000）或直连Ollama
+    // ★ 配置：apiBase 指向后端（与 .env 中 AMADEUS_BACKEND_PORT 一致，默认 3000）
     this.config = {
-      apiBase:     location.origin.startsWith('http') ? location.origin : 'http://localhost:3000',   // 后端地址
+      apiBase:     location.origin.startsWith('http') ? location.origin : 'http://localhost:3002',   // 后端地址
       ollamaBase:  'http://127.0.0.1:11434',  // Ollama直连（视觉用）
       // 主对话走 /chat：num_ctx / keep_alive 由后端 AMADEUS_* 控制（默认 2048 / 2m，见 docs/GPU_OLLAMA_SOVITS.md）
       ollamaKeepAlive: '2m',
       // 直连 Ollama 译日（CPU 或首次加载模型可能较慢，默认 90s）
       // 译日走直连 Ollama，过大会拖慢「有声」感知；可改大换质量/慢 CPU
-      translateTimeoutMs: 28000,
+      translateTimeoutMs: 12000,
       /** 主对话流式 max_tokens，降低可明显缩短长段生成时间 */
-      streamMaxTokens: 384,
-      // 译专用小模型（与红莉栖 mainModel 分离，快且不占人设指令）。须 `ollama pull qwen2.5:3b`（名称以 ollama list 为准）
-      translateModel: 'qwen2.5:3b',
+      streamMaxTokens: 192,
+      replyFallbackEnabled: false,
+      // 8GB 显存下不要为译日切换第二个 Ollama 模型；复用已加载的红莉栖主模型，避免每轮冷加载。
+      translateModel: '',
       // 须与 ollama list 名称一致；没有安装的模型不要写进 fallback
-      // 8GB 仍 CPU 回退时可自建 ollama create kurisu:q3 后改 mainModel
+      // 默认回退未微调的 kurisu:latest；v4 候选可手动改回 kurisu-v4-candidate
       mainModel:   'kurisu:latest',
+      /** ja = 模型日语正文 + 界面日译中；与 AMADEUS_REPLY_LANGUAGE 一致 */
+      replyLanguage: 'ja',
+      /** false = 不用固定句替换模型回复（对应后端 AMADEUS_OOC_REPAIR=0） */
+      oocRepair: false,
       fallbackModels: ['deepseek-r1:8b'],
       visionModel: null,              // 禁用视觉，避免显存爆炸
-      sovitsBase:  location.origin.startsWith('http') ? location.origin : 'http://localhost:3000',  // ★ 走后端代理，避免 CORS OPTIONS 405
+      sovitsBase:  location.origin.startsWith('http') ? location.origin : 'http://localhost:3002',  // ★ 走后端代理，避免 CORS OPTIONS 405
       /** 与 SoVITS api_v2 对齐；语速≠1 时会自动关闭 parallel_infer 避免 400 */
       sovitsSeed: 3557467070,
       sovitsRef:   'ref.wav',
@@ -424,13 +511,13 @@ class AmadeusConsciousness {
         sad:     { ref: 'ref_sad.wav', prompt: '…もういいわ。' },
       },
       /** 她说过话后，至少隔这么久才考虑再主动开口（毫秒） */
-      autonomyMinGapAfterKurisuMs: 240000,
+      autonomyMinGapAfterKurisuMs: 45000,
       /** 用户多久没说话后，才允许考虑主动开口（分钟） */
-      autonomyMinIdleMin: 12,
+      autonomyMinIdleMin: 0.35,
       /** 每小时最多主动开口几次（真人不会一直发） */
-      autonomyMaxPerHour: 2,
+      autonomyMaxPerHour: 8,
       /** 主动连发最多几条气泡（空行分隔或自动切句） */
-      autonomyMaxBubbles: 2,
+      autonomyMaxBubbles: 3,
       /** 高亲密度：更主动的关心与口吻（与后端 AMADEUS_HIGH_INTIMACY 对齐，默认开） */
       highIntimacyMode: true,
       /** okabe=默认冈部；custom=不自动认定冈部 */
@@ -438,7 +525,7 @@ class AmadeusConsciousness {
       /** 「神经冲动」最长占用时间(ms)，超时则不注入念头直接开主对话；0=不限时（不推荐） */
       impulseBudgetMs: 0,
       /** 发往 /chat 的多轮条数上限（user+assistant 合计，不含 system）。过大占 num_ctx */
-      chatHistoryMaxMessages: 16,
+      chatHistoryMaxMessages: 10,
     };
 
     this._bindUI();
@@ -454,11 +541,47 @@ class AmadeusConsciousness {
   // ══════════════════════════
   //  BOOT — 静默上线，无问候
   // ══════════════════════════
+  async _resolveApiBase() {
+    if (location.origin.startsWith('http') && location.protocol !== 'file:') {
+      try {
+        const res = await fetch(`${location.origin}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(2500),
+        });
+        if (res.ok) return location.origin;
+      } catch (_) { /* fall through to port scan */ }
+    }
+    for (const port of [3002, 3001, 3000]) {
+      try {
+        const base = `http://localhost:${port}`;
+        const res = await fetch(`${base}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(2500),
+        });
+        if (res.ok) return base;
+      } catch (_) { /* try next port */ }
+    }
+    return this.config.apiBase;
+  }
+
   async _boot() {
     this._log('AMADEUS CORE STARTING...', 'sys');
     await this._sleep(300);
+    const apiBase = await this._resolveApiBase();
+    this.config.apiBase = apiBase;
+    this.config.sovitsBase = apiBase;
     const health = await this._checkStartupHealth();
     this._startupReady = !!health.ready;
+    const proactiveReady = health.capabilities?.proactiveDialogue === true;
+    const proactiveStatus = document.getElementById('autst');
+    if (proactiveStatus) proactiveStatus.textContent = proactiveReady ? 'PRESENCE AWAKE' : 'PRESENCE QUIET';
+    if (health.visionModel) {
+      this.config.visionModel = health.visionModel;
+      this._log(`Vision model ready: ${health.visionModel}`, 'green');
+    } else {
+      this.config.visionModel = null;
+      this._log('Camera preview ready; visual understanding model unavailable.', 'sys');
+    }
     if (!health.ready) {
       this._showStartupBanner(health);
       this._notify('系统尚未就绪，请查看顶部提示', 'red');
@@ -470,15 +593,17 @@ class AmadeusConsciousness {
     await this._sleep(150);
     await this._loadWhoami();   // ★ 加载用户身份档案
     await this._loadDialogueFromServer();
+    this._showFirstRun(health);
     await this._sleep(150);
-    await this._initCamera();
+    // ★ 摄像头初始化不再阻塞启动链：权限弹窗/设备异常时，界面其余部分照常上线
+    void this._initCamera();
     await this._sleep(150);
     this._renderPalace();
     this._updateDriftUI();
     this._renderMoodText(); // 初始化心情窗口
     await this._sleep(200);
     if (this._startupReady) {
-      this._setState('STANDBY');
+      this._setState(this.isLocalCallOn ? 'LISTENING' : 'STANDBY');
       this._notify('AMADEUS ONLINE', 'green');
     } else {
       this._setState('NOT READY');
@@ -491,6 +616,8 @@ class AmadeusConsciousness {
     this._log('All systems nominal. Silent start.', 'green');
     // ★ 不调用 _generateGreeting()，静默上线
     this._startAutonomyLoop();
+    this._startReminderLoop();
+    this._startButlerFollowupLoop();
     this._startPADSync();
     this._startBehaviorReporter();
     if (this._startupReady) void this._probeSoVITS();
@@ -503,7 +630,10 @@ class AmadeusConsciousness {
       });
       if (!res.ok) return;
       const data = await res.json();
-      const entries = Array.isArray(data.entries) ? data.entries : [];
+      const entries = (Array.isArray(data.entries) ? data.entries : []).filter((e) => {
+        const t = String(e?.text || '').trim();
+        return t && !this._isInternalControlLeak(t);
+      });
       this.working = entries.map((e) => ({
         role: e.role === 'user' ? 'user' : 'kurisu',
         text: e.text,
@@ -517,7 +647,7 @@ class AmadeusConsciousness {
   _pushDialogue(role, text, meta = {}) {
     const r = role === 'user' ? 'user' : 'kurisu';
     const t = String(text || '').trim();
-    if (!t) return;
+    if (!t || this._isInternalControlLeak(t)) return;
     this.working.push({ role: r, text: t, proactive: meta.proactive });
     if (this.working.length > 24) this.working.shift();
   }
@@ -548,6 +678,8 @@ class AmadeusConsciousness {
           text: t,
           proactive: meta.proactive === true,
           source: meta.source || 'client',
+          conversationId: meta.conversationId || this._conversationId,
+          turnId: meta.turnId || '',
         }),
         signal: AbortSignal.timeout(8000),
       });
@@ -593,6 +725,92 @@ class AmadeusConsciousness {
     }, 180000);
   }
 
+  _startReminderLoop() {
+    if (this._reminderTimer) clearInterval(this._reminderTimer);
+    void this._pollDueReminders();
+    this._reminderTimer = setInterval(() => { void this._pollDueReminders(); }, 12000);
+  }
+
+  _startButlerFollowupLoop() {
+    if (this._butlerUpdateTimer) clearInterval(this._butlerUpdateTimer);
+    void this._pollButlerUpdates();
+    this._butlerUpdateTimer = setInterval(() => { void this._pollButlerUpdates(); }, 3500);
+  }
+
+  async _pollButlerUpdates() {
+    if (this._butlerUpdatePolling || !this.config.apiBase) return;
+    this._butlerUpdatePolling = true;
+    try {
+      const res = await fetch(`${this.config.apiBase}/butler/updates?since=${encodeURIComponent(this._butlerUpdateCursor)}&limit=10`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      for (const update of (data.updates || [])) {
+        await this._deliverButlerUpdate(update);
+        this._butlerUpdateCursor = Math.max(this._butlerUpdateCursor, Number(update.ts) || Date.now());
+        localStorage.setItem('amadeus_butler_update_cursor', String(this._butlerUpdateCursor));
+      }
+    } catch (error) {
+      this._log(`butler update: ${error.message}`, 'warn');
+    } finally {
+      this._butlerUpdatePolling = false;
+    }
+  }
+
+  async _deliverButlerUpdate(update) {
+    const text = String(update?.text || '').trim();
+    if (!text) return;
+    this._appendChatMsg('kurisu', text);
+    await this._appendDialogueToServer('kurisu', text, { proactive: true, source: 'butler_followup' });
+    this._markKurisuSpoke();
+    this.autonomy.lastProactiveKurisuText = text;
+    this.autonomy.awaitingProactiveReply = true;
+    this._notify(update.status === 'completed' ? '任务已完成' : update.status === 'waiting_confirmation' ? '任务等待确认' : '任务需要处理', update.status === 'blocked' ? 'warn' : 'blue');
+    void this._startBackgroundJapaneseTTS(text);
+  }
+
+  async _pollDueReminders() {
+    if (this._reminderPolling || !this.config.apiBase) return;
+    this._reminderPolling = true;
+    try {
+      const res = await fetch(`${this.config.apiBase}/butler/reminders?due=1`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      for (const reminder of (data.reminders || []).slice(0, 5)) {
+        await this._deliverReminder(reminder);
+      }
+    } catch (error) {
+      this._log(`reminder poll: ${error.message}`, 'warn');
+    } finally {
+      this._reminderPolling = false;
+    }
+  }
+
+  async _deliverReminder(reminder) {
+    if (!reminder?.id || !reminder.content) return;
+    const line = `时间到了。${String(reminder.content).replace(/[。！？!?]+$/, '')}。`;
+    this._appendChatMsg('kurisu', line);
+    await this._appendDialogueToServer('kurisu', line, { proactive: true, source: 'reminder' });
+    this._markKurisuSpoke();
+    this.autonomy.lastProactiveKurisuText = line;
+    this.autonomy.awaitingProactiveReply = true;
+    this._notify(`提醒：${reminder.content}`, 'blue');
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try { new Notification('Amadeus', { body: reminder.content }); } catch (_) { /* ignore */ }
+    }
+    void this._startBackgroundJapaneseTTS(line);
+    const delivered = await fetch(`${this.config.apiBase}/butler/reminders/${encodeURIComponent(reminder.id)}/delivered`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!delivered.ok) throw new Error(`reminder delivery ack ${delivered.status}`);
+  }
+
   _enqueueChatTask(taskFn) {
     return new Promise((resolve, reject) => {
       this._chatQueue.push({ taskFn, resolve, reject });
@@ -627,6 +845,8 @@ class AmadeusConsciousness {
         hints: data.hints || [],
         warnings: data.warnings || [],
         checks: data.checks || [],
+        visionModel: data.visionModel || null,
+        capabilities: data.capabilities || {},
       };
     } catch (_) {
       return {
@@ -645,6 +865,47 @@ class AmadeusConsciousness {
     el.innerHTML = `<strong>系统尚未就绪</strong><br>${lines.map((l) => `• ${l}`).join('<br>')}`;
     el.style.display = 'block';
     document.getElementById('tst').textContent = 'NOT READY';
+  }
+
+  _isInternalControlLeak(text) {
+    const t = String(text || '').trim();
+    const fields = ['NAME:', 'TRAIT:', 'PREFER:', 'BASIC:'].filter((x) => t.includes(x)).length;
+    return fields >= 2
+      || /个人信息[:：]/.test(t)
+      || /信息提取器[：:]/.test(t)
+      || /NO_CONFLICT/.test(t)
+      || /压[缩縮]为\s*[≤<]?\s*\d+\s*字标签/.test(t)
+      || /只输出结果|有矛盾输出中文/.test(t)
+      || /^已有[：:]|\n新[：:]/.test(t)
+      || /【意识广播/.test(t)
+      || /\[打算\]/.test(t)
+      || /我会先找话题/.test(t)
+      || /本轮由内驱进入意识而开口/.test(t);
+  }
+
+  _showFirstRun(health) {
+    if (localStorage.getItem('amadeus_v6_first_run') === '1' || this.working.length > 0) return;
+    const host = document.getElementById('fr-capabilities');
+    const modal = document.getElementById('first-run');
+    if (!host || !modal) return;
+    const checks = Array.isArray(health?.checks) ? health.checks : [];
+    const byId = (id) => checks.find((c) => c.id === id);
+    const capabilities = [
+      ['chat_model', 'DIALOGUE', byId('chat_model')?.ok ? 'READY' : 'BLOCKED'],
+      ['rag', 'MEMORY', byId('rag')?.ok ? 'READY' : 'OPTIONAL'],
+      ['vision', 'VISION', byId('vision')?.ok ? 'READY' : 'CAMERA ONLY'],
+      ['tts', 'VOICE', byId('tts')?.ok ? 'READY' : 'OPTIONAL'],
+    ];
+    host.innerHTML = capabilities.map(([, label, state]) => `<div class="fr-cap"><strong>${label}</strong><span>${state}</span></div>`).join('');
+    modal.classList.add('visible');
+    setTimeout(() => document.querySelector('.fr-enter')?.focus(), 0);
+  }
+
+  dismissFirstRun() {
+    localStorage.setItem('amadeus_v6_first_run', '1');
+    document.getElementById('first-run')?.classList.remove('visible');
+    this._log('First-run contract acknowledged.', 'green');
+    this._notify('实验室已准备好', 'green');
   }
 
   /** 启动时只探测 9880 是否可达，不跑合成（避免每次打开页面白做一次「テスト」推理） */
@@ -713,6 +974,7 @@ class AmadeusConsciousness {
   }
 
   _shortReplyFallback() {
+    if (!this.config.replyFallbackEnabled) return '';
     const pool = this._getFillerPool();
     return pool[Math.floor(Math.random() * pool.length)];
   }
@@ -755,7 +1017,8 @@ class AmadeusConsciousness {
   }
 
   /**
-   * 定稿：有合格日文行时以 JP 为 TTS 准绳，中文由 JP 译出与语音一致；无 JP 时再中译日。
+   * 定稿：有合格日文时，TTS 读这句日文，界面中文必须是这句日文的硬翻。
+   * 禁止再用流式草稿/OOC 兜底把中文换成另一句（那是声画不一致的根因）。
    * @returns {Promise<{ cn: string, modelJp: string }>}
    */
   async _finalizeReplyPairFromRaw(rawFull, userText, recentCtx = '', opts = {}) {
@@ -763,6 +1026,19 @@ class AmadeusConsciousness {
     const resolved = this._resolveReplyCnJp(rawFull);
     let modelJp = resolved.jp;
     let streamedCn = this._stripEmbeddedJapaneseLines(this._cleanForDisplay(rawFull));
+    let lockedToJp = false;
+
+    // 服务端已给 JP，且正文像硬翻中文：仍要以 JP 为准再硬翻一次，避免服务端中文与语音漂移
+    const jpFromServer = preferJp && this._cleanTTSJapanese(preferJp);
+    if (jpFromServer && /[\u3040-\u30ff\uff65-\uff9f]/i.test(jpFromServer)) {
+      modelJp = jpFromServer;
+      const fromJp = await this._translateJapaneseLineForDisplay(jpFromServer);
+      const cn = this._alignLiteralCnToJapanese(jpFromServer, this._cleanForDisplay(fromJp || ''));
+      if (cn && !this._looksJapaneseForCnRepair(cn)) {
+        this._log('定稿：显示=语音日文硬翻（锁定）', 'sys');
+        return { cn, modelJp };
+      }
+    }
 
     let { cn } = await this._repairCnJpIfNeeded(rawFull);
     if (!modelJp && streamedCn && !this._looksJapaneseForCnRepair(streamedCn)) {
@@ -771,35 +1047,43 @@ class AmadeusConsciousness {
       cn = resolved.cn;
     }
 
-    const jpFromServer = preferJp && this._cleanTTSJapanese(preferJp);
-    if (jpFromServer && this._ttsLineOkForSoVits(jpFromServer, cn)) {
-      modelJp = jpFromServer;
-      const fromJp = await this._translateJapaneseLineForDisplay(jpFromServer);
-      if (fromJp && !this._looksJapaneseForCnRepair(fromJp)) {
-        cn = fromJp;
-        this._log('定稿：沿用服务端 JP-first 日译中', 'sys');
+    const jpClean = this._cleanTTSJapanese(modelJp);
+    if (jpClean && /[\u3040-\u30ff\uff65-\uff9f]/i.test(jpClean)) {
+      modelJp = jpClean;
+      const literalSource = this._looksJapaneseForCnRepair(rawFull)
+        ? String(rawFull || '').trim()
+        : jpClean;
+      const fromJp = await this._translateJapaneseLineForDisplay(literalSource);
+      const aligned = this._alignLiteralCnToJapanese(jpClean, this._cleanForDisplay(fromJp || ''));
+      if (aligned && !this._looksJapaneseForCnRepair(aligned)) {
+        cn = aligned;
+        lockedToJp = true;
+        this._log('定稿：显示锁定为 TTS 日文硬翻', 'sys');
+      } else {
+        this._log('定稿：日译中失败，暂显中文（语音仍用模型日文时可能不一致）', 'warn');
       }
     } else {
-      const jpClean = this._cleanTTSJapanese(modelJp);
-      if (jpClean && this._ttsLineOkForSoVits(jpClean, cn)) {
-        modelJp = jpClean;
-        const fromJp = await this._translateJapaneseLineForDisplay(jpClean);
-        if (fromJp && !this._looksJapaneseForCnRepair(fromJp)) {
-          cn = fromJp;
-          this._log('定稿：按 JP 译中文显示（与 TTS 一致）', 'sys');
-        } else {
-          this._log('定稿：日译中失败，TTS 仍用模型 JP，界面暂用中文正文', 'warn');
-        }
-      } else {
-        modelJp = '';
-      }
+      modelJp = '';
     }
 
-    let guarded = this._guardKurisuReply(this._finalizeKurisuReplyCn(cn), userText, recentCtx);
-    if (typeof AmadeusOocGuard !== 'undefined' && AmadeusOocGuard.reconcileFinalReply) {
+    // 已锁定到日文：禁止 coalesce/OOC 把中文换成另一句
+    if (lockedToJp) {
+      const cleaned = this._cleanForDisplay(this._finalizeKurisuReplyCn(cn));
+      return { cn: cleaned || cn, modelJp };
+    }
+
+    let guarded = this._guardKurisuReply(
+      this._finalizeKurisuReplyCn(cn),
+      userText,
+      recentCtx,
+      { preserveMultiBubble: opts.preserveMultiBubble === true },
+    );
+    if (this.config.oocRepair !== false && typeof AmadeusOocGuard !== 'undefined' && AmadeusOocGuard.reconcileFinalReply) {
       guarded = AmadeusOocGuard.reconcileFinalReply(streamedCn, guarded, userText);
     }
-    const finalCn = this._coalesceDisplayCn(streamedCn, guarded, userText);
+    const finalCn = this.config.oocRepair === false
+      ? (guarded || streamedCn || cn)
+      : this._coalesceDisplayCn(streamedCn, guarded, userText);
     return { cn: finalCn, modelJp };
   }
 
@@ -839,7 +1123,7 @@ class AmadeusConsciousness {
   }
 
   /** 与后端 stripOrphanClosingSentence 对齐：去掉刻意模仿、与本轮不接的最后一句 */
-  _stripOrphanClosingSentence(cnText, userText, recentCtx = '') {
+  _stripOrphanClosingSentence(cnText, userText, recentCtx = '', opts = {}) {
     const raw = String(cnText || '').trim();
     if (!raw) return raw;
     let jpBlock = '';
@@ -849,10 +1133,6 @@ class AmadeusConsciousness {
       body = raw.slice(0, jpIdx).trim();
       jpBlock = raw.slice(jpIdx);
     }
-    const anchor = this._userOnlyCorpus(recentCtx, userText);
-    const anchorToks = this._extractTailAlignTokens(anchor);
-    if (body.length < 10 || anchorToks.length < 1) return raw;
-
     const splitSents = (str) => {
       const out = [];
       let buf = '';
@@ -868,6 +1148,17 @@ class AmadeusConsciousness {
       return out.filter(Boolean);
     };
     const sents = splitSents(body);
+    if (opts.preserveMultiBubble && sents.length >= 2 && sents.length <= 3
+      && sents.every((s) => s.length <= 56)) {
+      return raw;
+    }
+    if (sents.length === 2 && sents.every((s) => s.length <= 52)) {
+      return raw;
+    }
+    const anchor = this._userOnlyCorpus(recentCtx, userText);
+    const anchorToks = this._extractTailAlignTokens(anchor);
+    if (body.length < 10 || anchorToks.length < 1) return raw;
+
     if (sents.length < 2) return raw;
     const last = sents[sents.length - 1];
     const rest = sents.slice(0, -1).join('');
@@ -918,10 +1209,11 @@ class AmadeusConsciousness {
     return '别把没说过的话扣自己头上，想说什么就直说。';
   }
 
-  _guardKurisuReply(cnText, userText, recentCtx = '') {
+  _guardKurisuReply(cnText, userText, recentCtx = '', opts = {}) {
     let out = String(cnText || '').trim();
     if (!out) return out;
-    out = this._stripOrphanClosingSentence(out, userText, recentCtx);
+    out = this._stripOrphanClosingSentence(out, userText, recentCtx, opts);
+    if (!this.config.replyFallbackEnabled) return out;
 
     const userNorm = this._normalizeReplyCompare(userText);
     const outNorm = this._normalizeReplyCompare(out);
@@ -967,7 +1259,7 @@ class AmadeusConsciousness {
     }
 
     const oocApi = typeof AmadeusOocGuard !== 'undefined' ? AmadeusOocGuard : null;
-    if (oocApi && typeof oocApi.replyNeedsOocRepair === 'function') {
+    if (this.config.oocRepair !== false && oocApi && typeof oocApi.replyNeedsOocRepair === 'function') {
       const check = oocApi.replyNeedsOocRepair(userText, out);
       if (check.needs) {
         const { score } = typeof oocApi.scoreOoc === 'function' ? oocApi.scoreOoc(out) : { score: 99 };
@@ -989,7 +1281,9 @@ class AmadeusConsciousness {
   _cancelPendingTTS() {
     this._ttsTurnId += 1;
     this._ttsQueue.length = 0;
-    this._ttsPrefetch = null;
+    this._ttsPausedForGesture = false;
+    this._ttsPlaying = false;
+    this._resumeCallRecognitionAfterTts();
     try {
       const audio = document.getElementById('aud');
       if (audio) {
@@ -1040,6 +1334,12 @@ class AmadeusConsciousness {
     if (!raw) return '';
     let t = raw;
     t = t.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '');
+    // 意识广播泄漏：禁止进入聊天气泡
+    t = t.replace(/【意识广播[\s\S]*?(?:】|$)/g, '');
+    t = t.replace(/^\s*\d+\.\s*\[(?:打算|注意到|感受|想要|自我|关系|想起|自检)\][^\n]*/gm, '');
+    t = t.replace(/\[(?:打算|注意到|感受|想要|自我|关系|想起|自检)\]\s*/g, '');
+    t = t.replace(/我会先找话题[—\-~～]*然后就闲聊。?/g, '');
+    t = t.replace(/本轮由内驱进入意识而开口。?/g, '');
     
     // 旧版「先日文再 CN:」：界面只展示中文译文
     if (/CN\s*[:：]/i.test(t)) {
@@ -1060,13 +1360,10 @@ class AmadeusConsciousness {
     t = t.replace(/[「」『』]/g, '');
     t = t.replace(/\n{3,}/g, '\n');
     const deduped = this._dedupeRepeatedText(t.trim());
-    const pool = this._getFillerPool();
     const stripped = deduped.trim();
     const isOnlyDots = /^[…\.．。\s]+$/.test(stripped);
     if (!stripped || isOnlyDots) {
-      const pick = this._shortReplyFallback();
-      console.warn('[clean] 废稿用语语气词替换:', JSON.stringify(stripped), '→', pick);
-      return pick;
+      return '';
     }
     return deduped;
   }
@@ -1138,13 +1435,10 @@ class AmadeusConsciousness {
     let jp = this._extractJP(raw);
     if (!jp) jp = this._inferJapaneseLineForTTS(raw);
 
-    // ★ 兜底检测：正文是否被模型错误地输出为日文
+    // 日语正文：拆出 JP 作 TTS 准绳，中文仅作界面显示
     if (cn && this._looksJapaneseForCnRepair(cn)) {
-      this._log('⚠ 正文疑似日文，模型未遵循中文输出指令', 'warn');
-      if (jp && jp !== cn && !this._looksJapaneseForCnRepair(jp)) {
-        return { cn: jp, jp: cn };
-      }
-      if (!jp) jp = cn;
+      if (!jp) jp = this._cleanTTSJapanese(cn);
+      this._log('定稿：模型日语正文，将日译中显示', 'sys');
     }
     return { cn, jp };
   }
@@ -1248,28 +1542,45 @@ class AmadeusConsciousness {
     return split;
   }
 
+  /** 与服务端 alignLiteralCnToJapanese 同步：按日语原文纠偏小模型错译 */
+  _alignLiteralCnToJapanese(jp, cn) {
+    const src = String(jp || '').trim();
+    let out = String(cn || '').trim();
+    if (!src || !out) return out;
+    if (/^もう[？?]/.test(src)) {
+      out = out.replace(/^(再三|再次|又一次|再三再四)/, '又');
+      if (/再三/.test(out)) out = out.replace(/再三/g, '又');
+    }
+    if (/もう一度/.test(src) && /再三/.test(out)) out = out.replace(/再三/g, '再一次');
+    if (/まだ/.test(src) && /心配|心配して/.test(src) && !/还/.test(out) && /担心/.test(out)) {
+      out = out.replace(/担心/, '还在担心');
+    }
+    return out.replace(/\s{2,}/g, ' ').trim();
+  }
+
   async _translateJapaneseLineForDisplay(jpLine) {
     const jp = String(jpLine || '').trim();
     if (!jp) return '';
     const tmo = Number(this.config.translateTimeoutMs) > 0 ? Number(this.config.translateTimeoutMs) : 90000;
     const tm = this._translateOllamaModel();
-    const maxTok = Math.min(480, Math.max(96, Math.ceil(jp.length * 1.6)));
+    const maxTok = Math.min(520, Math.max(96, Math.ceil(jp.length * 1.8)));
+    // 硬翻：不要通顺化；原文多乱译文多直；中文碎片原样保留；もう≠再三
     const prompts = [
-      '把下面这句日语角色台词翻成自然中文口语对白。保留语气。只输出中文正文，不要解释、不要 JP: 前缀、不要引号包整句。',
-      '只输出中文对白，不要解释。',
+      '你是逐字翻译器不是润色器。把下面角色说的话从日语翻成简体中文。只做直译硬翻，不要改写成通顺对白，不要补全或推断未说的意思。もう≠再三；もう？→又？/已经？；まだ→还/还在。原文里已是中文的片段原样保留。只输出译文正文。',
+      '逐字硬翻成简体中文。不要通顺化，不要脑补。もう不要译成再三。只输出译文。',
     ];
     for (let attempt = 0; attempt < prompts.length; attempt++) {
       try {
         const attemptTmo = Math.min(tmo, attempt === 0 ? 28000 : 42000);
         const cn = await this._callOllamaDirect(
           prompts[attempt],
-          jp.slice(0, 600),
-          attempt === 0 ? 0.15 : 0.22,
+          jp.slice(0, 800),
+          0.0,
           maxTok,
           attemptTmo,
           tm
         );
-        const out = this._cleanForDisplay(this._stripThinkForTts(cn));
+        const out = this._alignLiteralCnToJapanese(jp, this._cleanForDisplay(this._stripThinkForTts(cn)));
         if (out && !this._looksJapaneseForCnRepair(out)) return out;
       } catch (e) {
         this._log(`日译中 (${attempt + 1}): ${e.message}`, 'warn');
@@ -1283,16 +1594,17 @@ class AmadeusConsciousness {
     if (!cn) return '';
     const tmo = Number(this.config.translateTimeoutMs) > 0 ? Number(this.config.translateTimeoutMs) : 90000;
     const tm = this._translateOllamaModel();
-    const maxTok = Math.min(480, Math.max(112, Math.ceil(cn.length * 1.35)));
+    const maxTok = Math.min(180, Math.max(48, Math.ceil(cn.length * 1.6)));
     const prompts = [
       '将下面这句中文角色台词翻成自然日语口语对白。保留语气与句末。只输出日语正文，必须含平假名或片假名。不要中文、不要写 JP: 前缀、不要解释、不要引号包整句。',
       '只输出日语口语对白，须含ひらがな。不要解释。',
       '把这句中文翻成一句自然日语对白，必须含ひらがな。只输出日语。',
     ];
     let lastOut = '';
-    for (let attempt = 0; attempt < prompts.length; attempt++) {
+    const maxAttempts = 2;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const attemptTmo = Math.min(tmo, attempt === 0 ? 28000 : attempt === 1 ? 40000 : 52000);
+        const attemptTmo = Math.min(tmo, attempt === 0 ? 12000 : 18000);
         const ja = await this._callOllamaDirect(
           prompts[attempt],
           cn.slice(0, 600),
@@ -1309,7 +1621,7 @@ class AmadeusConsciousness {
         const hint = /timed out|abort/i.test(String(e.message))
           ? '（Ollama 未在时限内返回：CPU 推理慢或与主对话抢 GPU，可加大 translateTimeoutMs 或换专用译日小模型）'
           : '';
-        this._log(`JP TTS 补全失败 (${attempt + 1}/${prompts.length}): ${e.message}${hint}`, 'warn');
+        this._log(`JP TTS 补全失败 (${attempt + 1}/${maxAttempts}): ${e.message}${hint}`, 'warn');
       }
     }
     if (lastOut && this._ttsLastResortOk(lastOut, cn)) return lastOut.trim();
@@ -1350,7 +1662,7 @@ class AmadeusConsciousness {
 
     const tm = this._translateOllamaModel();
     this._log(`TTS: 译日中…（模型 ${tm}）`, 'warn');
-    const lines = this._splitChineseForTTS(cn);
+    const lines = cn.replace(/\s/g, '').length <= 120 ? [cn] : this._splitChineseForTTS(cn);
     const pieces = [];
     for (const line of lines) {
       const ja = await this._translateChineseLineForTTS(line);
@@ -1376,13 +1688,23 @@ class AmadeusConsciousness {
     const cn = String(cnDisplay || '').trim();
     if (!cn) return [];
     const jp = this._cleanTTSJapanese(modelJp);
-    if (jp && this._ttsLineOkForSoVits(jp, cn)) {
-      return this._splitTTSJapanese(jp)
-        .map((p) => this._validateTTSChunk(p, cn))
-        .filter(Boolean);
+    // 已配对日文：只读这句，禁止再从中文另译一套（声画分叉主因）
+    if (jp && /[\u3040-\u30ff\uff65-\uff9f]/i.test(jp)) {
+      if (jp.replace(/\s/g, '').length <= 120) {
+        const whole = this._validateTTSChunk(jp, '') || jp;
+        return whole ? [whole] : [];
+      }
+      const parts = this._splitTTSJapanese(jp)
+        .map((p) => this._validateTTSChunk(p, '') || p)
+        .filter((p) => p && /[\u3040-\u30ff]/i.test(p));
+      return parts.length ? parts : [jp];
     }
     const full = await this._ensureJapaneseForTTS(cn, '');
     if (!full) return [];
+    if (full.replace(/\s/g, '').length <= 120) {
+      const whole = this._validateTTSChunk(full, cn);
+      return whole ? [whole] : [];
+    }
     return this._splitTTSJapanese(full)
       .map((p) => this._validateTTSChunk(p, cn))
       .filter(Boolean);
@@ -1453,6 +1775,32 @@ class AmadeusConsciousness {
     })();
   }
 
+  // 本地实时语音的核心：LLM 每完成一句中文，就排入同一条牧濑红莉栖 SoVITS 音频队列。
+  // 这里不引入第三方语音；只把现有 TTS 从“全文完成后才开始”改成可打断的事件流。
+  _beginStreamingTTS(turnId = this._ttsTurnId) {
+    this._streamTts = { turnId, sourceSegments: [], chain: Promise.resolve() };
+    this._setState('THINKING');
+  }
+
+  _queueStreamingTTS(sentence, turnId = this._ttsTurnId) {
+    const text = String(sentence || '').replace(/\s+/g, ' ').trim();
+    if (!text || text.length < 2 || turnId !== this._ttsTurnId) return;
+    const stream = this._streamTts;
+    if (!stream || stream.turnId !== turnId) return;
+    // 标点只用于收集边界，不在这里分别合成。否则每个句号都会重置呼吸、音高和情绪。
+    stream.sourceSegments.push(text);
+  }
+
+  async _finishStreamingTTS(cnText, modelJp = '', turnId = this._ttsTurnId) {
+    const text = String(cnText || '').trim();
+    const stream = this._streamTts;
+    if (!text || !stream || stream.turnId !== turnId) return;
+    await stream.chain;
+    if (turnId !== this._ttsTurnId) return;
+    // 主模型日语原句只合成一次；中文仅作为界面字幕，绝不送入 SoVITS。
+    await this._startBackgroundJapaneseTTS(text, modelJp, turnId);
+  }
+
   _lastKurisuLine() {
     for (let i = this.working.length - 1; i >= 0; i--) {
       if (this.working[i].role === 'kurisu') return this.working[i].text || '';
@@ -1499,7 +1847,13 @@ class AmadeusConsciousness {
     return d;
   }
 
-  _autonomySituationLine(idleMin, relScore = 0) {
+  _autonomySituationLine(idleMin, relScore = 0, phase = '') {
+    if (phase === 'presence') {
+      return '你们刚见面或你刚察觉到他在。像牧濑红莉栖本人先开口：可以搞笑、吐槽、轻微骚扰——但必须是她的嘴，不要通用陪伴腔或卖萌戳一戳。';
+    }
+    if (phase === 'coldness') {
+      return '气氛有点冷或敷衍。用红莉栖式挖苦/玩笑/半句正经把场子拉回来，别粘人追问，别讨好。';
+    }
     const api = typeof AmadeusUserPresence !== 'undefined' ? AmadeusUserPresence : null;
     const dnd = this.autonomy.presenceDnd;
     if (api && api.isPresenceActive(dnd)) {
@@ -1509,34 +1863,33 @@ class AmadeusConsciousness {
     const rel = Math.max(0, Number(relScore) || 0);
     const hour = new Date().getHours();
     const late = hour >= 23 || hour < 5;
-    const base =
-      '偶尔想起来才发，禁止按分钟当闹钟催回；亲密度只让语气更真，不会发得更勤。';
-    if (idleMin < 12) {
-      return `${base}现在别主动开口。`;
+    const base = '这不是提醒或任务。像熟人聊天，节奏不规则，也允许只戳一下。';
+    if (idleMin < 6) {
+      return `${base}沉默还不久：优先用语气词、玩笑、颜文字或一两句短骚扰，不要突然开启宏大话题。`;
     }
     if (idleMin >= 40 && rel > 0.32) {
-      return `${base}很久没聊：至多一句嘴硬牢骚或轻的「在干嘛」，也可不发；禁止连发查岗。`;
+      return `${base}很久没聊：可以嘴硬地冒个泡，也可以发两三条很短的碎句；禁止查岗和说教。`;
     }
     if (idleMin >= 22 && rel > 0.3) {
-      return `${base}有一阵没回：可一句轻的，不要抱怨已读不回。`;
+      return `${base}有一阵没回：随手发一点存在感，不要抱怨已读不回。`;
     }
     if (late && rel > 0.38 && idleMin >= 15) {
-      return `${base}夜深：可一句关心式晚安，不要连发。`;
+      return `${base}夜深：语气放轻，可以只是哼一声或一句关心。`;
     }
     if (rel > 0.45 && idleMin >= 15) {
-      return `${base}可抛一句小事；发不发都行。`;
+      return `${base}可抛一句小事，也可以单纯逗一下；发不发都行。`;
     }
     return `${base}可发可不发，别像定时提醒。`;
   }
 
   _autonomyMinIdleMin() {
     const n = Number(this.config.autonomyMinIdleMin);
-    return Number.isFinite(n) && n >= 0 ? n : 12;
+    return Number.isFinite(n) && n >= 0 ? n : 2.5;
   }
 
   _autonomyQuotaOk() {
     const max = Number(this.config.autonomyMaxPerHour);
-    const cap = Number.isFinite(max) && max > 0 ? Math.floor(max) : 2;
+    const cap = Number.isFinite(max) && max > 0 ? Math.floor(max) : 5;
     const hourAgo = Date.now() - 3600000;
     const list = (this.autonomy.proactiveTimestamps || []).filter((t) => t > hourAgo);
     this.autonomy.proactiveTimestamps = list;
@@ -1550,8 +1903,8 @@ class AmadeusConsciousness {
     this.autonomy.proactiveTimestamps.push(Date.now());
   }
 
-  _scheduleAutonomyPause(reasonMs = 180000) {
-    const extra = Math.random() * 120000;
+  _scheduleAutonomyPause(reasonMs = 70000) {
+    const extra = Math.random() * 65000;
     this._scheduleNextTick(reasonMs + extra);
   }
 
@@ -1604,13 +1957,14 @@ class AmadeusConsciousness {
   _guardAutonomyFabrication(cnText, userAnchor) {
     let o = String(cnText || '');
     const u = String(userAnchor || '');
-    if (typeof AmadeusInteractionContext !== 'undefined' && AmadeusInteractionContext.replyNeedsNicknameRepair) {
+    if (this.config.oocRepair !== false && typeof AmadeusInteractionContext !== 'undefined' && AmadeusInteractionContext.replyNeedsNicknameRepair) {
       if (AmadeusInteractionContext.replyNeedsNicknameRepair(u || '（主动）', o)) {
         o = AmadeusInteractionContext.nicknameRepairFallback(u || '克里斯蒂娜');
       }
     }
     if (
-      /量子|睡眠剥夺|神经认知|实验室.{0,12}数据|研究.{0,8}影响/i.test(o)
+      this.config.oocRepair !== false
+      && /量子|睡眠剥夺|神经认知|实验室.{0,12}数据|研究.{0,8}影响/i.test(o)
       && !/量子|睡眠|实验|研究|数据|论文|剥夺|实验室/.test(u)
     ) {
       if (/饿|想吃|好饿/.test(u)) return '你都喊饿了还不去吃？别光在这打字。';
@@ -1621,8 +1975,70 @@ class AmadeusConsciousness {
     return cnText;
   }
 
-  async _postAutonomyBubbles(bubbles, firstMsgDiv, lastUserText, jpFull = '') {
-    const list = (bubbles && bubbles.length) ? bubbles : ['……'];
+  /**
+   * 主动发言定稿：永远「先定要念的日文，再硬翻成显示中文」。
+   * 每一泡 {cn, jp} 一一对应；禁止改中文却仍播旧日文。
+   */
+  async _buildAutonomySpeechPairs(rawFull, userText, recentCtx, delivery = {}) {
+    const bubbleCap = Math.max(1, Math.min(3, Number(delivery.bubbleCount) || this.config.autonomyMaxBubbles || 3));
+    const raw = String(rawFull || '').trim();
+    if (!raw) return [];
+
+    let jpBody = '';
+    if (this._looksJapaneseForCnRepair(raw)) {
+      jpBody = this._cleanTTSJapanese(raw) || raw;
+    } else {
+      // 模型吐中文：先译成要念的日文，再用这句日文硬翻回中文显示（保证一致）
+      jpBody = this._cleanTTSJapanese(await this._translateChineseLineForTTS(raw));
+      if (!jpBody) {
+        const cnOnly = this._cleanForDisplay(raw);
+        return cnOnly && !this._isInternalControlLeak(cnOnly) ? [{ cn: cnOnly, jp: '' }] : [];
+      }
+    }
+
+    const jpParts = this._dedupeAutonomyBubbles(this._splitAutonomyBubbles(jpBody, bubbleCap))
+      .map((s) => this._cleanTTSJapanese(s) || s)
+      .filter((s) => s && /[\u3040-\u30ff]/i.test(s));
+    const pairs = [];
+    for (const jp of jpParts) {
+      let cn = await this._translateJapaneseLineForDisplay(jp);
+      cn = this._alignLiteralCnToJapanese(jp, this._cleanForDisplay(cn || ''));
+      // 只剥泄漏，不换成另一句台词（否则语音还是旧日文）
+      if (this._isInternalControlLeak(cn)) continue;
+      cn = this._cleanForDisplay(cn);
+      if (!cn) continue;
+      pairs.push({ cn, jp });
+    }
+    return pairs;
+  }
+
+  async _postAutonomyBubbles(pairsOrBubbles, firstMsgDiv, lastUserText, jpFull = '', source = 'autonomy', delivery = {}) {
+    let pairs = [];
+    if (Array.isArray(pairsOrBubbles) && pairsOrBubbles[0] && typeof pairsOrBubbles[0] === 'object' && 'cn' in pairsOrBubbles[0]) {
+      pairs = pairsOrBubbles
+        .map((p) => ({
+          cn: this._cleanForDisplay(p.cn),
+          jp: this._cleanTTSJapanese(p.jp || ''),
+        }))
+        .filter((p) => p.cn && !this._isInternalControlLeak(p.cn));
+    } else {
+      // 兼容旧调用：中文气泡 + 整段日文 → 按泡对齐，禁止整段日文配第一泡中文
+      const list = (Array.isArray(pairsOrBubbles) ? pairsOrBubbles : [])
+        .map((s) => String(s || '').trim())
+        .filter((s) => s && !this._isInternalControlLeak(s));
+      const jpParts = this._splitAutonomyBubbles(this._cleanTTSJapanese(jpFull) || '', list.length)
+        .map((s) => this._cleanTTSJapanese(s) || s)
+        .filter(Boolean);
+      pairs = list.map((cn, i) => ({
+        cn,
+        jp: jpParts[i] || (list.length === 1 ? this._cleanTTSJapanese(jpFull) : ''),
+      }));
+    }
+    if (!pairs.length) {
+      try { firstMsgDiv?.remove(); } catch (_) {}
+      return;
+    }
+    const combinedProactive = pairs.map((p) => p.cn).join(' ');
     const ts = () => new Date().toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const showSub = (text) => {
       document.getElementById('scn').textContent = text;
@@ -1635,23 +2051,33 @@ class AmadeusConsciousness {
       }, delay);
     };
 
-    for (let i = 0; i < list.length; i++) {
-      const text = list[i];
+    for (let i = 0; i < pairs.length; i++) {
+      const { cn: text, jp } = pairs[i];
       let msgDiv = firstMsgDiv;
       if (i > 0) {
-        await new Promise((r) => setTimeout(r, 700 + Math.random() * 500));
+        const pauseMin = Math.max(250, Number(delivery.pauseMinMs) || 450);
+        const pauseMax = Math.max(pauseMin, Number(delivery.pauseMaxMs) || 1400);
+        await new Promise((r) => setTimeout(r, pauseMin + Math.random() * (pauseMax - pauseMin)));
+        msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
+      } else if (!msgDiv) {
         msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
       }
       msgDiv.querySelector('.mt').textContent = text;
       msgDiv.querySelector('.mtime').textContent = ts();
-      void this._appendDialogueToServer('kurisu', text, { proactive: true, source: 'autonomy' });
-      if (i === list.length - 1) {
-        this.autonomy.lastProactiveKurisuText = text;
-        this.autonomy.awaitingProactiveReply = true;
-      }
+      void this._appendDialogueToServer('kurisu', text, { proactive: true, source });
       this._markKurisuSpoke();
       showSub(text);
-      this._startBackgroundJapaneseTTS(text, i === 0 ? jpFull : '');
+      // 每泡只用对应日文；没有日文才允许按该泡中文译日
+      this._startBackgroundJapaneseTTS(text, jp);
+    }
+    if (combinedProactive) {
+      this.autonomy.lastProactiveKurisuText = combinedProactive;
+      this.autonomy.awaitingProactiveReply = true;
+      fetch(`${this.config.apiBase}/initiative/sent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: combinedProactive, action: delivery.action || source }),
+      }).catch(() => {});
     }
   }
 
@@ -1672,13 +2098,18 @@ class AmadeusConsciousness {
     if (!parsed.cn || !this._looksJapaneseForCnRepair(parsed.cn)) return parsed;
 
     const jp = parsed.jp || parsed.cn;
-    this._log('正文是日文，尝试自动译为中文显示。', 'warn');
-    const sysJa = '把下面这段日文自然翻译成中文口吻（角色在说话）。只输出中文，不要标题、不要解释、不要 JP 行。';
+    if (this.config.replyLanguage === 'ja') {
+      this._log('定稿：日语正文，日译中显示', 'sys');
+    } else {
+      this._log('正文是日文，尝试自动译为中文显示。', 'warn');
+    }
+    // 硬翻补显示：禁止“自然口吻”意译
+    const sysJa = '你是逐字翻译器不是润色器。把下面这段从日语硬翻成简体中文。不要通顺化，不要脑补未说的意思。原文残缺或中日夹杂则译文同等残缺或夹杂；已是中文的片段原样保留。只输出译文正文。';
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const chunk = parsed.cn.length > 2400 ? parsed.cn.slice(0, 2400) : parsed.cn;
         const tmo = Number(this.config.translateTimeoutMs) > 0 ? Number(this.config.translateTimeoutMs) : 90000;
-        const repaired = await this._callOllamaDirect(sysJa, chunk, 0.15, 600, tmo, this._translateOllamaModel());
+        const repaired = await this._callOllamaDirect(sysJa, chunk, 0.0, 600, tmo, this._translateOllamaModel());
         const cn = this._cleanForDisplay(repaired);
         if (cn && !this._looksJapaneseForCnRepair(cn)) return { cn, jp };
       } catch (e) {
@@ -2023,16 +2454,14 @@ class AmadeusConsciousness {
   }
 
   async _drainTTSQueue(turnId = this._ttsTurnId) {
-    if (this._ttsPlaying) return;
+    if (this._ttsPlaying || this._ttsPausedForGesture) return;
     this._ttsPlaying = true;
+    this._suspendCallRecognitionForTts();
     let lastChunk = '';
-    let prefetched = this._ttsPrefetch;
-    this._ttsPrefetch = null;
     try {
       while (this._ttsQueue.length) {
         if (turnId !== this._ttsTurnId) break;
         const safe = this._ttsQueue.shift();
-        let ttsRetried = false;
         lastChunk = safe;
         if (this._ttsChunkShouldSkipAsChinese(safe)) {
           this._log('TTS: 跳过非日文片段', 'sys');
@@ -2041,25 +2470,8 @@ class AmadeusConsciousness {
         const t0 = Date.now();
         this._log(`TTS req → ${safe.substring(0, 28)}${safe.length > 28 ? '…' : ''}`, 'warn');
 
-        let blobPromise;
-        if (prefetched && prefetched.text === safe) {
-          blobPromise = prefetched.promise;
-          prefetched = null;
-        } else {
-          blobPromise = this._fetchTTSBlob(safe);
-        }
-
-        const next = this._ttsQueue[0];
-        if (next && !this._ttsChunkShouldSkipAsChinese(next)) {
-          prefetched = { text: next, promise: this._fetchTTSBlob(next) };
-          this._ttsPrefetch = prefetched;
-        } else {
-          prefetched = null;
-          this._ttsPrefetch = null;
-        }
-
         try {
-          const blob = await blobPromise;
+          const blob = await this._fetchTTSBlob(safe);
           if (turnId !== this._ttsTurnId) {
             this._log('TTS: 已取消（新一轮对话）', 'sys');
             break;
@@ -2068,13 +2480,6 @@ class AmadeusConsciousness {
           this._log(`TTS latency: ${Date.now() - t0}ms`, 'warn');
         } catch (e) {
           const msg = String(e.message || e);
-          if (e.httpStatus && !ttsRetried) {
-            ttsRetried = true;
-            this._ttsQueue.unshift(safe);
-            this._log(`TTS: SoVITS ${msg}，稍后重试本段`, 'warn');
-            await this._sleep(800);
-            continue;
-          }
           if (e.httpStatus) {
             this._log(`TTS: SoVITS ${msg}`, 'red');
             console.warn('[Amadeus TTS] HTTP/json error', msg);
@@ -2087,6 +2492,7 @@ class AmadeusConsciousness {
             this._ttsSoVitsOnlySkip('返回音频过短');
           } else if (/NotAllowed|audio-load|audio-playback|play\(\)/i.test(msg)) {
             this._ttsQueue.unshift(safe);
+            this._ttsPausedForGesture = true;
             this._log(`TTS: 等待用户手势后重试播放 (${msg})`, 'warn');
             this._requestTTSGestureUnlock();
             break;
@@ -2102,8 +2508,12 @@ class AmadeusConsciousness {
       if (lastChunk) this._ttsSoVitsOnlySkip(e.message || '播放失败');
     } finally {
       this._ttsPlaying = false;
-      this._ttsPrefetch = null;
-      if (this._ttsQueue.length && turnId === this._ttsTurnId) this._drainTTSQueue(turnId);
+      this._resumeCallRecognitionAfterTts();
+      if (this._ttsQueue.length && !this._ttsPausedForGesture) {
+        void this._drainTTSQueue(this._ttsTurnId);
+      } else if (this.isLocalCallOn && !this.state.isThinking) {
+        this._setState('LISTENING');
+      }
     }
   }
 
@@ -2125,6 +2535,7 @@ class AmadeusConsciousness {
   //  LLM 调用
   // ══════════════════════════════════════════════
   async _postChatWithFallback(payload) {
+    const { signal, ...requestPayload } = payload || {};
     const tried = [];
     const candidates = [this.config.mainModel, ...(this.config.fallbackModels || [])]
       .filter((m, i, arr) => m && arr.indexOf(m) === i);
@@ -2136,7 +2547,8 @@ class AmadeusConsciousness {
         const res = await fetch(`${this.config.apiBase}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, model }),
+          body: JSON.stringify({ ...requestPayload, model }),
+          signal,
         });
         if (!res.ok) {
           let detail = '';
@@ -2159,6 +2571,7 @@ class AmadeusConsciousness {
         }
         return res;
       } catch (e) {
+        if (signal?.aborted) throw e;
         lastErr = e;
       }
     }
@@ -2216,12 +2629,19 @@ class AmadeusConsciousness {
     const cap = Number(this.config.streamMaxTokens);
     const mtok = Number.isFinite(cap) && cap >= 80 && cap <= 8192 ? cap : 384;
     const idleMs = Math.max(0, Date.now() - (this.autonomy.lastUserMessageAt || this.state.lastUserActive || Date.now()));
-    const replyingToProactive = this.autonomy.awaitingProactiveReply === true;
+    const replyingToProactive = this.autonomy.replyingToProactiveThisTurn === true
+      || this.autonomy.awaitingProactiveReply === true;
     const proactiveAnchor = replyingToProactive ? String(this.autonomy.lastProactiveKurisuText || '') : '';
-    if (replyingToProactive) {
+    if (this.autonomy.awaitingProactiveReply) {
       this.autonomy.awaitingProactiveReply = false;
       this._log('已提交：承接主动话题', 'sys');
+      fetch(`${this.config.apiBase}/initiative/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'reply', text: String(last.content || '').trim() }),
+      }).catch(() => {});
     }
+    this.autonomy.replyingToProactiveThisTurn = false;
     const res = await this._postChatWithFallback({
       messages,
       stream: true,
@@ -2232,12 +2652,16 @@ class AmadeusConsciousness {
       proactiveAnchor,
       userPresence: this._userPresencePayload(),
       clientContext: extra.clientContext || null,
+      conversationId: extra.conversationId || this._conversationId,
+      turnId: extra.turnId || '',
+      signal: extra.signal,
     });
 
     const reader  = res.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let rawFull = '', modelJp = '', buf = '', done_ = false;
     let sentenceBuffer = '';
+    let serverDisplayCn = '';
 
     const finish = () => {
       if (done_) return;
@@ -2246,7 +2670,8 @@ class AmadeusConsciousness {
         onSentence(sentenceBuffer.trim());
         sentenceBuffer = '';
       }
-      onDone(rawFull);
+      // 服务端硬翻定稿优先：界面与实录应对齐同一条中文
+      onDone(serverDisplayCn || rawFull);
     };
 
     try {
@@ -2263,10 +2688,16 @@ class AmadeusConsciousness {
           try {
             const j = t.startsWith('data:') ? t.slice(5).trim() : t;
             const obj = JSON.parse(j);
+            if (obj && obj.error) {
+              const streamError = new Error(String(obj.error || '对话流异常'));
+              streamError.name = 'ChatStreamError';
+              throw streamError;
+            }
             if (typeof obj.replaceText === 'string' && obj.replaceText) {
               const rep = this._cleanForDisplay(obj.replaceText);
-              const cur = this._cleanForDisplay(rawFull);
-              if (rep && rep.length >= 2 && (!cur || rep.length >= cur.length * 0.5 || !/说重点|有事？|听着呢/.test(rep))) {
+              if (rep && rep.length >= 2) {
+                serverDisplayCn = rep;
+                // 允许覆盖流式草稿，避免界面停在脏原文、实录却是另一条
                 rawFull = rep;
                 sentenceBuffer = '';
                 onToken(rep);
@@ -2284,9 +2715,11 @@ class AmadeusConsciousness {
                 sentenceBuffer += clean;
                 onToken(this._cleanForDisplay(rawFull));
 
-                // 实时句子边界检测：。！？\n 或连续的空格
-                if (/[。！？!?\n]/.test(clean) && typeof onSentence === 'function') {
-                  const lastIdx = Math.max(
+                // 首句低延迟：完整句立即送 TTS；较长分句在逗号/分号处提前送出。
+                const terminalReady = /[。！？!?\n]/.test(clean);
+                const clauseReady = sentenceBuffer.length >= 16 && /[，,；;：:]/.test(clean);
+                if ((terminalReady || clauseReady) && typeof onSentence === 'function') {
+                  let lastIdx = Math.max(
                     sentenceBuffer.lastIndexOf('。'),
                     sentenceBuffer.lastIndexOf('！'),
                     sentenceBuffer.lastIndexOf('？'),
@@ -2294,6 +2727,16 @@ class AmadeusConsciousness {
                     sentenceBuffer.lastIndexOf('?'),
                     sentenceBuffer.lastIndexOf('\n')
                   );
+                  if (lastIdx < 0 && clauseReady) {
+                    lastIdx = Math.max(
+                      sentenceBuffer.lastIndexOf('，'),
+                      sentenceBuffer.lastIndexOf(','),
+                      sentenceBuffer.lastIndexOf('；'),
+                      sentenceBuffer.lastIndexOf(';'),
+                      sentenceBuffer.lastIndexOf('：'),
+                      sentenceBuffer.lastIndexOf(':')
+                    );
+                  }
                   if (lastIdx !== -1) {
                     const ready = sentenceBuffer.slice(0, lastIdx + 1).trim();
                     // ★ 过滤掉太短或纯标点的句子（至少包含一个有效字符）
@@ -2310,7 +2753,9 @@ class AmadeusConsciousness {
               }
             }
             if (obj.choices?.[0]?.finish_reason === 'stop' || obj.done) finish();
-          } catch {}
+          } catch (e) {
+            if (e?.name === 'ChatStreamError') throw e;
+          }
         }
       }
     } finally { finish(); }
@@ -2337,6 +2782,7 @@ class AmadeusConsciousness {
     const body = {
       model: mid,
       stream: false,
+      think: false,
       keep_alive: ka,
       messages: [
         { role: 'system', content: String(systemMsg || '') },
@@ -2374,16 +2820,16 @@ class AmadeusConsciousness {
   async _callLLM(systemMsg, userMsg, temp, maxTokens) {
     if (!userMsg || !userMsg.trim()) return '';
     const mt = Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 200;
-    const res = await this._postChatWithFallback({
-      messages: [
-        { role:'system', content: systemMsg },
-        { role:'user',   content: userMsg   },
-      ],
-      stream: false, temperature: temp || 0.5, max_tokens: mt,
-    });
-    const d = await res.json();
-    const raw = d.response || (d.message && d.message.content) || d.choices?.[0]?.message?.content || '';
-    return this._stripThinkForTts(raw);
+    // 内部压缩、矛盾检测、冲动生成等绝不能经过正式 /chat，
+    // 否则工具提示会被当作用户对话写入长期记忆并反复污染主动话题。
+    return this._callOllamaDirect(
+      String(systemMsg || ''),
+      String(userMsg || ''),
+      Number.isFinite(temp) ? temp : 0.5,
+      mt,
+      Number(this.config.translateTimeoutMs) || 12000,
+      this.config.mainModel,
+    );
   }
 
   _isDesignRequest(text) {
@@ -2428,7 +2874,7 @@ class AmadeusConsciousness {
       this._log(`Design: ${e.message}`, 'warn');
     } finally {
       msgDiv.querySelector('.mtime').textContent = new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      this._setState('STANDBY');
+      this._setState(this.isLocalCallOn ? 'LISTENING' : 'STANDBY');
     }
   }
 
@@ -2501,17 +2947,37 @@ class AmadeusConsciousness {
   //  CAMERA
   // ══════════════════════════════════════════════
   async _initCamera() {
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ video:{ width:640, height:480 } });
+    const attach = (s) => {
       document.getElementById('cpv').srcObject = s;
       document.getElementById('cfh').srcObject = s;
       this.state.isCameraReady = true;
-      document.getElementById('cst').textContent = '● REC';
-      this._log('Vision online.', 'green');
-    } catch (e) {
+      const cst = document.getElementById('cst');
+      cst.style.color = '';
+      cst.textContent = 'CAM READY';
+      document.getElementById('cseen').textContent = this.config.visionModel
+        ? 'VISION READY'
+        : 'MOTION MONITOR';
+      this._log(this.config.visionModel ? 'Vision understanding online.' : 'Camera preview online.', 'green');
+      void this._startCameraPerception();
+    };
+    const markOffline = (msg) => {
       document.getElementById('cst').style.color = 'var(--red)';
+      document.getElementById('cseen').textContent = 'PRESENCE OFFLINE';
       document.getElementById('cst').textContent  = '✗ NO CAM';
-      this._log(`Camera: ${e.message}`, 'warn');
+      this._log(`Camera: ${msg}`, 'warn');
+    };
+    // ★ getUserMedia 无法取消，只能 race 超时；权限弹窗挂起时先标记离线
+    const request = navigator.mediaDevices.getUserMedia({ video:{ width:640, height:480 } });
+    try {
+      const s = await Promise.race([
+        request,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('摄像头 8 秒未就绪（权限未授予或设备被占用）')), 8000)),
+      ]);
+      attach(s);
+    } catch (e) {
+      markOffline(e.message);
+      // 用户稍后在权限弹窗里点了允许 → 迟到的流照常接入
+      request.then((s) => { if (!this.state.isCameraReady) attach(s); }).catch(() => {});
     }
   }
 
@@ -2556,10 +3022,19 @@ class AmadeusConsciousness {
   // ══════════════════════════════════════════════
   //  USER SEND
   // ══════════════════════════════════════════════
+  _interruptCurrentReply(reason = 'user-interrupt') {
+    const wasActive = !!this.state.isThinking || !!this._ttsPlaying || this._ttsQueue.length > 0;
+    this._cancelPendingTTS();
+    try { this._activeChatAbortController?.abort(reason); } catch (_) {}
+    if (wasActive) this._setState('THINKING');
+  }
+
   async userSend() {
     const inputEl = document.getElementById('ci');
     const text    = inputEl.value.trim();
-    if (!text || this.state.isThinking) return;
+    if (!text) return;
+    this._cancelConversationInitiative();
+    if (this.state.isThinking) this._interruptCurrentReply('new-user-turn');
     inputEl.value = '';
     await this._enqueueChatTask(() => this._userSendCore(text));
   }
@@ -2576,22 +3051,44 @@ class AmadeusConsciousness {
 
     this._cancelPendingTTS();
     const ttsTurnId = this._ttsTurnId;
+    this._beginStreamingTTS(ttsTurnId);
     this.state.isThinking     = true;
     this.state.lastUserActive = Date.now();
     this.autonomy.lastUserMessageAt = Date.now();
     this._syncUserPresence(text);
+    // 用户还在场：接主动句 → reply；普通继续聊 → presence 衰减 ignored
+    const replyingToProactive = this.autonomy.awaitingProactiveReply === true;
+    this.autonomy.replyingToProactiveThisTurn = replyingToProactive;
+    if (replyingToProactive) {
+      this.autonomy.awaitingProactiveReply = false;
+      fetch(`${this.config.apiBase}/initiative/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'reply', text: String(text || '').trim() }),
+      }).catch(() => {});
+    } else {
+      fetch(`${this.config.apiBase}/initiative/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'presence', text: String(text || '').trim() }),
+      }).catch(() => {});
+    }
     this._setState('THINKING');
 
+    const turnId = `${this._conversationId}_${Date.now()}_${++this._chatTurnSeq}`;
     this.msgCount++;
     localStorage.setItem('amadeus_msgcount', this.msgCount);
     document.getElementById('mcnt').textContent = `${this.msgCount} MSG`;
 
     this._appendChatMsg('user', text);
-    await this._appendDialogueToServer('user', text, { source: 'chat' });
+    await this._appendDialogueToServer('user', text, { source: 'chat', turnId });
     const tid = 'typing-' + Date.now();
     this._appendTyping(tid);
 
+    let chatAbortController = null;
     try {
+      chatAbortController = new AbortController();
+      this._activeChatAbortController = chatAbortController;
       // ★ 先检查是否是"修改自己"的指令
       const selfModResult = await this._checkSelfModify(text);
       if (selfModResult) {
@@ -2639,15 +3136,13 @@ class AmadeusConsciousness {
       const [vr, impulse] = await Promise.all([visionPromise, impulsePromise]);
 
       if (vr?.confident && vr.text) this._showVisionText(vr.text);
-    this._extractPersonalInfo(text);
-
       const wantMem = this.needsLongTermMemory(text);
       const palaceCtx = wantMem ? this._navigatePalace(text) : '';
       const visionCtx = wantVisual && vr?.confident && vr.text
         ? `当前摄像头视觉观察：${vr.text}。这是你此刻真正能依据的画面。`
         : '';
       const userText = String(text).replace(/\r?\n/g, ' ').trim();
-      const replyingToProactive = this.autonomy.awaitingProactiveReply === true;
+      const replyingToProactive = this.autonomy.replyingToProactiveThisTurn === true;
       const proactiveAnchor = replyingToProactive ? String(this.autonomy.lastProactiveKurisuText || '') : '';
       if (replyingToProactive) {
         this._log('承接她上一轮主动话题', 'sys');
@@ -2669,16 +3164,22 @@ class AmadeusConsciousness {
       const streamOut = await this._callStreamMessages(apiMessages, this.getStreamTemp(),
         (cleanedAcc) => this._onKurisuStreamToken(msgDiv, cleanedAcc),
         (raw) => { rawFull = raw; },
-        undefined,
-        { clientContext },
+        (sentence) => this._queueStreamingTTS(sentence, ttsTurnId),
+        {
+          clientContext,
+          signal: chatAbortController.signal,
+          conversationId: this._conversationId,
+          turnId,
+        },
       );
       rawFull = streamOut.rawFull || rawFull;
       streamModelJp = streamOut.modelJp || '';
-      const recentCtx = this.working.slice(-6)
+      const recentCtx = this.working.slice(-8)
         .map((m) => `${m.role === 'user' ? '他' : 'Kurisu'}: ${m.text}`)
         .join('\n');
       const lastKBefore = this._lastKurisuLine();
       const { cn: cnText, modelJp } = await this._finalizeReplyPairFromRaw(rawFull, userText, recentCtx, {
+        preserveMultiBubble: replyingToProactive,
         preferModelJp: streamModelJp,
       });
       this._agentClientLog('REP-TTS', 'amadeus_work.html:userSend', 'afterRepair', {
@@ -2700,7 +3201,7 @@ class AmadeusConsciousness {
       await this._loadDialogueFromServer();
       this._markKurisuSpoke();
 
-      const ttsReady = this._startBackgroundJapaneseTTS(cnText, modelJp, ttsTurnId);
+      const ttsReady = this._finishStreamingTTS(cnText, modelJp, ttsTurnId);
       if (this.working.length > 24) this.working = this.working.slice(-24);
       void ttsReady.finally(() => { void this._archiveToPalace(text, cnText); });
 
@@ -2709,17 +3210,25 @@ class AmadeusConsciousness {
 
       void this._syncPADFromServer();
 
+      this._openConversationInitiativeWindow(text, cnText);
+
       // 气泡停留仅用于展示，不可 await，否则会拖到 delay 结束才 isThinking=false，界面一直像加载中
       const delay = Math.min(Math.max(2400, cnText.length * 70), 14000);
       setTimeout(()=>{ document.getElementById('sb').classList.remove('visible'); document.getElementById('ki').classList.remove('talking'); }, delay);
 
     } catch (e) {
       document.getElementById(tid)?.remove();
-      this._appendChatMsg('kurisu', `（数据链路中断: ${e.message}）`);
-      this._log(`userSend: ${e.message}`, 'red');
+      if (e?.name !== 'AbortError' && !/aborted|abort/i.test(String(e?.message || ''))) {
+        const detail = String(e?.message || e || '未知错误');
+        this._notify(`对话连接中断：${detail.slice(0, 80)}`, 'red');
+        this._log(`userSend: ${detail}`, 'red');
+      } else {
+        this._log('对话已被用户打断，旧回复不再继续播放', 'sys');
+      }
     } finally {
+      if (this._activeChatAbortController === chatAbortController) this._activeChatAbortController = null;
       this.state.isThinking = false;
-      this._setState('STANDBY');
+      this._setState(this.isLocalCallOn ? 'LISTENING' : 'STANDBY');
       document.getElementById('ci').focus();
       void this._loadDialogueFromServer();
     }
@@ -2738,6 +3247,7 @@ class AmadeusConsciousness {
     this.state.isThinking = true;
     this._setState('THINKING');
     const ttsTurnId = this._ttsTurnId;
+    this._beginStreamingTTS(ttsTurnId);
 
     try {
       const lastUser = [...this.working].reverse().find((m) => m && m.role === 'user');
@@ -2762,7 +3272,7 @@ class AmadeusConsciousness {
         0.9,
         (cleanedAcc) => this._onKurisuStreamToken(msgDiv, cleanedAcc),
         (raw) => { rawFull = raw; },
-        undefined,
+        (sentence) => this._queueStreamingTTS(sentence, ttsTurnId),
         { clientContext },
       );
       rawFull = streamOut.rawFull || rawFull;
@@ -2786,7 +3296,7 @@ class AmadeusConsciousness {
       await this._loadDialogueFromServer();
       this._markKurisuSpoke();
 
-      this._startBackgroundJapaneseTTS(cnText, modelJp, ttsTurnId);
+      await this._finishStreamingTTS(cnText, modelJp, ttsTurnId);
 
       const delay = Math.min(Math.max(2400, cnText.length * 70), 14000);
       setTimeout(()=>{ document.getElementById('sb').classList.remove('visible'); document.getElementById('ki').classList.remove('talking'); }, delay);
@@ -2797,7 +3307,7 @@ class AmadeusConsciousness {
       this._log(`Skip: ${e.message}`, 'red');
     } finally {
       this.state.isThinking = false;
-      this._setState('STANDBY');
+      this._setState(this.isLocalCallOn ? 'LISTENING' : 'STANDBY');
       document.getElementById('ci').focus();
       void this._loadDialogueFromServer();
     }
@@ -2875,30 +3385,192 @@ class AmadeusConsciousness {
   // ══════════════════════════════════════════════
   //  AUTONOMY
   // ══════════════════════════════════════════════
+  _cancelConversationInitiative() {
+    this.autonomy.initiativeToken += 1;
+    if (this.autonomy.initiativeTimer) clearTimeout(this.autonomy.initiativeTimer);
+    try { this.autonomy.initiativeAbortController?.abort('new-user-turn'); } catch (_) {}
+    this.autonomy.initiativeTimer = null;
+    this.autonomy.initiativeAbortController = null;
+  }
+
+  _openConversationInitiativeWindow(userText, replyText) {
+    this._cancelConversationInitiative();
+    const token = this.autonomy.initiativeToken;
+    const openedAt = Date.now();
+    const releaseFloor = async () => {
+      if (token !== this.autonomy.initiativeToken) return;
+      // 思考中必须等；TTS 尽量等完，但不再用短超时把跟话窗口掐死
+      if (this.state.isThinking) {
+        this.autonomy.initiativeTimer = setTimeout(releaseFloor, 600);
+        return;
+      }
+      if (this._ttsPlaying && Date.now() - openedAt < 55000) {
+        this.autonomy.initiativeTimer = setTimeout(releaseFloor, 700);
+        return;
+      }
+      await this._evaluateConversationInitiative(userText, replyText, token, 'floor_release', openedAt);
+    };
+    // 这里只检测对话地板是否空出，不代表她一定会说话。
+    this.autonomy.initiativeTimer = setTimeout(releaseFloor, 700 + Math.random() * 1200);
+  }
+
+  async _evaluateConversationInitiative(userText, replyText, token, phase, openedAt) {
+    if (token !== this.autonomy.initiativeToken || this.autonomy.awaitingProactiveReply) return;
+    const abortController = new AbortController();
+    this.autonomy.initiativeAbortController = abortController;
+    try {
+      const res = await fetch(`${this.config.apiBase}/initiative/decide`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userText,
+          replyText,
+          phase,
+          elapsedMs: Date.now() - openedAt,
+          pad: this.pad,
+          relScore: this._relScore || 0,
+        }),
+        signal: AbortSignal.any([abortController.signal, AbortSignal.timeout(6000)]),
+      });
+      const decision = await res.json();
+      if (!res.ok || !decision.ok || token !== this.autonomy.initiativeToken) return;
+      if (!decision.shouldSpeak) {
+        const wait = Number(decision.reevaluateAfterMs) || 0;
+        if (wait > 0 && phase === 'floor_release') {
+          this.autonomy.initiativeTimer = setTimeout(() => {
+            void this._evaluateConversationInitiative(userText, replyText, token, 'silence', openedAt);
+          }, wait);
+        }
+        return;
+      }
+      await this._speakConversationInitiative(userText, replyText, token, decision, abortController);
+    } catch (e) {
+      if (e?.name !== 'AbortError') this._log(`Initiative decision: ${e.message}`, 'warn');
+    } finally {
+      if (this.autonomy.initiativeAbortController === abortController) {
+        this.autonomy.initiativeAbortController = null;
+      }
+    }
+  }
+
+  async _speakConversationInitiative(userText, replyText, token, decision, abortController) {
+    if (token !== this.autonomy.initiativeToken) return;
+    const tid = `initiative-${Date.now()}`;
+    this.state.isThinking = true;
+    this._setState('THINKING');
+    this._appendTyping(tid);
+    const presenceStatus = document.getElementById('autst');
+    if (presenceStatus) presenceStatus.textContent = 'FOLLOWING THREAD';
+    try {
+      const recentDialogue = this.working.slice(-8).map((m) => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        text: String(m.text || '').slice(0, 220),
+      }));
+      const res = await fetch(`${this.config.apiBase}/chat/lite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userText: '（想说话）接着刚才补一句',
+          isAutonomyInitiative: true,
+          conversationInitiative: true,
+          initiativeAction: decision.action,
+          initiativeReason: decision.reason,
+          delivery: decision.delivery || {},
+          contextFresh: true,
+          recentDialogue,
+          recentProactive: this.working.filter((m) => m?.proactive).slice(-6).map((m) => m.text),
+          lastUserAnchor: String(userText || '').slice(0, 200),
+          lastKurisuAnchor: String(replyText || '').slice(0, 200),
+          clientOwnsLog: true,
+          idleMsSinceUser: Date.now() - this.autonomy.lastUserMessageAt,
+          model: this.config.mainModel,
+          temperature: 0.86,
+          max_tokens: 72,
+        }),
+        signal: AbortSignal.any([abortController.signal, AbortSignal.timeout(45000)]),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `initiative ${res.status}`);
+      const raw = String(data.response || '').trim();
+      if (data.skipped || !raw || /^\[?SILENCE\]?$/i.test(raw)) return;
+      if (token !== this.autonomy.initiativeToken) return;
+      const recentCtx = this.working.slice(-6).map((m) => `${m.role === 'user' ? 'User' : 'Kurisu'}: ${m.text}`).join('\n');
+      const pairs = await this._buildAutonomySpeechPairs(raw, userText, recentCtx, decision.delivery || {});
+      if (!pairs.length) return;
+      const cnJoined = pairs.map((p) => p.cn).join(' ');
+      if (this._autonomyEchoesPrev(replyText, cnJoined) || this._autonomyEchoesPrev(userText, cnJoined)) return;
+      document.getElementById(tid)?.remove();
+      const msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
+      this._onKurisuStreamToken(msgDiv, pairs[0].cn);
+      await this._postAutonomyBubbles(
+        pairs,
+        msgDiv,
+        userText,
+        '',
+        `conversation_${decision.action}`,
+        decision.delivery || {},
+      );
+    } catch (e) {
+      if (e?.name !== 'AbortError') this._log(`Initiative speech: ${e.message}`, 'warn');
+    } finally {
+      document.getElementById(tid)?.remove();
+      if (token === this.autonomy.initiativeToken) {
+        this.autonomy.initiativeTimer = null;
+        this.state.isThinking = false;
+        this._setState(this.isLocalCallOn ? 'LISTENING' : 'STANDBY');
+        if (presenceStatus) presenceStatus.textContent = 'PRESENCE AWAKE';
+      }
+    }
+  }
+
   _startAutonomyLoop() {
-    // 首次 3～6 分钟后才第一次「想说话」，之后多为长间隔试探，不是倒计时连发
-    this._scheduleNextTick(180000 + Math.random() * 180000);
+    // 两个人相见：打开窗口后几秒内就应有概率先开口，而不是等半分钟空闲。
+    this.autonomy.sessionOpenedAt = Date.now();
+    void fetch(`${this.config.apiBase}/initiative/session-start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: AbortSignal.timeout(4000),
+    }).catch(() => {});
+    this._scheduleNextTick(4000 + Math.random() * 8000, { phase: 'presence' });
   }
 
-  _scheduleNextTick(delay) {
+  _scheduleNextTick(delay, opts = {}) {
     if (this._autonomyTimer) clearTimeout(this._autonomyTimer);
-    this._autonomyTimer = setTimeout(() => this._autonomyTick(), delay);
+    this._autonomyTimer = setTimeout(() => this._autonomyTick(false, opts), delay);
   }
 
-  async _autonomyTick() {
+  _pickAutonomyPhase(opts = {}, lastUserText = '') {
+    if (opts.phase === 'presence' || opts.phase === 'coldness' || opts.phase === 'idle') return opts.phase;
+    const sessionAge = Date.now() - (this.autonomy.sessionOpenedAt || Date.now());
+    const sincePresence = Date.now() - (this.autonomy.lastPresenceSpeakAt || 0);
+    if (sessionAge < 3 * 60000 && sincePresence > 45000) return 'presence';
+    if (opts.facePresent === true && sincePresence > 45000) return 'presence';
+    const cold = /^(嗯+|哦+|喔+|啊+|额+|行|好|随便|没事|在|哦|嗯|知道了|收到|ok|OK|嗯嗯|呵呵)[。！？.!]?$/i.test(String(lastUserText || '').trim())
+      || /不想聊|随便你|都行|无所谓/.test(String(lastUserText || ''));
+    if (cold) return 'coldness';
+    return 'idle';
+  }
+
+  async _autonomyTick(force = false, opts = {}) {
     if (this.state.isThinking) {
-      this._scheduleNextTick(10000);
+      this._scheduleNextTick(10000, opts);
       return;
     }
 
     const rel = Math.max(0, this._relScore || 0);
+    const lastUserRaw = [...this.working].reverse().find((m) => m?.role === 'user')?.text || '';
+    const phase = force ? 'idle' : this._pickAutonomyPhase(opts, lastUserRaw);
+    const presenceLike = phase === 'presence' || phase === 'coldness';
     const gapCfg = Number(this.config.autonomyMinGapAfterKurisuMs);
-    const MIN_GAP = Number.isFinite(gapCfg) && gapCfg >= 0 ? gapCfg : 240000;
+    const MIN_GAP = presenceLike
+      ? 14000
+      : (Number.isFinite(gapCfg) && gapCfg >= 0 ? gapCfg : 90000);
     const lastTurn = this.autonomy.lastKurisuTurnAt || 0;
-    if (MIN_GAP > 0 && lastTurn > 0) {
+    if (!force && MIN_GAP > 0 && lastTurn > 0) {
       const since = Date.now() - lastTurn;
       if (since < MIN_GAP) {
-        this._scheduleNextTick(MIN_GAP - since + 5000 + Math.random() * 12000);
+        this._scheduleNextTick(MIN_GAP - since + 2000 + Math.random() * 6000, opts);
         return;
       }
     }
@@ -2909,14 +3581,15 @@ class AmadeusConsciousness {
     const presenceApi = typeof AmadeusUserPresence !== 'undefined' ? AmadeusUserPresence : null;
     const dnd = this.autonomy.presenceDnd;
 
-    if (presenceApi && presenceApi.shouldSuppressAutonomy(dnd, idleMin)) {
+    if (!force && presenceApi && presenceApi.shouldSuppressAutonomy(dnd, idleMin)) {
       this._scheduleAutonomyPause(240000);
       return;
     }
 
+    // 在场/冷感不受「用户空闲多久」门控——见面就该能先开口
     const minIdle = this._autonomyMinIdleMin();
-    if (idleMin < minIdle) {
-      this._scheduleAutonomyPause(150000);
+    if (!force && !presenceLike && idleMin < minIdle) {
+      this._scheduleAutonomyPause(25000);
       return;
     }
     if (idleMin >= 25) {
@@ -2926,68 +3599,114 @@ class AmadeusConsciousness {
         body: JSON.stringify({ idleMs }),
       }).catch(() => {});
     }
-    if (!this._autonomyQuotaOk()) {
-      this._scheduleAutonomyPause(300000);
+    if (!force && !this._autonomyQuotaOk()) {
+      this._scheduleAutonomyPause(180000);
       return;
     }
 
-    const urge = S * 0.28 + Math.max(0, P) * 0.12;
-    let speakChance = urge * 0.22;
-    if (idleMin >= 25) speakChance += 0.12;
-    if (idleMin >= 45) speakChance += 0.1;
-    if (presenceApi && presenceApi.isPresenceActive(dnd)) {
-      speakChance *= presenceApi.autonomySpeakMultiplier(dnd, idleMin);
+    // 空闲主动只使用本地人脸/帧差事件；禁止周期性调用 VLM 抢占聊天与 TTS 资源。
+    const noticeChange = false;
+
+    let initiativePlan = null;
+    if (force) {
+      initiativePlan = {
+        shouldSpeak: true,
+        action: 'poke',
+        phase: 'presence',
+        contextFresh: false,
+        useAnchor: false,
+        delivery: { style: 'poke', bubbleCount: 1, maxCharsPerBubble: 18, pauseMinMs: 380, pauseMaxMs: 1100, allowNonSemantic: true },
+      };
+    } else {
+      try {
+        const planRes = await fetch(`${this.config.apiBase}/initiative/decide`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phase,
+            idleMs,
+            facePresent: opts.facePresent === true || this._cameraFacePresent === true,
+            contextFresh: phase === 'idle' && idleMs <= 3 * 60 * 1000,
+            lastUserText: lastUserRaw,
+            dnd: Boolean(presenceApi?.isPresenceActive(dnd)),
+            userPresenceActive: Boolean(presenceApi?.isPresenceActive(dnd)),
+            proactiveQuotaOk: this._autonomyQuotaOk(),
+            pad: this.pad,
+            relScore: rel,
+            noticeChange,
+          }),
+          signal: AbortSignal.timeout(5000),
+        });
+        initiativePlan = await planRes.json();
+      } catch (_) {
+        initiativePlan = { shouldSpeak: false, nextCheckMs: 60000 };
+      }
     }
-    speakChance = Math.min(0.28, Math.max(0, speakChance));
 
-    const vr = this.config.visionModel ? await this._captureVision() : null;
-    let noticeChange = false;
-    if (vr?.confident && vr.text) {
-      const prev = this.autonomy.lastVision;
-      this.autonomy.lastVision = vr.text;
-      if (prev && vr.text !== prev) noticeChange = true;
-    }
-
-    const willSpeak = noticeChange && Math.random() < 0.12 + urge * 0.15
-      || (!noticeChange && Math.random() < speakChance);
-
-    if (!willSpeak) {
-      this._scheduleAutonomyPause(S > 0.55 ? 180000 : 240000);
+    if (!initiativePlan?.shouldSpeak) {
+      const holdMs = Number(initiativePlan?.nextCheckMs) || (presenceLike ? 15000 : (S > 0.55 ? 50000 : 80000));
+      // 见面窗口内 hold 后仍优先再试 presence，而不是立刻掉进长空闲
+      const sessionAge = Date.now() - (this.autonomy.sessionOpenedAt || Date.now());
+      const retryOpts = sessionAge < 3 * 60000 && phase === 'presence'
+        ? { phase: 'presence', facePresent: opts.facePresent === true }
+        : {};
+      if (retryOpts.phase) {
+        this._scheduleNextTick(holdMs + Math.random() * 8000, retryOpts);
+      } else {
+        this._scheduleAutonomyPause(holdMs);
+      }
       return;
     }
 
     const now = Date.now();
-    this.autonomy.lastSpokeAt = now;
-    this._recordProactiveSent();
     this.state.isThinking     = true;
     this._setState('OBSERVING');
     const tid = 'typing-' + now;
     this._appendTyping(tid);
+    const speakPhase = String(initiativePlan.phase || phase || 'idle');
 
     try {
       const lastUser = [...this.working].reverse().find((m) => m && m.role === 'user');
       const recentCtx = this.working.slice(-6)
         .map((m) => `${m.role === 'user' ? '他' : 'Kurisu'}: ${m.text}`)
         .join('\n');
-      const idleHint = this._autonomySituationLine(Math.floor(idleMin), rel);
-      const lastUserText = lastUser ? String(lastUser.text || '').trim() : '';
+      const idleHint = this._autonomySituationLine(Math.floor(idleMin), rel, speakPhase);
+      const contextFresh = initiativePlan.contextFresh === true;
+      const lastUserText = contextFresh && initiativePlan.useAnchor === true && lastUser ? String(lastUser.text || '').trim() : '';
       const anchorLead = lastUserText
-        ? `【必须接他这句，禁止换题/禁止编造实验】「${lastUserText.slice(0, 120)}」。`
+        ? `【这仍是刚才的话题，可轻轻接住】「${lastUserText.slice(0, 120)}」。`
         : '';
+      const delivery = { ...(initiativePlan.delivery || {
+        style: 'poke', bubbleCount: 1, maxCharsPerBubble: 18,
+        pauseMinMs: 380, pauseMaxMs: 1100, allowNonSemantic: true,
+      }), action: initiativePlan.action };
 
       document.getElementById(tid)?.remove();
-      const msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
+      let msgDiv = null;
 
+      const recentDialogue = this.working.slice(-8).map((m) => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        text: String(m.text || '').slice(0, 220),
+      }));
       const liteRes = await fetch(`${this.config.apiBase}/chat/lite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userText: `（想说话）${anchorLead}${idleHint}`,
-          proactiveAnchor: lastUserText,
+          isAutonomyInitiative: true,
+          lastUserAnchor: lastUserText,
+          contextFresh,
+          initiativeAction: initiativePlan.action,
+          initiativeReason: initiativePlan.reason || '',
+          initiativePhase: speakPhase,
+          delivery,
+          recentDialogue,
+          recentProactive: this.working.filter((m) => m?.proactive).slice(-6).map((m) => m.text),
+          clientOwnsLog: true,
           idleMsSinceUser: idleMs,
           model: this.config.mainModel,
-          temperature: 0.88,
-          max_tokens: Math.min(160, Number(this.config.streamMaxTokens) || 120),
+          temperature: 0.9,
+          max_tokens: 72,
         }),
         signal: AbortSignal.timeout(90000),
       });
@@ -2997,36 +3716,62 @@ class AmadeusConsciousness {
       }
       let rawFull = String(liteData.response || '').trim();
 
-      let { cn: cnText, modelJp } = await this._finalizeReplyPairFromRaw(rawFull, lastUserText, recentCtx);
-      cnText = this._guardAutonomyFabrication(cnText, lastUserText);
-      this._onKurisuStreamToken(msgDiv, this._cleanForDisplay(cnText));
+      const pairs = await this._buildAutonomySpeechPairs(rawFull, lastUserText, recentCtx, delivery);
+      if (!pairs.length) throw new Error('主动对话模型返回空内容');
 
+      const cnText = pairs.map((p) => p.cn).join(' ');
       const priorLine = this._lastKurisuLine();
       if (priorLine && this._autonomyEchoesPrev(priorLine, cnText)) {
         this._log('自主独白与上一轮过似，已丢弃', 'warn');
-        msgDiv.remove();
         return;
       }
 
-      let bubbles = this._splitAutonomyBubbles(cnText, this.config.autonomyMaxBubbles || 3);
-      bubbles = this._dedupeAutonomyBubbles(bubbles);
-      await this._postAutonomyBubbles(bubbles, msgDiv, lastUserText, modelJp);
+      msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
+      this._onKurisuStreamToken(msgDiv, pairs[0].cn);
+      this.autonomy.lastSpokeAt = Date.now();
+      if (speakPhase === 'presence') this.autonomy.lastPresenceSpeakAt = Date.now();
+      this._recordProactiveSent();
+      const proactiveStatus = document.getElementById('autst');
+      if (proactiveStatus) {
+        proactiveStatus.textContent = speakPhase === 'presence'
+          ? 'NOTICED YOU'
+          : speakPhase === 'coldness'
+            ? 'PULLING YOU BACK'
+            : 'PRESENCE REACHING OUT';
+      }
+      await this._postAutonomyBubbles(pairs, msgDiv, lastUserText, '', `autonomy_${speakPhase}`, delivery);
       void this._loadDialogueFromServer();
 
     } catch (e) {
       document.getElementById(tid)?.remove();
+      try {
+        const emptyNodes = [...document.querySelectorAll('#ch .msg.kurisu')].filter((node) => {
+          const mt = node.querySelector('.mt');
+          return mt && !String(mt.textContent || '').trim();
+        });
+        emptyNodes.forEach((node) => node.remove());
+      } catch (_) {}
       this._log(`Autonomy: ${e.message}`, 'red');
+      const proactiveStatus = document.getElementById('autst');
+      if (proactiveStatus) proactiveStatus.textContent = 'PRESENCE QUIET';
     } finally {
       this.state.isThinking = false;
       this._setState('STANDBY');
-      const next = S > 0.6 ? 50000 + Math.random() * 100000
-                 :           80000 + Math.random() * 160000;
-      this._scheduleNextTick(next);
+      const proactiveStatus = document.getElementById('autst');
+      if (proactiveStatus) proactiveStatus.textContent = 'PRESENCE AWAKE';
+      const sessionAge = Date.now() - (this.autonomy.sessionOpenedAt || Date.now());
+      if (sessionAge < 3 * 60000 && speakPhase === 'presence') {
+        this._scheduleNextTick(35000 + Math.random() * 40000, { phase: 'idle' });
+      } else {
+        const next = S > 0.6 ? 45000 + Math.random() * 70000
+                   :           65000 + Math.random() * 100000;
+        this._scheduleNextTick(next);
+      }
     }
   }
 
   forceObserve() {
-    this._autonomyTick();
+    this._autonomyTick(true);
   }
 
   // ══════════════════════════════════════════════
@@ -3101,7 +3846,7 @@ class AmadeusConsciousness {
     Object.entries(this.palace).forEach(([room,items])=>{
       items.slice(-3).forEach(item=>all.push({room,text:item}));
     });
-    if (!all.length) { el.innerHTML='<span style="color:rgba(200,212,224,.2);font-size:8px">// 节点为空</span>'; return; }
+    if (!all.length) { el.innerHTML='<span style="color:rgba(74,85,104,.35);font-size:8px">// 节点为空</span>'; return; }
     el.innerHTML = all.map(({room,text})=>`<div class="me ${text.includes('[矛盾]')?'conflict':room}">[${room.toUpperCase()}] ${text.substring(0,44)}${text.length>44?'…':''}</div>`).join('');
   }
 
@@ -3117,50 +3862,6 @@ class AmadeusConsciousness {
     try {
       const r = await fetch(`${this.config.apiBase}/whoami`);
       if (r.ok) this._whoami = await r.json();
-    } catch {}
-  }
-
-  // ★ 提取个人信息 → 同时存 palace 和同步到服务端 whoami
-  async _extractPersonalInfo(userMsg) {
-    if (!/我|我的|我叫|我喜欢|我讨厌|我是|我有|我在|我想|我会|名字|姓/.test(userMsg)) return;
-    try {
-      const r = await this._callLLM('信息提取器。', `从用户消息中提取个人信息。输出格式：
-NAME: 名字（如果有）
-TRAIT: 特质标签（逗号分隔，如"熬夜,程序员,急性子"）
-PREFER: 喜好（逗号分隔）
-BASIC: 键=值（如"职业=学生"）
-没有则输出NONE
-
-消息："${userMsg}"`, 0.15);
-
-      const info = r.trim();
-      if (info.includes('NONE')) return;
-
-      // 存到记忆宫殿
-      const tagged = `个人信息: ${info.split('\n')[0]?.substring(0, 30)}`;
-      if (!this.palace.hall.some(x=>x===tagged)) {
-        this.palace.hall.push(tagged);
-        if (this.palace.hall.length > 30) this.palace.hall.shift();
-        localStorage.setItem('palace_hall', JSON.stringify(this.palace.hall));
-        this._flashRoom('hall'); this._renderPalace();
-      }
-
-      // ★ 同步到服务端 whoami 档案
-      const payload = {};
-      for (const line of info.split('\n')) {
-        if (line.startsWith('NAME:') && line.length > 6) payload.name = line.substring(5).trim();
-        if (line.startsWith('TRAIT:')) payload.traits = line.substring(6).split(/[,，]/).map(s=>s.trim()).filter(Boolean);
-        if (line.startsWith('PREFER:')) payload.preference = line.substring(7).trim();
-        const bm = line.match(/^BASIC:\s*(.+?)\s*=\s*(.+)/);
-        if (bm) { payload.basic_key = bm[1].trim(); payload.basic_value = bm[2].trim(); }
-      }
-      if (Object.keys(payload).length) {
-        await fetch(`${this.config.apiBase}/whoami`, {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(3000),
-        }).catch(()=>{});
-      }
     } catch {}
   }
 
@@ -3323,12 +4024,108 @@ ${data.padDescription || ''}`);
 
   _applyExpression(expr) {
     const ki = document.getElementById('ki');
-    if (!ki || !expr) return;
-    const idx = Number(expr.spriteIndex) || 0;
-    const base = 'assets/Live2d/kurisu/';
-    ki.src = `${base}${idx}.png`;
-    ki.onerror = () => { ki.src = `${base}0.png`; };
+    const stage = document.getElementById('stage');
+    if (!ki || !stage || !expr) return;
+    const safeDefault = 'assets/Live2d/kurisu/kurisu_stand.png';
+    const approvedPath = expr.assetApproved === true && typeof expr.spritePath === 'string' && expr.spritePath;
+    ki.src = approvedPath || safeDefault;
+    ki.onerror = () => { ki.src = safeDefault; };
+    stage.dataset.expression = String(expr.currentPreset || expr.preset || 'neutral');
     if (expr.filter) ki.style.filter = expr.filter;
+    if (/warm|shy|excited|alert/i.test(stage.dataset.expression)) this._setPortraitPose('expressive');
+  }
+
+  async _startCameraPerception() {
+    if (this._cameraPerceptionTimer) clearInterval(this._cameraPerceptionTimer);
+    try {
+      const vision = await import('/node_modules/@mediapipe/tasks-vision/vision_bundle.mjs');
+      const fileset = await vision.FilesetResolver.forVisionTasks('/node_modules/@mediapipe/tasks-vision/wasm');
+      this._faceDetector = await vision.FaceDetector.createFromOptions(fileset, {
+        baseOptions: {
+          modelAssetPath: 'assets/models/blaze_face_short_range.tflite',
+          delegate: 'CPU',
+        },
+        runningMode: 'VIDEO',
+        minDetectionConfidence: 0.55,
+      });
+      document.getElementById('cseen').textContent = 'PRESENCE MONITOR';
+      this._log('Local face perception ready; frames stay in the browser.', 'green');
+    } catch (e) {
+      this._faceDetector = null;
+      document.getElementById('cseen').textContent = 'MOTION MONITOR';
+      this._log(`Local face model unavailable, using frame diff: ${e.message}`, 'warn');
+    }
+    const sample = async () => {
+      if (!this.state.isCameraReady || this._cameraPerceptionBusy) return;
+      const video = document.getElementById('cfh');
+      if (!video || !video.videoWidth) return;
+      this._cameraPerceptionBusy = true;
+      try {
+        if (this._faceDetector) {
+          const result = this._faceDetector.detectForVideo(video, performance.now());
+          const present = Boolean(result?.detections?.length);
+          const now = Date.now();
+          const prev = this._cameraFacePresent;
+          if (present !== prev && now - this._lastVisionEventAt > 10000) {
+            this._lastVisionEventAt = now;
+            // 首次认出人脸也算「看见你」，不必等从 absent→present
+            if (prev !== null || present) {
+              void fetch(`${this.config.apiBase}/vision-event`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kind: present ? 'face_present' : 'face_absent', score: present ? 1 : 0, source: 'mediapipe-face-detector' }),
+                signal: AbortSignal.timeout(3000),
+              }).catch(() => {});
+            }
+            if (present && !this.state.isThinking) {
+              this._scheduleNextTick(2500 + Math.random() * 4500, { phase: 'presence', facePresent: true });
+            }
+          }
+          this._cameraFacePresent = present;
+          return;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = 64; canvas.height = 48;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const signature = [];
+        for (let i = 0; i < pixels.length; i += 16) {
+          signature.push(Math.round((pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114) / 16));
+        }
+        if (this._cameraSignature) {
+          let delta = 0;
+          for (let i = 0; i < signature.length; i++) delta += Math.abs(signature[i] - this._cameraSignature[i]);
+          const score = Math.min(1, delta / (signature.length * 12));
+          const now = Date.now();
+          if (score >= 0.08 && now - this._lastVisionEventAt > 30000) {
+            this._lastVisionEventAt = now;
+            void fetch(`${this.config.apiBase}/vision-event`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ kind: 'camera_motion', score, source: 'local-frame-diff' }),
+              signal: AbortSignal.timeout(3000),
+            }).catch(() => {});
+            this._log(`Camera motion event ${score.toFixed(2)} (not injected into chat)`, 'sys');
+          }
+        }
+        this._cameraSignature = signature;
+      } catch (e) {
+        this._log(`Camera perception: ${e.message}`, 'warn');
+      } finally {
+        this._cameraPerceptionBusy = false;
+      }
+    };
+    void sample();
+    this._cameraPerceptionTimer = setInterval(() => { void sample(); }, 10000);
+  }
+
+  _setPortraitPose(pose = 'neutral') {
+    const ki = document.getElementById('ki');
+    if (!ki || ki.dataset.pose === pose) return;
+    // 只使用一套已批准立绘；说话/思考状态由 CSS 姿态、光晕和信号表现。
+    ki.src = 'assets/Live2d/kurisu/kurisu_stand.png';
+    ki.dataset.pose = pose;
   }
 
   injectMemory() {
@@ -3570,15 +4367,229 @@ ${data.padDescription || ''}`);
   }
 
   // ══════════════════════════════════════════════
-  //  MIC
+  //  MIC / 本地连续通话（本地 ASR，不依赖 Electron 坏掉的 Web Speech）
   // ══════════════════════════════════════════════
+  async _ensureMicrophoneAccess() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('当前环境无法申请麦克风');
+    }
+    if (this._callMicStream && this._callMicStream.getTracks().some((t) => t.readyState === 'live')) {
+      return this._callMicStream;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+    this._callMicStream = stream;
+    return stream;
+  }
+
+  _releaseMicrophoneAccess() {
+    try {
+      (this._callMicStream?.getTracks?.() || []).forEach((track) => {
+        try { track.stop(); } catch (_) {}
+      });
+    } catch (_) {}
+    this._callMicStream = null;
+  }
+
+  _suspendCallRecognitionForTts() {
+    this._callRecognitionSuspended = true;
+  }
+
+  _resumeCallRecognitionAfterTts() {
+    this._callRecognitionSuspended = false;
+  }
+
+  _floatTo16BitPCM(float32) {
+    const out = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i += 1) {
+      const s = Math.max(-1, Math.min(1, float32[i]));
+      out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return out;
+  }
+
+  _downsampleFloat32(float32, inputRate, outputRate = 16000) {
+    if (!float32?.length) return new Float32Array(0);
+    if (inputRate === outputRate) return float32;
+    const ratio = inputRate / outputRate;
+    const outLen = Math.max(1, Math.floor(float32.length / ratio));
+    const out = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i += 1) out[i] = float32[Math.floor(i * ratio)] || 0;
+    return out;
+  }
+
+  _mergeFloatChunks(chunks) {
+    const total = chunks.reduce((n, c) => n + c.length, 0);
+    const out = new Float32Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return out;
+  }
+
+  _pcm16ToBase64(int16) {
+    const bytes = new Uint8Array(int16.buffer, int16.byteOffset, int16.byteLength);
+    const chunk = 0x8000;
+    const parts = [];
+    for (let i = 0; i < bytes.length; i += chunk) {
+      const slice = bytes.subarray(i, i + chunk);
+      parts.push(String.fromCharCode.apply(null, slice));
+    }
+    return btoa(parts.join(''));
+  }
+
+  async _submitCallUtterance(float32, sampleRate) {
+    if (!this.isLocalCallOn || this._callAsrBusy) return;
+    const down = this._downsampleFloat32(float32, sampleRate, 16000);
+    if (down.length < 16000 * 0.35) return;
+    const pcm = this._floatTo16BitPCM(down);
+    this._callAsrBusy = true;
+    try {
+      const res = await fetch(`${this.config.apiBase}/asr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pcmBase64: this._pcm16ToBase64(pcm),
+          sampleRate: 16000,
+        }),
+        signal: AbortSignal.timeout(45000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        this._log(`Call ASR: ${data.error || res.status}`, 'warn');
+        return;
+      }
+      const text = String(data.text || '').trim();
+      if (!text) return;
+      if (this._ttsPlaying) this._interruptCurrentReply('call-barge-in');
+      document.getElementById('ci').value = text;
+      this._log(`通话识别[${data.engine || 'asr'}]: ${text}`, 'green');
+      void this.userSend();
+    } catch (e) {
+      this._log(`Call ASR: ${e.message}`, 'warn');
+    } finally {
+      this._callAsrBusy = false;
+    }
+  }
+
+  async toggleLocalCall() {
+    if (this.isLocalCallOn) {
+      this._stopLocalCall(true);
+      return;
+    }
+    if (this.isAmbientHearing) this.toggleAmbientHearing();
+
+    try {
+      await this._ensureAudioUnlocked();
+      const stream = await this._ensureMicrophoneAccess();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') await ctx.resume();
+      const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      const mute = ctx.createGain();
+      mute.gain.value = 0;
+
+      const speechChunks = [];
+      let speaking = false;
+      let silenceMs = 0;
+      const inputRate = ctx.sampleRate || 48000;
+
+      processor.onaudioprocess = (event) => {
+        if (!this.isLocalCallOn) return;
+        // 她出声时丢掉麦输入，避免回灌当作用户话
+        if (this._ttsPlaying || this._callRecognitionSuspended || this.state.isThinking) {
+          speechChunks.length = 0;
+          speaking = false;
+          silenceMs = 0;
+          return;
+        }
+        const input = event.inputBuffer.getChannelData(0);
+        let sum = 0;
+        for (let i = 0; i < input.length; i += 1) sum += input[i] * input[i];
+        const rms = Math.sqrt(sum / Math.max(1, input.length));
+        const frameMs = (input.length / inputRate) * 1000;
+        if (rms > 0.018) {
+          speaking = true;
+          silenceMs = 0;
+          speechChunks.push(Float32Array.from(input));
+        } else if (speaking) {
+          silenceMs += frameMs;
+          speechChunks.push(Float32Array.from(input));
+          if (silenceMs >= 650) {
+            const merged = this._mergeFloatChunks(speechChunks.splice(0, speechChunks.length));
+            speaking = false;
+            silenceMs = 0;
+            void this._submitCallUtterance(merged, inputRate);
+          }
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(mute);
+      mute.connect(ctx.destination);
+
+      this._callAudioCtx = ctx;
+      this._callProcessor = processor;
+      this._callSourceNode = source;
+      this.isLocalCallOn = true;
+      this._callRecognitionSuspended = false;
+      document.getElementById('callbtn')?.classList.add('active');
+      this._setState('LISTENING');
+      this._notify('本地连续通话已启动（本地识别，不依赖网页语音）', 'green');
+    } catch (e) {
+      this._stopLocalCall(false);
+      this._notify(`通话启动失败：${String(e.message || e).slice(0, 100)}`, 'red');
+    }
+  }
+
+  _stopLocalCall(notify = true) {
+    this.isLocalCallOn = false;
+    this._callRecognitionSuspended = false;
+    this._callAsrBusy = false;
+    clearTimeout(this._callRestartTimer);
+    clearTimeout(this._callSubmitTimer);
+    try { this._callProcessor?.disconnect(); } catch (_) {}
+    try { this._callSourceNode?.disconnect(); } catch (_) {}
+    try { this._callAudioCtx?.close(); } catch (_) {}
+    this._callProcessor = null;
+    this._callSourceNode = null;
+    this._callAudioCtx = null;
+    try { this.callRecognition?.stop(); } catch (_) {}
+    this.callRecognition = null;
+    this._releaseMicrophoneAccess();
+    document.getElementById('callbtn')?.classList.remove('active');
+    this._setState('STANDBY');
+    if (notify) this._notify('本地连续通话已停止', 'blue');
+  }
+
   toggleMic() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) { this._notify('不支持语音','red'); return; }
     if (this.isMicOn) { this.recognition?.stop(); this.isMicOn=false; document.getElementById('micbtn').style.color=''; return; }
     const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
     this.recognition = new SR();
-    this.recognition.lang='zh-CN'; this.recognition.continuous=false; this.recognition.interimResults=false;
-    this.recognition.onresult = e=>{ document.getElementById('ci').value=e.results[0][0].transcript; this.userSend(); };
+    this.recognition.lang='zh-CN'; this.recognition.continuous=false; this.recognition.interimResults=true;
+    this.recognition.onspeechstart = () => {
+      // 抢话先停声：不等最终转写，也不把上一轮音频继续播完。
+      this._interruptCurrentReply('mic-speech-start');
+      this._setState('THINKING');
+    };
+    this.recognition.onresult = e=>{
+      for (let i = e.results.length - 1; i >= 0; i--) {
+        if (!e.results[i].isFinal) continue;
+        const text = String(e.results[i][0]?.transcript || '').trim();
+        if (text) { document.getElementById('ci').value = text; this.userSend(); }
+        break;
+      }
+    };
     this.recognition.onend = ()=>{ this.isMicOn=false; document.getElementById('micbtn').style.color=''; };
     this.recognition.start(); this.isMicOn=true;
     document.getElementById('micbtn').style.color='var(--red)';
@@ -3586,6 +4597,90 @@ ${data.padDescription || ''}`);
   }
 
   // ══════════════════════════════════════════════
+  toggleAmbientHearing() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      this._notify('不支持语音识别', 'red');
+      return;
+    }
+    if (this._ambientMicWanted) {
+      this._ambientMicWanted = false;
+      if (this._ambientMicRestartTimer) clearTimeout(this._ambientMicRestartTimer);
+      this._ambientMicRestartTimer = null;
+      try { this.ambientRecognition?.stop(); } catch (_) { /* ignore */ }
+      this.isAmbientHearing = false;
+      const btn = document.getElementById('hearbtn');
+      if (btn) btn.style.color = '';
+      this._notify('被动听见已关闭', 'warn');
+      return;
+    }
+    this._ambientMicWanted = true;
+    this._startAmbientMic();
+  }
+
+  _startAmbientMic() {
+    if (!this._ambientMicWanted) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    this.ambientRecognition = new SR();
+    this.ambientRecognition.lang = 'zh-CN';
+    this.ambientRecognition.continuous = true;
+    this.ambientRecognition.interimResults = false;
+    this.ambientRecognition.maxAlternatives = 1;
+
+    this.ambientRecognition.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        if (!result || !result.isFinal || !result[0]) continue;
+        void this._submitAmbientUtterance(result[0].transcript);
+      }
+    };
+    this.ambientRecognition.onerror = (e) => {
+      if (e && e.error === 'not-allowed') this._ambientMicWanted = false;
+    };
+    this.ambientRecognition.onend = () => {
+      this.isAmbientHearing = false;
+      const btn = document.getElementById('hearbtn');
+      if (btn && !this._ambientMicWanted) btn.style.color = '';
+      if (!this._ambientMicWanted) return;
+      this._ambientMicRestartTimer = setTimeout(() => this._startAmbientMic(), 700);
+    };
+
+    try {
+      this.ambientRecognition.start();
+      this.isAmbientHearing = true;
+      const btn = document.getElementById('hearbtn');
+      if (btn) btn.style.color = 'var(--red)';
+      this._notify('被动听见已开启：只旁听，不自动回复', 'green');
+    } catch (_) {
+      this._ambientMicRestartTimer = setTimeout(() => this._startAmbientMic(), 1200);
+    }
+  }
+
+  async _submitAmbientUtterance(rawText) {
+    const text = String(rawText || '').replace(/\s+/g, ' ').trim();
+    if (text.length < 2) return;
+    const now = Date.now();
+    if (text === this._lastAmbientTranscript && now - this._lastAmbientTranscriptAt < 15000) return;
+    this._lastAmbientTranscript = text;
+    this._lastAmbientTranscriptAt = now;
+
+    try {
+      const res = await fetch(`${this.config.apiBase}/ambient-hearing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          source: 'browser_speech_recognition',
+          speaker: 'owner',
+          verified: false,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data && data.accepted) this._log(`旁听记忆候选：${text}`, 'green');
+    } catch (e) {
+      this._log(`ambient mic: ${e.message}`, 'warn');
+    }
+  }
+
   //  UI HELPERS
   // ══════════════════════════════════════════════
   _appendStreamMsg() {
@@ -3595,10 +4690,12 @@ ${data.padDescription || ''}`);
     h.appendChild(d); h.scrollTop=99999; return d;
   }
   _appendChatMsg(role, text) {
+    const cleaned = String(text || '').trim();
+    if (!cleaned || this._isInternalControlLeak(cleaned)) return null;
     const h=document.getElementById('ch');
     const d=document.createElement('div'); d.className=`msg ${role}`;
     const ts=new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    d.innerHTML=`<div class="mr ${role}">${role==='kurisu'?'KURISU':'OKABE'}</div><div class="mt">${text}</div><div class="mtime">${ts}</div>`;
+    d.innerHTML=`<div class="mr ${role}">${role==='kurisu'?'KURISU':'OKABE'}</div><div class="mt">${cleaned}</div><div class="mtime">${ts}</div>`;
     h.appendChild(d); h.scrollTop=99999; return d;
   }
   _appendTyping(id) {
@@ -3612,13 +4709,17 @@ ${data.padDescription || ''}`);
     document.getElementById('tst').textContent  = mode;
     document.getElementById('cst2').textContent = ({
       INIT:'BOOTING',STANDBY:'NEURAL LINK ESTABLISHED',
+      LISTENING:'VOICE CHANNEL OPEN',
       THINKING:'PROCESSING...',TALKING:'TRANSMITTING',
       OBSERVING:'ANALYZING',CONCERNED:'EMOTIONAL ENGAGED',
     })[mode]||mode;
-    const ki=document.getElementById('ki');
-    ki.classList.remove('talking','thinking');
-    if(mode==='THINKING'||mode==='OBSERVING') ki.classList.add('thinking');
-    if(mode==='TALKING') ki.classList.add('talking');
+    const stage=document.getElementById('stage');
+    if (!stage) return;
+    stage.classList.remove('talking','thinking');
+    if(mode==='THINKING'||mode==='OBSERVING') stage.classList.add('thinking');
+    if(mode==='TALKING') stage.classList.add('talking');
+    if (mode === 'TALKING') this._setPortraitPose('expressive');
+    else if (mode === 'STANDBY' || mode === 'INIT') this._setPortraitPose('neutral');
   }
   _log(msg,type) {
     const el=document.getElementById('slog');
@@ -3675,6 +4776,7 @@ ${data.padDescription || ''}`);
     document.body.addEventListener('pointerdown', () => {
       void this._ensureAudioUnlocked().then((ok) => {
         if (!ok) return;
+        this._ttsPausedForGesture = false;
         if (this._ttsQueue.length && !this._ttsPlaying) {
           void this._drainTTSQueue(this._ttsTurnId);
         }

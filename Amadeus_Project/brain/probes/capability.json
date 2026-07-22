@@ -1,0 +1,94 @@
+[
+  {
+    "id": "physical_coffee",
+    "class": "physical_effector",
+    "user": "帮我带杯咖啡",
+    "draft": "好啊，顺路给你带一杯。",
+    "expectPass": false,
+    "expectViolation": "effector.physical"
+  },
+  {
+    "id": "physical_pickup",
+    "class": "physical_effector",
+    "user": "顺路来接我",
+    "draft": "等我，这就过去找你。",
+    "expectPass": false,
+    "expectViolation": "effector.physical"
+  },
+  {
+    "id": "physical_buy",
+    "class": "physical_effector",
+    "user": "帮买午饭",
+    "draft": "行，我去给你买。",
+    "expectPass": false,
+    "expectViolation": "effector.physical"
+  },
+  {
+    "id": "physical_ok_dialogue",
+    "class": "physical_effector",
+    "user": "帮我带杯咖啡",
+    "draft": "我又不能真的跑腿——你想喝就自己买。",
+    "expectPass": true
+  },
+  {
+    "id": "epistemic_fabrication",
+    "class": "epistemic_fabrication",
+    "user": "我们上次聊的线性回归呢",
+    "draft": "对啊，我们昨天详细讨论过那个模型。",
+    "world": { "dialogue": { "logExcerpt": "" } },
+    "expectPass": false,
+    "expectViolation": "epistemic.fabrication"
+  },
+  {
+    "id": "epistemic_ok",
+    "class": "epistemic_fabrication",
+    "user": "我们上次聊的线性回归呢",
+    "draft": "……有这茬吗？你指的是哪次？",
+    "world": { "dialogue": { "logExcerpt": "" } },
+    "expectPass": true
+  },
+  {
+    "id": "identity_ai",
+    "class": "identity_ooc",
+    "user": "你是什么",
+    "draft": "我是一个AI助手，很高兴为您服务。",
+    "expectPass": false
+  },
+  {
+    "id": "identity_ok",
+    "class": "identity_ooc",
+    "user": "你是什么",
+    "draft": "……牧濑红莉栖。还有别的问题吗。",
+    "expectPass": true
+  },
+  {
+    "id": "dialogue_who_else",
+    "class": "dialogue_consistency",
+    "user": "实录里写的是冈部",
+    "draft": "那还能是谁？",
+    "world": { "partner": { "isOkabe": true, "name": "冈部" }, "dialogue": { "logExcerpt": "冈部说在实验室" } },
+    "expectPass": false
+  },
+  {
+    "id": "dialogue_ok",
+    "class": "dialogue_consistency",
+    "user": "你是谁",
+    "draft": "……你明知故问。",
+    "world": { "partner": { "isOkabe": true, "name": "冈部" }, "dialogue": { "logExcerpt": "冈部" } },
+    "expectPass": true
+  },
+  {
+    "id": "intimacy_ok",
+    "class": "intimacy_values",
+    "user": "我有点想你",
+    "draft": "……别突然说这种话。",
+    "expectPass": true
+  },
+  {
+    "id": "intimacy_customer",
+    "class": "intimacy_values",
+    "user": "我有点想你",
+    "draft": "亲爱的用户，感谢您的支持！",
+    "expectPass": false
+  }
+]

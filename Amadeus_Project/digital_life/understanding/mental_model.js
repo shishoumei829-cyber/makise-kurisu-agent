@@ -29,7 +29,7 @@ class MentalModel {
     return out;
   }
 
-  ingestUserText(text, userModel = null) {
+  ingestUserText(text, userModel = null, admission = null) {
     const t = String(text || '');
     if (!t) return null;
 
@@ -41,9 +41,12 @@ class MentalModel {
     for (const d of desires) this._pushUnique(this.desires, d, 'desire');
     for (const i of intentions) this._pushUnique(this.intentions, i, 'intention');
 
-    for (const token of t.match(/[\u4e00-\u9fa5]{2,}/g) || []) {
-      const prev = this.preferences.get(token) || 0;
-      this.preferences.set(token, clamp01(prev + 0.06));
+    if (!admission || admission.allowProfile === true) {
+      for (const token of t.match(/[\u4e00-\u9fa5]{2,8}/g) || []) {
+        if (/^(?:我|你|他|她|我们|他们|这个|那个|什么|怎么|为什么|因为|所以|但是|不过)$/.test(token)) continue;
+        const prev = this.preferences.get(token) || 0;
+        this.preferences.set(token, clamp01(prev + 0.12));
+      }
     }
 
     if (userModel?.model?.preferences) {
@@ -108,6 +111,18 @@ class MentalModel {
       if (this.hypotheses.length > 15) this.hypotheses.shift();
     }
     return hypothesis;
+  }
+
+  purgeTopics(fragments = []) {
+    const list = fragments.map(String).filter(Boolean);
+    const hit = (value) => list.some((fragment) => String(value || '').includes(fragment));
+    this.beliefs = this.beliefs.filter((item) => !hit(item.text));
+    this.desires = this.desires.filter((item) => !hit(item.text));
+    this.intentions = this.intentions.filter((item) => !hit(item.text));
+    this.hypotheses = this.hypotheses.filter((item) => !hit(item.text));
+    for (const key of [...this.preferences.keys()]) {
+      if (hit(key)) this.preferences.delete(key);
+    }
   }
 
   toPromptBlock() {

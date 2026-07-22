@@ -7,11 +7,11 @@ const userPresence = require('../lib/userPresence');
  * 由 server 注入；不规定固定台词表。
  */
 
-/** 默认开启；设 AMADEUS_HIGH_INTIMACY=0 可关闭 */
+/** 默认按真实相处积累；设 AMADEUS_HIGH_INTIMACY=1 才启用预热亲密模式 */
 function isHighIntimacyMode() {
   const v = process.env.AMADEUS_HIGH_INTIMACY;
-  if (v === undefined || v === null || String(v).trim() === '') return true;
-  return String(v).trim() !== '0';
+  if (v === undefined || v === null || String(v).trim() === '') return false;
+  return String(v).trim() === '1';
 }
 
 const HIGH_INTIMACY_REL_FLOOR = 0.58;

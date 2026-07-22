@@ -1,8 +1,20 @@
 'use strict';
+{
 
 /**
  * OOC 检测与兜底：口吻像、少出戏。
+ * 设 AMADEUS_OOC_REPAIR=0 关闭整句替换兜底（保留模型原文）。
  */
+
+function isOocRepairEnabled(opts = {}) {
+  if (opts && opts.oocRepair === false) return false;
+  if (opts && opts.oocRepair === true) return true;
+  if (typeof window !== 'undefined' && window.AMADEUS_OOC_REPAIR === '0') return false;
+  const raw = String(
+    (typeof process !== 'undefined' && process.env && process.env.AMADEUS_OOC_REPAIR) || '1',
+  ).trim().toLowerCase();
+  return !['0', 'false', 'no', 'off'].includes(raw);
+}
 
 function ix() {
   if (typeof window !== 'undefined' && window.AmadeusInteractionContext) {
@@ -108,6 +120,8 @@ function sanitizeOocSurface(reply) {
 
 function repairKurisuReply(userText, reply, opts = {}) {
   let out = String(reply || '').trim();
+  if (!isOocRepairEnabled(opts)) return out;
+
   if (!out) return oocRepairFallback(userText, 'default');
 
   const ic = ix();
@@ -164,9 +178,10 @@ function extractTopicKeys(userText) {
   return [...keys];
 }
 
-function reconcileFinalReply(streamed, final, userText) {
+function reconcileFinalReply(streamed, final, userText, opts = {}) {
   const s = String(streamed || '').trim();
   const f = String(final || '').trim();
+  if (!isOocRepairEnabled(opts)) return f || s;
   if (!s || !f || s === f) return f;
 
   const keys = extractTopicKeys(userText);
@@ -192,6 +207,7 @@ function reconcileFinalReply(streamed, final, userText) {
 }
 
 const api = {
+  isOocRepairEnabled,
   oocPatterns,
   scoreOoc,
   replyNeedsOocRepair,
@@ -207,4 +223,5 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 if (typeof window !== 'undefined') {
   window.AmadeusOocGuard = api;
+}
 }

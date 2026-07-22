@@ -26,7 +26,11 @@ if errorlevel 1 (
 
 rem 4️⃣ 启动后端
 rem 使用 cmd /K 让子进程结束后窗口仍然保留
-echo 正在启动 Amadeus 后端 (http://localhost:3000) …
+set "AMADEUS_PORT=3000"
+if exist ".env" (
+  for /f "usebackq tokens=1,* delims==" %%A in (`findstr /b /i "AMADEUS_BACKEND_PORT=" ".env" 2^>nul`) do set "AMADEUS_PORT=%%B"
+)
+echo 正在启动 Amadeus 后端 (http://localhost:%AMADEUS_PORT%) …
 cmd /K npm run dev
 
 rem 当子窗口被手动关闭后，下面的 pause 会让主窗口保持打开

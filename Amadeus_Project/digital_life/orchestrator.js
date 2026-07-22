@@ -108,6 +108,7 @@ class DigitalLifeOrchestrator {
       decision,
       chatTurnCounter,
       chatMinimal,
+      memoryAdmission,
     } = ctx;
 
     const closeness = userModel?.model?.relationship?.closeness ?? relScore ?? 0;
@@ -121,6 +122,7 @@ class DigitalLifeOrchestrator {
       relScore,
       behaviorId,
       idleMs,
+      memoryAdmission,
     });
 
     const understandingOut = this.understanding.onConversationTurn({
@@ -128,12 +130,18 @@ class DigitalLifeOrchestrator {
       userModel,
       closeness,
       inferredBdi: ctx.inferredBdi,
+      memoryAdmission,
     });
 
     const embodimentOut = this.embodiment.onConversationTurn({
       pad,
       userModel,
       idleMs,
+      userText,
+      mainEvent,
+      recognized: understandingOut.recognized,
+      pendingNeed: understandingOut.pendingNeed,
+      relScore,
     });
 
     const evolutionOut = this.evolution.onConversationTurn({
@@ -229,6 +237,14 @@ class DigitalLifeOrchestrator {
 
   onVision(visionText) {
     return this.embodiment.onVision(visionText);
+  }
+
+  purgeContaminatedTopics(fragments = []) {
+    this.autonomy.curiosity.purgeTopics(fragments);
+    this.autonomy.creativity.purgeTopics(fragments);
+    this.understanding.mentalModel.purgeTopics(fragments);
+    this.autonomy._save();
+    this.understanding._save();
   }
 
   buildPromptContext(ctx = {}) {

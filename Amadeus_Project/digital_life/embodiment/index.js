@@ -64,7 +64,14 @@ class EmbodimentSubsystem {
 
   onConversationTurn(ctx = {}) {
     const { pad, userModel, idleMs = 0 } = ctx;
-    const expression = this.expression.mapFromPad(pad);
+    const expression = this.expression.mapFromPad(pad, {
+      userText: ctx.userText,
+      mainEvent: ctx.mainEvent,
+      recognized: ctx.recognized,
+      pendingNeed: ctx.pendingNeed,
+      relScore: ctx.relScore,
+      now: ctx.now,
+    });
     const timeLine = this.time.toPromptLine(userModel, idleMs);
     this._save();
     return { expression, timeLine };
