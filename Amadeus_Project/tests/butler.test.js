@@ -24,10 +24,19 @@ test('butler keeps casual conversation out of the task queue', () => {
   assert.equal(kernel.tasks.listTasks().length, 0);
 });
 
-test('explicit requests become persistent tasks and retry is idempotent', () => {
+test('polite request words alone do not enter the butler queue', () => {
+  const { kernel } = makeKernel();
+  const polite = kernel.observeUserRequest({ text: '帮我整理下载文件夹', turnId: 'polite-1' });
+  assert.equal(polite.task, null);
+  const play = kernel.observeUserRequest({ text: '给我一个任务！', turnId: 'play-1' });
+  assert.equal(play.task, null);
+  assert.equal(kernel.tasks.listTasks().length, 0);
+});
+
+test('agency proposals become persistent tasks and retry is idempotent', () => {
   const { dataDir, kernel } = makeKernel();
-  const first = kernel.observeUserRequest({ text: '帮我整理下载文件夹', turnId: 'turn-1' });
-  const second = kernel.observeUserRequest({ text: '帮我整理下载文件夹', turnId: 'turn-1' });
+  const first = kernel.proposeTask({ text: '帮我整理下载文件夹', turnId: 'turn-1' });
+  const second = kernel.proposeTask({ text: '帮我整理下载文件夹', turnId: 'turn-1' });
   assert.equal(first.created, true);
   assert.equal(second.created, false);
   assert.equal(first.task.id, second.task.id);
@@ -38,9 +47,19 @@ test('explicit requests become persistent tasks and retry is idempotent', () => 
   assert.equal(reloaded.tasks.getTask(first.task.id).title, '帮我整理下载文件夹');
 });
 
+test('agency reply marker registers a task and strips spoken text', () => {
+  const { kernel } = makeKernel();
+  const raw = '行，我去开记事本。\n⟦AMADEUS_TASK{"title":"打开记事本","description":"打开记事本"}⟧';
+  const accepted = kernel.consumeAgencyReply(raw, { turnId: 'agency-1' });
+  assert.equal(accepted.spoken, '行，我去开记事本。');
+  assert.ok(accepted.task);
+  assert.equal(accepted.created, true);
+  assert.match(accepted.task.title, /记事本/);
+});
+
 test('high-risk requests require a concrete plan before explicit confirmation', async () => {
   const { kernel } = makeKernel();
-  const result = kernel.observeUserRequest({ text: '删除下载目录里的所有文件', turnId: 'danger-1' });
+  const result = kernel.proposeTask({ text: '删除下载目录里的所有文件', turnId: 'danger-1' });
   assert.equal(result.task.risk, 'high');
   assert.equal(result.task.status, 'proposed');
   assert.equal(result.task.requiresConfirmation, true);
@@ -49,7 +68,7 @@ test('high-risk requests require a concrete plan before explicit confirmation', 
 
 test('a task cannot be completed without successful evidence and verification', () => {
   const { kernel } = makeKernel();
-  const { task } = kernel.observeUserRequest({ text: '帮我创建一个测试文件', turnId: 'proof-1' });
+  const { task } = kernel.proposeTask({ text: '帮我创建一个测试文件', turnId: 'proof-1' });
   kernel.tasks.transition(task.id, 'planned', { plan: ['创建文件', '重新读取文件'] });
   kernel.tasks.transition(task.id, 'ready');
   kernel.tasks.transition(task.id, 'running');
@@ -75,7 +94,7 @@ test('a task cannot be completed without successful evidence and verification', 
 
 test('capability execution closes the observe-act-verify loop', async () => {
   const { kernel } = makeKernel();
-  const { task } = kernel.observeUserRequest({ text: '帮我检查电脑运行状态', turnId: 'inspect-1' });
+  const { task } = kernel.proposeTask({ text: '帮我检查电脑运行状态', turnId: 'inspect-1' });
   kernel.tasks.transition(task.id, 'planned', { plan: ['读取状态', '验证返回结构'] });
   kernel.tasks.transition(task.id, 'ready');
   const result = await kernel.executeTask(task.id, 'system.inspect');
@@ -87,7 +106,7 @@ test('capability execution closes the observe-act-verify loop', async () => {
 
 test('reminder request is planned, persisted, executed and verified', async () => {
   const { dataDir, kernel } = makeKernel();
-  const { task } = kernel.observeUserRequest({ text: '提醒我10分钟后喝水', turnId: 'reminder-1' });
+  const { task } = kernel.proposeTask({ text: '提醒我10分钟后喝水', turnId: 'reminder-1' });
   const planned = await kernel.planTask(task.id);
   assert.equal(planned.plan.source, 'heuristic');
   assert.equal(planned.task.status, 'ready');
@@ -107,7 +126,7 @@ test('file search stays inside allowed roots and verifies every result', async (
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-files-'));
   fs.writeFileSync(path.join(root, 'project-report-unique.txt'), 'proof', 'utf8');
   const { kernel } = makeKernel({ allowedRoots: [root] });
-  const { task } = kernel.observeUserRequest({ text: '帮我找一下 project-report-unique 文件', turnId: 'file-1' });
+  const { task } = kernel.proposeTask({ text: '帮我找一下 project-report-unique 文件', turnId: 'file-1' });
   const planned = await kernel.planTask(task.id);
   assert.equal(planned.task.plan[0].capabilityId, 'file.search');
   planned.task.plan[0].args.root = root;
@@ -115,7 +134,7 @@ test('file search stays inside allowed roots and verifies every result', async (
   assert.equal(executed.task.status, 'completed');
   assert.match(executed.steps[0].result.artifact, /project-report-unique\.txt/);
 
-  const { task: outsideTask } = kernel.observeUserRequest({ text: '帮我找一下 forbidden 文件', turnId: 'file-2' });
+  const { task: outsideTask } = kernel.proposeTask({ text: '帮我找一下 forbidden 文件', turnId: 'file-2' });
   await kernel.planTask(outsideTask.id);
   outsideTask.plan[0].args.root = path.parse(root).root;
   const blocked = await kernel.runPlan(outsideTask.id);
@@ -139,7 +158,7 @@ test('unsupported tasks are planned by the isolated strong work brain', async ()
       });
     },
   });
-  const { task } = kernel.observeUserRequest({ text: '帮我制定提升专注力的方案', turnId: 'strong-1' });
+  const { task } = kernel.proposeTask({ text: '帮我制定提升专注力的方案', turnId: 'strong-1' });
   assert.equal(await kernel.planTask(task.id, { allowStrong: false }), null);
   const planned = await kernel.planTask(task.id, { allowStrong: true });
   assert.equal(calls, 1);
@@ -159,7 +178,7 @@ test('work brain reports a capability gap instead of choosing an unrelated tool'
       steps: [],
     }),
   });
-  const { task } = kernel.observeUserRequest({ text: '帮我发送一封邮件', turnId: 'gap-1' });
+  const { task } = kernel.proposeTask({ text: '帮我发送一封邮件', turnId: 'gap-1' });
   const planned = await kernel.planTask(task.id);
   assert.equal(planned.plan.canExecute, false);
   assert.equal(planned.task.status, 'blocked');
@@ -168,13 +187,13 @@ test('work brain reports a capability gap instead of choosing an unrelated tool'
 
 test('operator executes only safe ready work and leaves confirmation tasks alone', async () => {
   const { kernel } = makeKernel();
-  const { task } = kernel.observeUserRequest({ text: '帮我检查电脑运行状态', turnId: 'operator-1' });
+  const { task } = kernel.proposeTask({ text: '帮我检查电脑运行状态', turnId: 'operator-1' });
   await kernel.planTask(task.id);
   const tick = await kernel.operatorTick();
   assert.equal(tick.acted, true);
   assert.equal(kernel.tasks.getTask(task.id).status, 'completed');
 
-  const risky = kernel.observeUserRequest({ text: '删除所有下载文件', turnId: 'operator-risk-1' }).task;
+  const risky = kernel.proposeTask({ text: '删除所有下载文件', turnId: 'operator-risk-1' }).task;
   const quiet = await kernel.operatorTick();
   assert.equal(quiet.acted, false);
   assert.equal(kernel.tasks.getTask(risky.id).status, 'proposed');
@@ -188,7 +207,7 @@ test('trusted Windows app launch uses an allowlist and returns verifiable dispat
       launcher: (exe, args) => { launches.push({ exe, args }); return 4242; },
     },
   });
-  const { task } = kernel.observeUserRequest({ text: '打开记事本', turnId: 'app-1' });
+  const { task } = kernel.proposeTask({ text: '打开记事本', turnId: 'app-1' });
   const planned = await kernel.planTask(task.id);
   assert.equal(planned.task.plan[0].capabilityId, 'app.launch');
   const executed = await kernel.runPlan(task.id);
@@ -251,7 +270,7 @@ test('file mutation is no-overwrite, confirmation-gated and reversible', async (
 
 test('confirmation text never approves a task before its plan exists', () => {
   const { kernel } = makeKernel();
-  const pending = kernel.observeUserRequest({ text: '删除下载目录里的所有文件', turnId: 'unplanned-risk' }).task;
+  const pending = kernel.proposeTask({ text: '删除下载目录里的所有文件', turnId: 'unplanned-risk' }).task;
   const result = kernel.observeUserRequest({ text: '确认', turnId: 'early-confirm' });
   assert.equal(result.task, null);
   assert.equal(pending.status, 'proposed');
@@ -275,7 +294,7 @@ test('background plans produce a follow-up when user confirmation is required', 
     }),
   });
   const before = Date.now() - 1;
-  const { task } = kernel.observeUserRequest({ text: `删除 ${target}`, turnId: 'followup-1' });
+  const { task } = kernel.proposeTask({ text: `删除 ${target}`, turnId: 'followup-1' });
   const planned = await kernel.planTask(task.id, { allowStrong: true, source: 'background' });
   assert.equal(planned.task.status, 'waiting_confirmation');
   const updates = kernel.updatesSince(before);
@@ -292,7 +311,7 @@ test('background plans produce a follow-up when user confirmation is required', 
 
 test('background planner failure becomes a visible blocked task', () => {
   const { kernel } = makeKernel();
-  const { task } = kernel.observeUserRequest({ text: '帮我完成一个复杂任务', turnId: 'plan-fail-1' });
+  const { task } = kernel.proposeTask({ text: '帮我完成一个复杂任务', turnId: 'plan-fail-1' });
   const before = Date.now() - 1;
   const blocked = kernel.failPlanning(task.id, new Error('provider unavailable'));
   assert.equal(blocked.status, 'blocked');
@@ -305,7 +324,7 @@ test('operational preferences survive restart and constrain later plans', async 
   kernel.observeUserRequest({ text: '以后文件默认都放桌面', turnId: 'preference-1' });
   assert.equal(kernel.userWorld.snapshot().operationalPreferences.defaultDirectory, 'desktop');
 
-  const { task } = kernel.observeUserRequest({ text: '创建一个 note.txt 内容是实验记录', turnId: 'preference-task-1' });
+  const { task } = kernel.proposeTask({ text: '创建一个 note.txt 内容是实验记录', turnId: 'preference-task-1' });
   const planned = await kernel.planTask(task.id);
   assert.equal(planned.task.plan[0].capabilityId, 'file.create_text');
   assert.equal(planned.task.plan[0].args.directory, 'desktop');
@@ -332,11 +351,11 @@ test('planner user context is privacy-cropped and contains task outcome learning
       rawDialogue: 'PRIVATE_DIALOGUE',
     },
   }));
-  const done = kernel.observeUserRequest({ text: '帮我检查电脑运行状态', turnId: 'world-outcome-1' }).task;
+  const done = kernel.proposeTask({ text: '帮我检查电脑运行状态', turnId: 'world-outcome-1' }).task;
   await kernel.planTask(done.id);
   await kernel.runPlan(done.id);
 
-  const unknown = kernel.observeUserRequest({ text: '帮我处理一个未知外部服务', turnId: 'world-plan-1' }).task;
+  const unknown = kernel.proposeTask({ text: '帮我处理一个未知外部服务', turnId: 'world-plan-1' }).task;
   await kernel.planTask(unknown.id);
   assert.equal(observedContext.interactionTendencies.responseLength, 'short');
   assert.deepEqual(observedContext.interactionTendencies.topTopics, ['technical']);
@@ -365,7 +384,7 @@ test('legacy user model actually reloads persisted understanding after restart',
 
 test('kernel exposes active (non-terminal) tasks for the brain and chat', async () => {
   const { kernel } = makeKernel();
-  const { task } = kernel.observeUserRequest({ text: '帮我检查电脑运行状态', turnId: 'active-1' });
+  const { task } = kernel.proposeTask({ text: '帮我检查电脑运行状态', turnId: 'active-1' });
   assert.ok(kernel.getActiveTasks().some((item) => item.id === task.id));
   await kernel.planTask(task.id);
   await kernel.runPlan(task.id);
@@ -511,5 +530,6 @@ test('product charter makes the Jarvis direction an executable contract', () => 
   assert.match(server, /app\.get\('\/butler\/status'/);
   assert.match(server, /app\.post\('\/butler\/tasks\/:id\/verify'/);
   assert.match(server, /app\.post\('\/butler\/tasks\/:id\/execute'/);
-  assert.match(server, /butlerKernel\.observeUserRequest/);
+  assert.match(server, /butlerKernel\.proposeTask/);
+  assert.match(server, /butlerKernel\.observeUserRequest/)
 });

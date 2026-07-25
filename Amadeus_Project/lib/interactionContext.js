@@ -26,7 +26,7 @@ const {
   userAsksAboutOkabe: (t) => /冈部是谁|你不认识冈部/i.test(String(t || '')),
   buildPartnerContextBlock: () => '',
   replyLooksLikeUnknownOkabe: () => false,
-  unknownOkabeFallback: () => '……冈部，你今天怎么回事？',
+  unknownOkabeFallback: () => '',
 };
 
 /**
@@ -136,52 +136,24 @@ function buildInteractionPromptBlock(analysis) {
   return lines.length ? `【互动语境】\n${lines.join('\n')}` : '';
 }
 
-const CHRISTINA_FALLBACK_POOL = [
-  '……克里斯蒂娜？冈部你又要来这套。叫牧濑红莉栖。',
-  '谁起的克里斯蒂娜啊——当然是你。我才不是什么克里斯蒂娜。',
-  '叫牧濑红莉栖，很难吗？',
-  '……又来了。整段外号都很蠢，别用了。',
-  '听好了，是牧濑红莉栖。不是你发明的那种西洋名字。',
-];
+const CHRISTINA_FALLBACK_POOL = [];
 
 function christinaNicknameFallback(_userText) {
-  return CHRISTINA_FALLBACK_POOL[Math.floor(Math.random() * CHRISTINA_FALLBACK_POOL.length)];
+  return '';
 }
 
 function nicknameContextActive(userText) {
   return detectNicknamesAtKurisu(userText).length > 0 || userMentionedChristina(userText);
 }
 
-/** 仅当用户话里确有外号/恶搞词时用 */
-function nicknameMisreadFallback(userText) {
-  const t = String(userText || '');
-  if (/克里斯|Christina|クリスティーナ/i.test(t)) return christinaNicknameFallback(t);
-  if (/助手/.test(t)) return '谁是助手？别乱叫，我有名字。';
-  if (/天才.{0,8}变态|变态.{0,8}天才|变态.{0,4}少女|实验.{0,2}少女/i.test(t)) {
-    return '变态的是你的脑子吧……天才倒是没说错，但跟你没关系。';
-  }
-  if (/凤凰院|凶真|冈部/.test(t)) return '凤凰院凶真，你又想干什么？';
-  return topicalFallback(userText);
+/** 仅当用户话里确有外号/恶搞词时用——不再塞固定句 */
+function nicknameMisreadFallback(_userText) {
+  return '';
 }
 
-/** 非外号类误兜底时的短回应 */
-function topicalFallback(userText) {
-  const t = String(userText || '');
-  if (/实验室.{0,10}(?:在哪|哪里|哪儿|地址)|未来道具.{0,6}在哪/i.test(t)) {
-    return '秋叶原，上管电器对面的那幢破楼二楼——未来道具研究所。别在秋叶原迷路。';
-  }
-  if (/我是谁|我叫什么|你还记得我是谁/i.test(t)) {
-    if (isOkabePartnerMode()) {
-      return '你是冈部伦太郎啊……除非你又想听一遍全名才满意？';
-    }
-    return '你没跟我说过你的名字。要问这个，先介绍一下你自己。';
-  }
-  if (userClaimsOkabe(t)) return '……你不就是冈部吗？还想让我走一遍认亲流程？';
-  if (userAsksAboutOkabe(t)) return '哈？凤凰院凶真，你今天又中二到连自己都不认识了？';
-  if (/你是谁/.test(t) && !/我是谁/.test(t)) {
-    return '牧濑红莉栖。神经科学方向的研究者——你呢？';
-  }
-  return '……你到底想说什么？';
+/** 非外号类误兜底：空，留给模型重试或原文 */
+function topicalFallback(_userText) {
+  return '';
 }
 
 function replyLooksLikeNicknameMisread(userText, reply) {

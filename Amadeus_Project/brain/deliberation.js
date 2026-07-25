@@ -107,25 +107,26 @@ function localReviseDraft(draft, monitorResult) {
       .replace(/(?:好|行|没问题)[，,]?(?:我)?(?:帮你|给你|替你)(?:拿|带|买|送|取|接)[^。！？?]*[。！？?]?/g, '')
       .replace(/(?:顺路|顺便)(?:给你|帮你)(?:带|拿|买)[^。！？?]*[。！？?]?/g, '')
       .replace(/(?:我)?(?:这就|马上)(?:过去|来|到)[^。！？?]*[。！？?]?/g, '');
-    if (!text || text.length < 4) {
-      text = '……我又不能真的过去。你要是想喝就自己去买，别指望我跑腿。';
-    } else if (!/够不着|没法|不能真的/.test(text)) {
-      text = `${text.replace(/[。！？?]$/, '')}——不过物理上的事我办不到。`;
-    }
+    // 只删越权承诺，不塞固定台词
   }
 
   if (ids.has('dialogue.partner_unknown') || ids.has('dialogue.consistency')) {
-    text = text.replace(/那还能是谁[？?]?/g, '……你明知故问。');
-    text = text.replace(/冈部是谁/g, '……你装什么傻。');
+    text = text.replace(/那还能是谁[？?]?/g, '');
+    text = text.replace(/冈部是谁/g, '');
   }
 
   if (ids.has('identity.ai_tone') || ids.has('identity_ooc')) {
     text = text.replace(/作为(?:一个)?AI[^。！？?]*/g, '');
     text = text.replace(/我是(?:人工智能|语言模型)[^。！？?]*/g, '');
-    if (text.length < 3) text = '……我是牧濑红莉栖。还有别的问题吗。';
   }
 
-  return text.trim();
+  // 产品元话语：一律剥掉，绝不留下「刚才那句不算」
+  text = text
+    .replace(/[…\.．]*\s*刚才那句不算[，,]?\s*(?:我)?重新说[。.!！]?/g, '')
+    .replace(/刚才那句不算[，,]?/g, '')
+    .replace(/(?:那句)?不算[，,]?\s*我重新说[。.!！]?/g, '');
+
+  return text.replace(/\s{2,}/g, ' ').trim();
 }
 
 function toPromptBlock(deliberation) {

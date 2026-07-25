@@ -10,10 +10,11 @@ function isOocRepairEnabled(opts = {}) {
   if (opts && opts.oocRepair === false) return false;
   if (opts && opts.oocRepair === true) return true;
   if (typeof window !== 'undefined' && window.AMADEUS_OOC_REPAIR === '0') return false;
+  // 默认关闭：禁止用不经思考的固定句顶替模型原话
   const raw = String(
-    (typeof process !== 'undefined' && process.env && process.env.AMADEUS_OOC_REPAIR) || '1',
+    (typeof process !== 'undefined' && process.env && process.env.AMADEUS_OOC_REPAIR) || '0',
   ).trim().toLowerCase();
-  return !['0', 'false', 'no', 'off'].includes(raw);
+  return ['1', 'true', 'yes', 'on'].includes(raw);
 }
 
 function ix() {
@@ -36,8 +37,10 @@ function oocPatterns() {
     { id: 'meta', re: /角色设定|人设|OOC|出戏|扮演|剧本|台词表|几个梗|治标不治本|像她的/, weight: 3 },
     { id: 'third_person', re: /牧濑红莉栖(?:认为|表示|说道|觉得)|她(?:突然|轻声|冷冷)/, weight: 2 },
     { id: 'roleplay', re: /（[^）]{0,40}）|\([^)]{0,40}\)|挑眉|叹气|转过头|耸肩/, weight: 3 },
-    { id: 'over_soft', re: /别难过啦|抱抱|乖[，,]|我会一直陪着你|母亲般|温柔地安慰/, weight: 2 },
-    { id: 'perform_tsun', re: /才不是担心你|才不是关心|别误会[^。]{0,12}我只是顺便/, weight: 1 },
+    // 只拦母亲腔/客服软；真软、真傲娇、短「抱抱」不再当 OOC
+    { id: 'over_soft', re: /别难过啦|乖[，,]来|我会一直陪着你|母亲般|温柔地安慰|亲爱的用户/, weight: 2 },
+    // 表演流水线才拦；单次「才不是…」不算犯规（真傲娇会说）
+    { id: 'perform_tsun', re: /才不是担心你[^。]{0,8}才不是|别误会[^。]{0,8}我只是顺便[^。]{0,8}别误会/, weight: 1 },
   ];
 }
 
@@ -72,7 +75,9 @@ function replyNeedsOocRepair(userText, reply, opts = {}) {
     opts.autonomy
     && tc
     && typeof tc.replyLooksLikeAutonomyFabrication === 'function'
-    && tc.replyLooksLikeAutonomyFabrication(anchor, o)
+    && tc.replyLooksLikeAutonomyFabrication(anchor, o, {
+      alreadyTalking: opts.alreadyTalking === true || !!String(opts.userAnchor || '').trim(),
+    })
   ) {
     return { needs: true, reason: 'autonomy_fabrication', category: 'autonomy_fabrication' };
   }
@@ -94,20 +99,15 @@ function replyNeedsOocRepair(userText, reply, opts = {}) {
 }
 
 const FALLBACK_POOL = {
-  default: ['说重点。', '怎么了。', '有事？', '听着呢。', '讲。'],
-  ai: ['……你把我当成什么客服了？有事直说。', '别来这套，我又不是助手热线。'],
-  lecture: ['太长。你到底想问哪一句？', '别上课，讲重点。'],
-  meta: ['……你在说什么？有话正常说。'],
+  // 空池：禁止任何不经思考的代入句
+  default: [],
+  ai: [],
+  lecture: [],
+  meta: [],
 };
 
-function oocRepairFallback(userText, category = 'default') {
-  const ic = ix();
-  if (category === 'nickname' && ic && typeof ic.nicknameRepairFallback === 'function') {
-    return ic.nicknameRepairFallback(userText);
-  }
-  const cat = category === 'ai_identity' ? 'ai' : category;
-  const pool = FALLBACK_POOL[cat] || FALLBACK_POOL.default;
-  return pool[Math.floor(Math.random() * pool.length)];
+function oocRepairFallback(_userText, _category = 'default') {
+  return '';
 }
 
 function sanitizeOocSurface(reply) {
@@ -120,45 +120,29 @@ function sanitizeOocSurface(reply) {
 
 function repairKurisuReply(userText, reply, opts = {}) {
   let out = String(reply || '').trim();
+  // 始终剥产品元话语；整句替换仅在显式开启时做轻清洗，绝不塞模板
+  out = out
+    .replace(/[…\.．]*\s*刚才那句不算[，,]?\s*(?:我)?重新说[。.!！]?/g, '')
+    .replace(/刚才那句不算[，,]?/g, '')
+    .replace(/又是[这那]个话题吗[。.!！?？]?/g, '')
+    .replace(/停止指定话题吧[，,]?[^\n]*/g, '')
+    .trim();
   if (!isOocRepairEnabled(opts)) return out;
-
-  if (!out) return oocRepairFallback(userText, 'default');
-
-  const ic = ix();
-  if (ic && typeof ic.replyNeedsNicknameRepair === 'function' && ic.replyNeedsNicknameRepair(userText, out)) {
-    return ic.nicknameRepairFallback(userText);
-  }
-
-  const tc = autonomyIx();
-  if (
-    opts.autonomy
-    && tc
-    && typeof tc.replyLooksLikeAutonomyFabrication === 'function'
-    && tc.replyLooksLikeAutonomyFabrication(opts.userAnchor || userText, out)
-  ) {
-    return tc.autonomyFabricationFallback(opts.userAnchor || userText);
-  }
-
-  const check = replyNeedsOocRepair(userText, out, opts);
-  if (!check.needs) return out;
-
-  const { score } = scoreOoc(out);
-  if (score >= 3 || check.category === 'ai_identity') {
-    return oocRepairFallback(userText, check.category);
-  }
+  if (!out) return '';
 
   const cleaned = sanitizeOocSurface(out);
-  if (cleaned.length >= 6 && !replyNeedsOocRepair(userText, cleaned).needs) return cleaned;
+  if (cleaned.length >= 4 && !replyNeedsOocRepair(userText, cleaned, opts).needs) return cleaned;
 
-  return oocRepairFallbackSafe(userText, check.category);
+  // 出戏严重时宁可空着，也不用固定句顶上
+  const check = replyNeedsOocRepair(userText, cleaned || out, opts);
+  if (check.needs && (scoreOoc(cleaned || out).score >= 3 || check.category === 'ai_identity')) {
+    return cleaned || '';
+  }
+  return cleaned || out;
 }
 
-function oocRepairFallbackSafe(userText, category) {
-  const ic = ix();
-  if (ic && typeof ic.nicknameRepairFallback === 'function') {
-    return ic.nicknameRepairFallback(userText);
-  }
-  return oocRepairFallback(userText, category);
+function oocRepairFallbackSafe(_userText, _category) {
+  return '';
 }
 
 /**

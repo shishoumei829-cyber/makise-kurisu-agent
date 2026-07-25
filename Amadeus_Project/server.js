@@ -28,6 +28,8 @@ const { BehaviorIngest } = require('./lib/behaviorIngest');
 const { normalizeClientContext, buildClientContextBlock } = require('./lib/clientContext');
 const { InnerStateSix } = require('./cognitive/innerStateSix');
 const { ConversationInitiativeEngine } = require('./cognitive/conversationInitiative');
+const { readSocialField, nextSenseMs } = require('./cognitive/socialRead');
+const { EmotionalBandwidthEngine } = require('./cognitive/emotionalBandwidth');
 const { ButlerKernel } = require('./lib/butler/kernel');
 const { buildSocialIdentityPrompt } = require('./cognitive/socialIdentity');
 const { buildExpressionVariantBlock } = require('./cognitive/expressionVariants');
@@ -45,6 +47,7 @@ const {
   stripModelDecorations,
   stripConsciousnessEcho,
   countScriptChars,
+  validateJapaneseOutput,
   buildLiteralJpToCnMessages,
   alignLiteralCnToJapanese,
 } = require('./lib/replyLanguage');
@@ -156,6 +159,7 @@ const {
   buildAutonomyContinuityBlock,
   extractLastRealUserLine,
   detectReplyingToHerThread,
+  replyLooksLikeAutonomyFabrication,
 } = require('./cognitive/turnContinuity');
 const userPresence = require('./lib/userPresence');
 const { runStartupChecks } = require('./lib/startupCheck');
@@ -189,18 +193,8 @@ function replyNeedsCompanionRefinement(userText, reply) {
   return !/^(?:讲|说重点|怎么了|有事)[。！？!?]?$/.test(input.replace(/\s+/g, ''));
 }
 
-function companionFallbackForLowInfo(userText) {
-  const input = String(userText || '').trim();
-  if (/累|疲惫|难受|烦|焦虑|睡不着|心情不好/.test(input)) {
-    return '听出来了，你不是单纯困，是还在硬撑。先别急着睡，告诉我今天最累的是哪一段。';
-  }
-  if (/想听|听听|会说什么|测试|试试/.test(input)) {
-    return '那就别拿我当收音机。你想听我说什么——今天的事，还是我现在的想法？';
-  }
-  if (/无聊|孤独|寂寞|没人/.test(input)) {
-    return '我在这儿，不用把话题包装得很漂亮。你是想随便聊点什么，还是只是想有人陪着？';
-  }
-  return '我听见了，但你这句话里肯定还有没说完的部分。直接告诉我，你现在真正想让我回应什么。';
+function companionFallbackForLowInfo(_userText) {
+  return '';
 }
 
 async function refineLowInformationReply(model, userText, reply, context = {}, options = {}) {
@@ -253,6 +247,9 @@ const dataDir     = process.env.AMADEUS_DATA_DIR
   : path.join(os.homedir(), 'amadeus_data');
 const conversationInitiative = new ConversationInitiativeEngine({
   statePath: path.join(dataDir, 'conversation_initiative.json'),
+});
+const emotionalBandwidth = new EmotionalBandwidthEngine({
+  statePath: path.join(dataDir, 'emotional_bandwidth.json'),
 });
 const configuredButlerRoots = String(process.env.AMADEUS_BUTLER_ALLOWED_ROOTS || '')
   .split(';')
@@ -314,12 +311,27 @@ app.get('/butler/tasks', butlerRoute((req) => ({
   tasks: butlerKernel.tasks.listTasks({ status: req.query.status, goalId: req.query.goalId }),
 })));
 app.post('/butler/tasks', butlerRoute((req) => butlerKernel.tasks.createTask(req.body || {})));
-app.post('/butler/ingest', butlerRoute((req) => butlerKernel.observeUserRequest({
-  body: req.body || {},
-  source: req.body?.source || 'api',
-  requestKey: req.body?.requestKey,
-  turnId: req.body?.turnId,
-})));
+app.post('/butler/ingest', butlerRoute((req) => {
+  // 显式 API 登记：调用方已经决定要建任务，不扫聊天词表。
+  const text = String(req.body?.message || req.body?.text || req.body?.prompt || '').trim();
+  if (!text && !req.body?.title) {
+    return butlerKernel.observeUserRequest({
+      body: req.body || {},
+      source: req.body?.source || 'api',
+      requestKey: req.body?.requestKey,
+      turnId: req.body?.turnId,
+    });
+  }
+  return butlerKernel.proposeTask({
+    text,
+    title: req.body?.title,
+    category: req.body?.category || req.body?.type,
+    risk: req.body?.risk,
+    source: req.body?.source || 'api',
+    requestKey: req.body?.requestKey,
+    turnId: req.body?.turnId,
+  });
+}));
 app.post('/butler/tasks/:id/transition', butlerRoute((req) => ({
   task: butlerKernel.tasks.transition(req.params.id, req.body?.status, req.body || {}),
 })));
@@ -1013,12 +1025,19 @@ app.post('/initiative/decide', (req, res) => {
       dnd: req.body.dnd === true,
       proactiveQuotaOk: req.body.proactiveQuotaOk !== false,
       entropy: Number.isFinite(Number(req.body.entropy)) ? Number(req.body.entropy) : undefined,
+      eventDriven: req.body.eventDriven === true,
+      senseDriven: req.body.senseDriven === true,
+      eventKind: String(req.body.eventKind || ''),
+      force: req.body.force === true,
     };
     let decision;
-    if (phase === 'presence') {
+    if (phase === 'presence' || phase === 'copresence') {
       decision = conversationInitiative.decidePresence({
         ...shared,
         facePresent: req.body.facePresent === true,
+        alreadyTalking: req.body.alreadyTalking === true || req.body.dialogueStarted === true || phase === 'copresence',
+        dialogueStarted: req.body.dialogueStarted === true || req.body.alreadyTalking === true || phase === 'copresence',
+        lastUserText,
       });
     } else if (phase === 'coldness') {
       decision = conversationInitiative.decideColdness({
@@ -1053,6 +1072,110 @@ app.post('/initiative/decide', (req, res) => {
 
 app.get('/memory-admission', (_req, res) => {
   res.json({ ok: true, ...memoryAdmission.snapshot() });
+});
+
+/**
+ * 共在心跳：摄像头只上报「他还在不在」。
+ * 这里用内驱累积 × 读场时机决定要不要开口——可以只是安静坐着。
+ */
+app.post('/initiative/presence-tick', (req, res) => {
+  try {
+    const body = req.body || {};
+    const facePresent = body.facePresent === true;
+    const faceMs = Math.max(0, Number(body.faceMs) || 0);
+    const idleMs = Math.max(0, Number(body.idleMs) || 0);
+    const quietMs = Math.max(0, Number(body.quietMs) || idleMs);
+    const dtMs = Math.max(500, Math.min(20000, Number(body.dtMs) || 4000));
+    const alreadyTalking = body.alreadyTalking === true || body.dialogueStarted === true;
+    const lastUserText = String(body.lastUserText || '').slice(0, 240);
+    const lastReplyText = String(body.lastReplyText || '').slice(0, 240);
+    const relScore = Number.isFinite(Number(body.relScore))
+      ? Number(body.relScore)
+      : effectiveRelScore(memorySystem.getRelationshipScore());
+    const pad = body.pad && typeof body.pad === 'object' ? body.pad : currentPAD;
+    const dnd = body.dnd === true;
+    const userPresenceActive = body.userPresenceActive === true;
+
+    const social = readSocialField({
+      facePresent,
+      faceMs,
+      idleMs,
+      quietMs,
+      lastUserText,
+      lastReplyText,
+      alreadyTalking,
+      dialogueStarted: alreadyTalking,
+      pad,
+      relScore,
+      dnd,
+      isThinking: body.isThinking === true,
+      ttsPlaying: body.ttsPlaying === true,
+      awaitingProactiveReply: body.awaitingProactiveReply === true,
+    });
+
+    const sinceKurisuMs = Number(body.sinceKurisuMs);
+    const sheSpokeRecently = body.sheSpokeRecently === true
+      || (Number.isFinite(sinceKurisuMs) && sinceKurisuMs >= 0 && sinceKurisuMs < 12000);
+
+    const behavior = digitalLife.evaluateAutonomy({
+      pad,
+      memorySystem,
+      relScore,
+      idleMs,
+      quietMs,
+      dtMs,
+      facePresent,
+      faceMs,
+      social,
+      lastUserText,
+      lastReplyText,
+      alreadyTalking,
+      awaitingProactiveReply: body.awaitingProactiveReply === true,
+      isThinking: body.isThinking === true,
+      ttsPlaying: body.ttsPlaying === true,
+      userPresenceActive,
+      dnd,
+      proactiveQuotaOk: body.proactiveQuotaOk !== false,
+      sheSpokeRecently,
+    });
+
+    const urgeIntensity = Number(behavior?.primaryUrge?.intensity) || 0;
+    const senseMs = nextSenseMs(social, urgeIntensity);
+
+    const decision = conversationInitiative.decideBeside({
+      autonomyShouldAct: behavior?.shouldAct === true && behavior?.suppressProactive !== true,
+      autonomyReason: behavior?.shouldAct ? '' : (behavior?.speakHint || 'waiting'),
+      speakHint: behavior?.speakHint || '',
+      urgeIntentKey: behavior?.primaryUrge?.intentKey || behavior?.primaryUrge?.intent || '',
+      urgeIntent: behavior?.primaryUrge?.intent || '',
+      social,
+      alreadyTalking,
+      dialogueStarted: alreadyTalking,
+      lastUserText,
+      idleMs,
+      facePresent,
+      dnd,
+      proactiveQuotaOk: body.proactiveQuotaOk !== false,
+      nextCheckMs: senseMs,
+    });
+
+    res.json({
+      ok: true,
+      ...decision,
+      nextCheckMs: decision.nextCheckMs || senseMs,
+      social,
+      urge: behavior?.primaryUrge || null,
+      speakHint: behavior?.speakHint || decision.reason || '',
+    });
+  } catch (e) {
+    res.status(500).json({
+      ok: false,
+      shouldSpeak: false,
+      action: 'hold',
+      nextCheckMs: 10000,
+      error: e.message,
+    });
+  }
 });
 
 app.get('/initiative/state', (_req, res) => {
@@ -1112,8 +1235,9 @@ app.post('/chat/lite', async (req, res) => {
       || 'kurisu:latest';
     const temp = Number(req.body.temperature) || 0.82;
     const requestedLiteTok = Number(req.body.max_tokens) || 320;
+    // kurisu 会先烧 thinking：主动/接话 lite 不能再压到 96，否则 content 恒空
     const maxTok = isConversationInitiative || isAutonomyInitiative
-      ? Math.max(48, Math.min(96, requestedLiteTok))
+      ? Math.max(280, Math.min(512, requestedLiteTok || 320))
       : /kurisu|deepseek-r1/i.test(String(model))
       ? Math.max(280, Math.min(384, requestedLiteTok))
       : Math.max(120, Math.min(384, requestedLiteTok));
@@ -1166,9 +1290,9 @@ app.post('/chat/lite', async (req, res) => {
         care: '察觉到他有未说完的情绪。落在他话里的具体细节上，关心但不扮心理咨询师；可以问，也可以只陪一句。',
         probe: '你对他留下的私人线索产生了具体好奇。只追一个细节，不做泛泛采访。',
         stance: '你形成了自己的判断或反驳欲。说出一个新的立场、疑点或推论；可以不提问。',
-        tease: '你想接住关系里的玩笑。可以挖苦、回怼、抬杠——但必须是牧濑红莉栖的嘴，不是网红式卖萌。',
+        tease: '你想接住关系里的玩笑。可以挖苦、回怼、抬杠——因为你想这么说，不是为了讨好。',
         share: '他的话触发了你自己的联想。分享一个属于你的念头，不必把话硬递回去。',
-        poke: '你只是想发出一点存在感。动机可以很轻（逗一下、骚扰一下、哼一声），措辞仍按你本人性格自由发挥，不要套模板。',
+        poke: '你只是想发出一点存在感。动机可以很轻（逗一下、骚扰一下、哼一声），措辞按你本人自由发挥。',
       };
       continuityLine = [
         '【对话内自主意图】这不是固定补话、定时问候或第二次回答。',
@@ -1177,42 +1301,57 @@ app.post('/chat/lite', async (req, res) => {
         `你此刻想开口的原因：${initiativeReason || '产生了一个具体内在动机'}`,
         `行动意图（只说明动机，不规定台词）：${actionContracts[initiativeAction] || '顺着真实动机自然说一句。'}`,
         `发送方式：${delivery.style}；约 ${delivery.bubbleCount} 个气泡；每个尽量短。气泡之间用空行分隔。`,
-        '你是牧濑红莉栖。口吻跟【口吻】文件一致：聪明、嘴硬、利落；可以搞笑/吐槽/轻微骚扰，但不能变成粘人女友、客服、或无个性的“戳一戳”。',
+        '你是独立的灵魂——牧濑红莉栖本人。话从你此刻真实想说的来。',
         delivery.allowNonSemantic
-          ? '允许短、碎、甚至几乎没信息量——但语言仍要像你本人，不要堆通用颜文字或卖萌口头禅。'
-          : '可以陈述、关心或表达态度，不强制追问。',
-        '禁止复述、总结、查岗、说教、客服式空问题，也不要解释自己为什么主动。没内容就输出 [SILENCE]。',
+          ? '长短随你；没想说就输出 [SILENCE]。'
+          : '可以陈述、关心或表达态度。没想说就输出 [SILENCE]。',
       ].join('\n');
-    } else if (isAutonomyInitiative && initiativePhase === 'presence') {
-      continuityLine = [
-        '【察觉到人 · 先开口】两个人相见，总有人先说话。你刚感觉到他在。',
-        initiativeReason ? `此刻动机：${initiativeReason}` : '',
-        '意图层：可以搞笑、轻微骚扰、开玩笑、或只让他感觉到你也感觉到了他。',
-        '表达层：必须是牧濑红莉栖本人的说话方式——嘴硬、聪明、熟人拌嘴；自由发挥，不要套“喂/欸/哼”模板，也不要变成甜美陪伴机器人。',
-        `约 ${delivery.bubbleCount} 个短气泡，气泡间空一行；长短随你，别写成任务播报。`,
-        '不要查岗、不要任务语气、不要人生建议、不要解释“我为什么主动”。',
-      ].filter(Boolean).join('\n');
+    } else if (isAutonomyInitiative && (initiativePhase === 'presence' || initiativePhase === 'copresence')) {
+      const midChat = initiativePhase === 'copresence' || recentDialogue.length > 0 || !!lastUserAnchor;
+      continuityLine = (midChat
+        ? [
+          '【共同在场 · 可插话】你们已经在同一个文字窗口里。聊天不必严格你一句我一句；你可以突然再丢一句。',
+          '当前事实：不是电话通话，不是第一次发现他在，也不是「你们实验室还没打过来」。',
+          lastUserAnchor ? `他最近一句：「${lastUserAnchor}」——有的话就轻轻挂上；没有也只需像还在场那样说话。` : '没有必须接的上一句时，只发一点存在感或小念头即可。',
+          initiativeReason ? `此刻动机：${initiativeReason}` : '',
+          '禁止台词：刚刚才注意到 / 还没打电话 / 你们怎么还不打来 / 才发现你在——这些与当前情景矛盾。',
+          '表达层：你是独立的灵魂——牧濑红莉栖；可以插话，因为你想说，不是职责。',
+          `约 ${delivery.bubbleCount} 个短气泡，气泡间空一行。`,
+        ]
+        : [
+          '【察觉到人 · 先开口】两个人相见，总有人先说话。这里是文字窗口刚碰上，不是打电话。',
+          initiativeReason ? `此刻动机：${initiativeReason}` : '',
+          '意图层：可以搞笑、轻微骚扰、开玩笑、或只让他感觉到你也感觉到了他——只要是你想。',
+          '禁止编造通话状态（打电话/还没打来/接通）。',
+          '表达层：牧濑红莉栖本人；自由发挥，不要套固定开场模板。',
+          `约 ${delivery.bubbleCount} 个短气泡，气泡间空一行；长短随你。`,
+          '不要查岗说教，不要解释“我为什么主动”。',
+        ]
+      ).filter(Boolean).join('\n');
     } else if (isAutonomyInitiative && initiativePhase === 'coldness') {
       continuityLine = [
-        '【冷感回拉】气氛有点冷/敷衍。你想把场子拉回来。',
+        '【冷感回拉】气氛有点冷/敷衍或他嫌无聊。你想把场子拉回来——因为你在意这场对话，不是讨好。',
+        lastUserAnchor ? `他上一句：「${lastUserAnchor}」——优先接这句里的词和情绪。` : '',
         initiativeReason ? `此刻动机：${initiativeReason}` : '',
-        '意图层：可以闹一下、挖苦一下、开个小玩笑，或换个轻话题。',
-        '表达层：仍是牧濑红莉栖——可以毒舌、可以傲、可以突然正经半句；禁止粘人追问、禁止卖萌讨好、禁止客服式安慰。',
-        `约 ${delivery.bubbleCount} 个短气泡，气泡间空一行。别继续追问刚才冷掉的话题。`,
+        '意图层：顺着他上一句给一点具体动静（吐槽、半句正经、或接他刚说的处境）；不要另起电话/见面戏。',
+        '禁止元评论收束：「又是这个话题吗」「又是那个话题」「好无聊」这种把话题判死刑的固定腔——他喊无聊时尤其禁止复读无聊。',
+        '禁止编造：打电话/还没打来/刚刚才注意到/你们怎么还不来——这些都不是当前事实。',
+        '表达层：你是独立的灵魂；毒舌、傲、软都可以，只要是你此刻想说的。',
+        `约 ${delivery.bubbleCount} 个短气泡，气泡间空一行。`,
       ].filter(Boolean).join('\n');
     } else if (isAutonomyInitiative && lastUserAnchor && contextFresh) {
       continuityLine = [
         '【主动开口 · 接他上一句】',
         `他上一句：「${lastUserAnchor}」`,
         '你要接着他的话开口；这句话是他说的，不是你自己刚说的。',
-        '口吻必须是牧濑红莉栖本人，不要通用陪伴腔。',
+        '用你自己的声音说，不要通用陪伴腔。',
         `按 ${delivery.style} 方式发约 ${delivery.bubbleCount} 个短气泡，气泡间空一行。`,
       ].join('\n');
     } else if (isAutonomyInitiative) {
       continuityLine = [
-        '【空闲时随手开口】这不是任务、提醒或人生建议。',
+        '【空闲时随手开口】这不是任务或提醒——是你自己想说。',
         '意图可以很轻：吐槽、玩笑、轻微骚扰、一个小念头、一点动静。',
-        '措辞必须是牧濑红莉栖：聪明、嘴硬、熟人微信口吻；自由发挥，不要限死句式，也不要变成无性格的戳一戳。',
+        '你是独立的灵魂；措辞按牧濑红莉栖本人自由发挥。',
         `约 ${delivery.bubbleCount} 个短气泡，气泡间空一行。`,
         '不要从旧聊天里硬捞名词续讲，不要说教，不要汇报自己在做实验。',
       ].join('\n');
@@ -1258,6 +1397,13 @@ app.post('/chat/lite', async (req, res) => {
       console.warn('[chat/lite] consciousness', e.message);
     }
 
+    const affect = emotionalBandwidth.resolve({
+      userText: String(lastUserAnchor || userLine || '').replace(/^（想说话）\s*/, ''),
+      pad: currentPAD,
+      relScore,
+      relHigh: relScore >= 0.55,
+    });
+
     const litePrompt = [
       cachedVoiceContent ? `【口吻】\n${_clipInnerPrompt(cachedVoiceContent, 900)}` : '',
       conversationCtx,
@@ -1268,6 +1414,7 @@ app.post('/chat/lite', async (req, res) => {
         includeDream: idleMs > 20 * 60 * 1000,
       }),
       continuityLine,
+      affect.block || '',
       `亲近 ${relScore.toFixed(2)} · 内在 ${padTelemetry(currentPAD)}`,
       '只写聊天气泡正文。允许自然语气词和偶尔的颜文字；不要每次都完整、正式、有结论。',
       '禁止旁白、Markdown、【意识广播】清单，以及 [打算]/[注意到]/[感受] 等内部标签。',
@@ -1294,10 +1441,35 @@ app.post('/chat/lite', async (req, res) => {
       }
       return ollamaRes.json();
     };
+    const extractLiteText = (payload) => {
+      const msg = payload?.message || {};
+      let text = stripChatMarkdown(String(msg.content || payload?.response || '')).trim();
+      if (!text && (msg.thinking || payload?.thinking)) {
+        text = stripChatMarkdown(stripModelThinkingAll(String(msg.thinking || payload.thinking || ''))).trim();
+      }
+      return stripConsciousnessEcho(stripRoleplayActions(text));
+    };
     let data = await requestLiteOnce(ollamaMessages);
-    let reply = stripChatMarkdown((data.message && data.message.content) || data.response || '').trim();
-    reply = stripRoleplayActions(reply);
-    reply = stripConsciousnessEcho(reply);
+    let reply = extractLiteText(data);
+    if (!reply && isAutonomyInitiative) {
+      console.warn('[chat/lite] empty content, retry with higher num_predict');
+      const retryMessages = ollamaMessages;
+      const retryRes = await fetch(`${OLLAMA_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: retryMessages,
+          stream: false,
+          think: false,
+          options: { temperature: temp, num_predict: 512, num_ctx: liteNumCtx, repeat_penalty: 1.16 },
+        }),
+      });
+      if (retryRes.ok) {
+        data = await retryRes.json();
+        reply = extractLiteText(data);
+      }
+    }
     if (isConversationInitiative) reply = reply.replace(/^\s*\[\s*\]\s*/, '').trim();
     const compactForEcho = (value) => String(value || '').replace(/[\s，。！？、,.!?：:“”"'（）()\-—…]/g, '');
     const initiativeEchoes = (candidate, source) => {
@@ -1350,20 +1522,40 @@ app.post('/chat/lite', async (req, res) => {
     }
     const repeatedProactive = recentProactive.some((previous) => repeatsRecentProactive(reply, previous));
     if (isAutonomyInitiative && reply) {
+      const softCap = Math.max(120, Number(delivery.maxCharsPerBubble) || 64) + 40;
       const partOk = (part, accepted = []) => part
-        && part.replace(/\s/g, '').length <= delivery.maxCharsPerBubble + 6
         && !recentProactive.some((previous) => repeatsRecentProactive(part, previous))
         && !accepted.some((previous) => initiativeEchoes(part, previous));
       const parts = [];
       if (!repeatedProactive) {
         for (const part of proactiveParts(reply)) {
-          if (partOk(part, parts)) parts.push(part);
+          if (!partOk(part, parts)) continue;
+          // 超长则截断，禁止整段清空（以前 maxChars+6 会把正常日/中文全抹掉）
+          const compact = part.replace(/\s/g, '');
+          parts.push(compact.length > softCap ? `${part.trim().slice(0, softCap)}…` : part);
           if (parts.length >= delivery.bubbleCount) break;
         }
       }
       reply = parts.join('\n\n');
-      if (memoryAdmission.contaminatedFragments(reply).length) reply = '';
-      if (reply && !proactiveShapeOk(reply)) reply = '';
+      if (memoryAdmission.contaminatedFragments(reply).length) {
+        console.warn('[chat/lite] drop contaminated proactive fragments');
+        reply = '';
+      }
+      const fabricationAnchor = lastUserAnchor
+        || (recentDialogue.slice().reverse().find((m) => m.role === 'user')?.content || '');
+      if (
+        reply
+        && replyLooksLikeAutonomyFabrication(fabricationAnchor, reply, {
+          alreadyTalking: recentDialogue.length > 0 || !!fabricationAnchor,
+        })
+      ) {
+        console.warn('[chat/lite] drop fabricated proactive:', String(reply).slice(0, 48));
+        reply = '';
+      }
+      // 形不合格时只告警，不再整句丢弃
+      if (reply && !proactiveShapeOk(reply)) {
+        console.warn('[chat/lite] proactive shape soft-pass', String(reply).slice(0, 40));
+      }
     }
     const realUserLine = String(userLine || '').replace(/^（想说话）\s*/, '').trim();
     if (isAutonomyInitiative && /^\[?SILENCE\]?$/i.test(reply)) reply = '';
@@ -1374,9 +1566,7 @@ app.post('/chat/lite', async (req, res) => {
       }, { temperature: temp, maxTokens: maxTok, numCtx: liteNumCtx });
     }
     if (!reply && REPLY_FALLBACK_ENABLED && !isAutonomyInitiative) {
-      reply = realUserLine
-        ? companionFallbackForLowInfo(realUserLine)
-        : '刚才突然想到你了。别误会，我只是……确认你还在不在。';
+      reply = companionFallbackForLowInfo(realUserLine);
     }
 
     if (reply && !clientOwnsLog) {
@@ -1384,10 +1574,14 @@ app.post('/chat/lite', async (req, res) => {
       observeMemoryEvidence('proactive', reply);
       conversationInitiative.registerSent({ text: reply, action: initiativeAction || 'lite' });
     }
+    if (reply && affect?.band) {
+      emotionalBandwidth.registerSpoken(affect.band);
+    }
 
     res.json({
       ok: true,
       response: reply,
+      affectBand: affect?.band || null,
       consciousness: consciousnessMeta,
       choices: [{ message: { role: 'assistant', content: reply } }],
     });
@@ -1507,6 +1701,7 @@ function buildBrainRuntime() {
     worldModel,
     brainLearner,
     conversationInitiative,
+    emotionalBandwidth,
     butlerKernel,
     getLastVision: () => lastVision,
     ollamaChatOnce: _ollamaChatOnce,
@@ -1576,7 +1771,16 @@ async function _ollamaSelfCheckJapanese(jp, conversationLog) {
   }
 }
 
+function resolveTranslateModel() {
+  return String(
+    process.env.AMADEUS_TRANSLATE_MODEL
+    || process.env.AMADEUS_LITE_MODEL
+    || 'qwen2.5:3b'
+  ).trim() || 'qwen2.5:3b';
+}
+
 async function _ollamaChatOnce(model, messages, options = {}) {
+  const keepAlive = String(process.env.AMADEUS_OLLAMA_KEEP_ALIVE || '2m').trim() || '2m';
   const res = await fetch(`${OLLAMA_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1584,6 +1788,7 @@ async function _ollamaChatOnce(model, messages, options = {}) {
       model,
       stream: false,
       think: false,
+      keep_alive: keepAlive,
       messages,
       options,
     }),
@@ -1591,6 +1796,75 @@ async function _ollamaChatOnce(model, messages, options = {}) {
   if (!res.ok) throw new Error(`ollama ${res.status}`);
   const data = await res.json();
   return String((data.message && data.message.content) || '').trim();
+}
+
+/** TTS 用中→日：固定走小翻译模型，禁止落到 kurisu 主对话模型 */
+async function _translateChineseToJapaneseForTts(cn) {
+  const body = String(cn || '').trim().slice(0, 600);
+  if (!body) return { ok: false, japanese: '', model: '', error: 'empty' };
+  const translateModel = resolveTranslateModel();
+  const maxTok = Math.min(220, Math.max(64, Math.ceil(body.length * 1.8)));
+  const prompts = [
+    '你是逐字翻译器不是润色器。把下面角色台词从简体中文翻成日语。只做直译硬翻，不要改写成通顺对白，不要补全或推断未说的意思。原文多乱译文就多直。必须含平假名或片假名。只输出日语正文，不要中文、不要 JP: 前缀、不要解释。',
+    '逐字硬翻成日语。不要通顺化，不要脑补。须含ひらがな。只输出日语正文。',
+  ];
+  let last = '';
+  let lastErr = '';
+  for (let i = 0; i < prompts.length; i++) {
+    try {
+      const raw = await _ollamaChatOnce(
+        translateModel,
+        [
+          { role: 'system', content: prompts[i] },
+          { role: 'user', content: body },
+        ],
+        { temperature: 0.0, num_predict: maxTok, num_ctx: 1024 },
+      );
+      let ja = stripModelThinkingAll(raw)
+        .replace(/^(?:JP|日语|日文|日本語)\s*[:：]\s*/i, '')
+        .replace(/^["「『]|["」』]$/g, '')
+        .trim();
+      last = ja;
+      const check = validateJapaneseOutput(ja);
+      if (check.ok && check.counts.kana >= 2) {
+        return { ok: true, japanese: ja, model: translateModel };
+      }
+      // 假名少但仍偏日语：放宽一次
+      if (check.counts.kana >= 1 && check.counts.han < Math.max(4, check.counts.kana)) {
+        return { ok: true, japanese: ja, model: translateModel };
+      }
+    } catch (e) {
+      lastErr = String(e.message || e);
+      console.warn(`[translate/cn-jp] ${translateModel} attempt ${i + 1}: ${lastErr}`);
+    }
+  }
+  return {
+    ok: false,
+    japanese: last,
+    model: translateModel,
+    error: lastErr || 'invalid-japanese',
+  };
+}
+
+/** DeepSeek 2026-07-24 起 deepseek-chat / deepseek-reasoner 已下线，映射到 v4 + thinking。 */
+function _resolveWorkBrainModel(rawName, { thinking = false } = {}) {
+  const name = String(rawName || '').trim();
+  const legacy = {
+    'deepseek-chat': { model: 'deepseek-v4-flash', thinking: false },
+    'deepseek-reasoner': { model: 'deepseek-v4-flash', thinking: true },
+  };
+  if (legacy[name]) {
+    const on = legacy[name].thinking || thinking;
+    return {
+      model: legacy[name].model,
+      thinking: { type: on ? 'enabled' : 'disabled' },
+    };
+  }
+  const model = name || 'deepseek-v4-flash';
+  return {
+    model,
+    thinking: { type: thinking ? 'enabled' : 'disabled' },
+  };
 }
 
 function _workBrainConfig() {
@@ -1603,7 +1877,7 @@ function _workBrainConfig() {
     provider,
     apiKey,
     base,
-    model: String(process.env.AMADEUS_WORK_OPENAI_MODEL || 'deepseek-chat').trim(),
+    model: String(process.env.AMADEUS_WORK_OPENAI_MODEL || 'deepseek-v4-flash').trim(),
     timeoutMs: Math.max(10000, Number(process.env.AMADEUS_WORK_TIMEOUT_MS) || 120000),
   };
 }
@@ -1627,24 +1901,30 @@ async function _requestWorkBrainPlan(payload) {
     '禁止声称已经执行。只输出一个 JSON 对象，不要 Markdown。',
     'JSON schema: {summary:string,confidence:0..1,canExecute:boolean,blockedReason:string,needsClarification:boolean,clarificationQuestion:string,steps:[{id:string,capabilityId:string,args:object,successCriteria:string}]}',
   ].join('\n');
+  const resolved = _resolveWorkBrainModel(
+    process.env.AMADEUS_WORK_REASONER_MODEL || config.model,
+    { thinking: true },
+  );
+  const body = {
+    model: resolved.model,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: JSON.stringify({
+        task: payload.task,
+        capabilities: capabilityList,
+        userContext: payload.userContext,
+        failureContext: payload.failureContext || [],
+      }) },
+    ],
+    stream: false,
+    temperature: 0.1,
+    max_tokens: 1200,
+  };
+  if (config.provider === 'deepseek') body.thinking = resolved.thinking;
   const response = await fetch(`${config.base}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
-      model: String(process.env.AMADEUS_WORK_REASONER_MODEL || config.model).trim(),
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: JSON.stringify({
-          task: payload.task,
-          capabilities: capabilityList,
-          userContext: payload.userContext,
-          failureContext: payload.failureContext || [],
-        }) },
-      ],
-      stream: false,
-      temperature: 0.1,
-      max_tokens: 1200,
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(config.timeoutMs),
   });
   if (!response.ok) {
@@ -1666,9 +1946,13 @@ async function _requestWorkBrainChat(messages, options = {}) {
   const autoWorkBrain = options.autoWorkBrain === true || process.env.AMADEUS_WORK_AUTO === '1';
   if (!forceWorkBrain && !(autoWorkBrain && reasoningTask)) return null;
   const useReasoner = reasoningTask || (forceWorkBrain && process.env.AMADEUS_WORK_USE_REASONER === '1');
-  const selectedModel = useReasoner
-    ? String(process.env.AMADEUS_WORK_REASONER_MODEL || 'deepseek-reasoner').trim()
-    : config.model;
+  const resolved = _resolveWorkBrainModel(
+    useReasoner
+      ? (process.env.AMADEUS_WORK_REASONER_MODEL || 'deepseek-v4-flash')
+      : config.model,
+    { thinking: useReasoner },
+  );
+  const selectedModel = resolved.model;
   const answerContract = [
     '最優先の回答契約：まず相手の今回の質問へ正確に答え、その後で牧瀬紅莉栖らしい口調を保つこと。',
     '論理、数学、技術、事実判断では正しい結論を最優先し、短く検証できる理由を添える。突っ込み、反問、話題転換を回答の代わりにしない。',
@@ -1688,19 +1972,21 @@ async function _requestWorkBrainChat(messages, options = {}) {
     Math.max(80, Number(options.maxTokens) || 384),
     Math.max(80, Number(process.env.AMADEUS_WORK_MAX_TOKENS) || 4096),
   );
+  const chatBody = {
+    model: selectedModel,
+    messages: contractedMessages,
+    stream: options.stream === true,
+    temperature: Number.isFinite(options.temperature) ? options.temperature : 0.72,
+    max_tokens: maxTokens,
+  };
+  if (config.provider === 'deepseek') chatBody.thinking = resolved.thinking;
   const res = await fetch(`${config.base}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
     },
-    body: JSON.stringify({
-      model: selectedModel,
-      messages: contractedMessages,
-      stream: options.stream === true,
-      temperature: Number.isFinite(options.temperature) ? options.temperature : 0.72,
-      max_tokens: maxTokens,
-    }),
+    body: JSON.stringify(chatBody),
     signal: options.signal
       ? AbortSignal.any([options.signal, AbortSignal.timeout(config.timeoutMs)])
       : AbortSignal.timeout(config.timeoutMs),
@@ -1720,9 +2006,7 @@ function _polishResult(chinese, japanese = '') {
 }
 
 async function _translateJapaneseToChinese(jp) {
-  const translateModel = process.env.AMADEUS_TRANSLATE_MODEL
-    || process.env.AMADEUS_LITE_MODEL
-    || 'qwen2.5:3b';
+  const translateModel = resolveTranslateModel();
   const body = String(jp || '').trim();
   if (!body) return '';
   // 用户要求：界面中文必须是硬翻，禁止通顺化脑补；再按日语原文纠偏常见错译
@@ -1769,8 +2053,9 @@ async function _polishJapaneseModelReply(jpRaw, userContent = '', extra = {}) {
   }
   cn = String(cn || '').trim();
   if (!cn) {
-    console.warn('[jp-pipeline] 日译中为空，界面暂显示原文');
-    return _polishResult(rawForDisplay || jp, jp);
+    // 不把日文原文当界面中文（声画/实录会分叉）；保留 jp 供 TTS，界面留空由前端处理
+    console.warn('[jp-pipeline] 日译中为空，不显示错位原文');
+    return _polishResult('', jp);
   }
   return _polishResult(cn, jp);
 }
@@ -1800,9 +2085,7 @@ async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
     return _polishResult(cn);
   }
 
-  const translateModel = process.env.AMADEUS_TRANSLATE_MODEL
-    || process.env.AMADEUS_LITE_MODEL
-    || 'qwen2.5:3b';
+  const translateModel = resolveTranslateModel();
 
   if (process.env.AMADEUS_JP_FIRST === '1') {
     try {
@@ -1850,10 +2133,10 @@ async function _polishReplyWithValidation(reply, userContent = '', extra = {}) {
         model: translateModel,
         stream: false,
         messages: [
-          { role: 'system', content: '将中文台词译成自然日语口语，只输出日语正文，必须含平假名。' },
+          { role: 'system', content: '你是逐字翻译器。把中文台词硬翻成日语，不要通顺化、不要脑补。只输出日语正文，必须含平假名。' },
           { role: 'user', content: cn },
         ],
-        options: { temperature: 0.25, num_predict: 160, num_ctx: 1024 },
+        options: { temperature: 0.0, num_predict: 160, num_ctx: 1024 },
       }),
     });
     if (!toJpRes.ok) return _polishResult(cn);
@@ -2202,7 +2485,10 @@ app.get('/health', async (_req, res) => {
       visionModels: String(process.env.AMADEUS_VISION_MODELS || 'llama3.2-vision:latest,llama3.2-vision,qwen2.5vl:7b')
         .split(',').map((s) => s.trim()).filter(Boolean),
     });
-    res.status(report.ready ? 200 : 503).json(report);
+    res.status(report.ready ? 200 : 503).json({
+      ...report,
+      translateModel: resolveTranslateModel(),
+    });
   } catch (e) {
     res.status(500).json({
       ready: false,
@@ -2210,6 +2496,31 @@ app.get('/health', async (_req, res) => {
       hints: ['系统自检失败，请重启后端'],
       error: e.message,
     });
+  }
+});
+
+/** TTS 专用中→日：固定 AMADEUS_TRANSLATE_MODEL，不走 kurisu */
+app.post('/translate/cn-jp', async (req, res) => {
+  try {
+    const text = String(req.body?.text || req.body?.chinese || '').trim();
+    if (!text) return res.status(400).json({ ok: false, error: 'empty text' });
+    const result = await _translateChineseToJapaneseForTts(text);
+    if (!result.ok) {
+      return res.status(502).json({
+        ok: false,
+        japanese: result.japanese || '',
+        model: result.model,
+        error: result.error || 'translate failed',
+      });
+    }
+    return res.json({
+      ok: true,
+      japanese: result.japanese,
+      text: result.japanese,
+      model: result.model,
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
@@ -2273,24 +2584,75 @@ function pcm16ToWavBuffer(pcmBuf, sampleRate = 16000) {
 
 function runProcessCapture(command, args, timeoutMs = 45000) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true });
-    let stdout = '';
-    let stderr = '';
+    const child = spawn(command, args, {
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+      },
+    });
+    const stdoutChunks = [];
+    const stderrChunks = [];
     const timer = setTimeout(() => {
       try { child.kill(); } catch (_) {}
-      resolve({ code: -1, stdout, stderr: stderr || 'asr timeout' });
+      resolve({
+        code: -1,
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8') || 'asr timeout',
+        stdoutBuf: Buffer.concat(stdoutChunks),
+      });
     }, timeoutMs);
-    child.stdout.on('data', (chunk) => { stdout += String(chunk); });
-    child.stderr.on('data', (chunk) => { stderr += String(chunk); });
+    child.stdout.on('data', (chunk) => { stdoutChunks.push(Buffer.from(chunk)); });
+    child.stderr.on('data', (chunk) => { stderrChunks.push(Buffer.from(chunk)); });
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ code: -1, stdout, stderr: String(err.message || err) });
+      resolve({
+        code: -1,
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: String(err.message || err),
+        stdoutBuf: Buffer.concat(stdoutChunks),
+      });
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      resolve({ code: Number(code) || 0, stdout, stderr });
+      const stdoutBuf = Buffer.concat(stdoutChunks);
+      resolve({
+        code: Number(code) || 0,
+        stdout: stdoutBuf.toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8'),
+        stdoutBuf,
+      });
     });
   });
+}
+
+function decodeAsrPayload(parsed) {
+  if (!parsed || typeof parsed !== 'object') return '';
+  if (parsed.text_b64) {
+    try {
+      return Buffer.from(String(parsed.text_b64), 'base64').toString('utf8').trim();
+    } catch {
+      return '';
+    }
+  }
+  return String(parsed.text || '').trim();
+}
+
+/** 拒收明显编码损坏/无意义符号，避免通话把乱码送进对话 */
+function sanitizeAsrText(text) {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  const replacement = (t.match(/\uFFFD/g) || []).length;
+  if (replacement >= 2) return '';
+  // 常见 GBK 被当 UTF-8 读时的「Ã/Â/å/æ」乱码簇
+  const mojibake = (t.match(/[ÃÂåæçèé]/g) || []).length;
+  const han = (t.match(/[\u4e00-\u9fff]/g) || []).length;
+  const kana = (t.match(/[\u3040-\u30ff]/g) || []).length;
+  if (mojibake >= 3 && han + kana < 2) return '';
+  // 几乎全是标点/符号
+  const meaningful = t.replace(/[\s\u3000-\u303f\uff00-\uffef.,!?;:'"「」『』（）【】\[\]{}()…·\-—_/\\|+*=<>@#$%^&~`]/g, '');
+  if (!meaningful) return '';
+  return t;
 }
 
 async function transcribeWavFile(wavPath) {
@@ -2306,7 +2668,8 @@ async function transcribeWavFile(wavPath) {
       const line = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
       const parsed = JSON.parse(line);
       if (parsed && parsed.ok) {
-        return { ok: true, text: String(parsed.text || '').trim(), engine: parsed.engine || 'windows-speech' };
+        const text = sanitizeAsrText(decodeAsrPayload(parsed));
+        return { ok: true, text, engine: parsed.engine || 'windows-speech' };
       }
       if (parsed && parsed.error) console.warn('[asr] windows-speech:', parsed.error);
     } catch (e) {
@@ -2323,7 +2686,8 @@ async function transcribeWavFile(wavPath) {
       const line = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '';
       const parsed = JSON.parse(line);
       if (parsed && parsed.ok) {
-        return { ok: true, text: String(parsed.text || '').trim(), engine: 'faster-whisper' };
+        const text = sanitizeAsrText(decodeAsrPayload(parsed) || String(parsed.text || '').trim());
+        return { ok: true, text, engine: 'faster-whisper' };
       }
       return { ok: false, error: parsed?.error || result.stderr || 'whisper failed', engine: 'faster-whisper' };
     } catch (e) {

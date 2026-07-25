@@ -81,7 +81,7 @@ Windows 安装包：见 [Releases](https://github.com/shishoumei829-cyber/makise
 | [INSTALL.md](Amadeus_Project/INSTALL.md) | 使用者安装指南 |
 | [PROJECT_STATUS.md](Amadeus_Project/PROJECT_STATUS.md) | 技术状态与 API |
 | [CURSOR_AGENT_HANDOFF.md](Amadeus_Project/docs/CURSOR_AGENT_HANDOFF.md) | 云端 Agent 对话摘要与接力待办 |
-| [AI_PM_LEARNING_PLAN.md](Amadeus_Project/docs/AI_PM_LEARNING_PLAN.md) | AI 产品经理两周学习路径（第 1 周概念 / 第 2 周实战） |
+| [AI_PM_INTERNSHIP.md](Amadeus_Project/docs/AI_PM_INTERNSHIP.md) | AI PM 模拟实习（背景 + 当前任务） |
 | [MVP_STATUS.md](Amadeus_Project/MVP_STATUS.md) | 产品现状（非技术版） |
 
 ---

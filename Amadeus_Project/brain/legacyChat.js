@@ -47,11 +47,51 @@ const {
 const { normalizeClientContext, buildClientContextBlock } = require('../lib/clientContext');
 const { buildSocialIdentityPrompt } = require('../cognitive/socialIdentity');
 const { buildExpressionVariantBlock } = require('../cognitive/expressionVariants');
+const { EmotionalBandwidthEngine } = require('../cognitive/emotionalBandwidth');
 const { needsConversationRecall } = require('../lib/unifiedDialogueLog');
 const userPresence = require('../lib/userPresence');
 const { perceiveIncomingChat } = require('./perceive');
 const { ChatTurnRegistry } = require('../lib/chatTurnRegistry');
+const { stripAgencyTaskMarkers } = require('../lib/butler/intent');
 
+async function _acceptAgencyTaskFromReply(d, rawText, { turnId } = {}) {
+  if (!d?.butlerKernel?.consumeAgencyReply) {
+    return { spoken: stripAgencyTaskMarkers(rawText), task: null, created: false };
+  }
+  const accepted = d.butlerKernel.consumeAgencyReply(rawText, {
+    source: 'agency',
+    turnId,
+  });
+  const task = accepted.task;
+  if (task && accepted.created) {
+    try {
+      const planned = await d.butlerKernel.planTask(task.id, { allowStrong: false });
+      if (planned?.task?.status === 'ready' && planned.plan?.source === 'heuristic') {
+        await d.butlerKernel.runPlan(task.id, { source: 'agency' });
+      } else if (!planned && ['proposed', 'waiting_confirmation'].includes(
+        d.butlerKernel.tasks.getTask(task.id)?.status || task.status,
+      )) {
+        d.butlerKernel.planTask(task.id, { allowStrong: true, source: 'background' }).catch((error) => {
+          d.butlerKernel.failPlanning?.(task.id, error, { followup: true });
+          d.agentDebugLog?.({
+            hypothesisId: 'butler-agency-background-plan',
+            location: 'brain/legacyChat',
+            message: error.message,
+            data: { taskId: task.id },
+          });
+        });
+      }
+    } catch (error) {
+      d.agentDebugLog?.({
+        hypothesisId: 'butler-agency-plan',
+        location: 'brain/legacyChat',
+        message: error.message,
+        data: { taskId: task.id },
+      });
+    }
+  }
+  return accepted;
+}
 let _deps = null;
 const chatTurnRegistry = new ChatTurnRegistry();
 
@@ -99,7 +139,8 @@ async function runChatTurn(req, res) {
       useLongTermMemory,
       hasTask: d.butlerKernel?.getActiveTasks?.().some((task) => task.description === userContent),
     });
-    if (fastConversation) maxTok = Math.min(maxTok, 96);
+    // kurisu 常先烧 thinking；96 会整轮空 content。快对话只压缩上下文，不砍生成长度。
+    if (fastConversation) maxTok = Math.min(Math.max(Number(maxTok) || 0, 320), 512);
     let autonomyDecision = null;
     let dialogueForOllama = [];
 
@@ -117,47 +158,40 @@ async function runChatTurn(req, res) {
     }
     systemContent = systemContent.trim();
 
-    // 所有明确委托先进入同一管家任务事实源。此处只登记和提供状态，
-    // 没有执行证据与验证结果时，模型不得声称任务已经完成。
+    // 用户原句只观察偏好/确认，不按词表进队。进行中的任务事实可注入；动手登记等她回复里的标记。
     if (!autonomyInitiative && d.butlerKernel) {
       const butlerObservation = d.butlerKernel.observeUserRequest({
         text: userContent,
         source: 'chat',
         turnId: lease.turnId,
       });
-      if (butlerObservation.task) {
-        let execution = null;
+      if (butlerObservation.action === 'confirmation_approved' && butlerObservation.task?.status === 'ready') {
         try {
-          if (butlerObservation.action === 'confirmation_approved' && butlerObservation.task.status === 'ready') {
-            execution = await d.butlerKernel.runPlan(butlerObservation.task.id, { source: 'chat' });
-          } else {
-            const planned = await d.butlerKernel.planTask(butlerObservation.task.id, { allowStrong: false });
-            if (planned?.task?.status === 'ready' && planned.plan?.source === 'heuristic') {
-              execution = await d.butlerKernel.runPlan(butlerObservation.task.id, { source: 'chat' });
-            } else if (!planned && ['proposed', 'waiting_confirmation'].includes(butlerObservation.task.status)) {
-            // 复杂任务在后台交给强执行脑规划，避免阻塞对话首字延迟。
-              d.butlerKernel.planTask(butlerObservation.task.id, { allowStrong: true, source: 'background' }).catch((error) => {
-                d.butlerKernel.failPlanning?.(butlerObservation.task.id, error, { followup: true });
-                d.agentDebugLog?.({
-                  hypothesisId: 'butler-background-plan',
-                  location: 'brain/legacyChat',
-                  message: error.message,
-                  data: { taskId: butlerObservation.task.id },
-                });
-              });
-            }
-          }
+          const execution = await d.butlerKernel.runPlan(butlerObservation.task.id, { source: 'chat' });
+          const taskBlock = d.butlerKernel.taskPromptBlock(butlerObservation.task.id, execution);
+          if (taskBlock) systemContent = `${systemContent}\n\n${taskBlock}`;
         } catch (error) {
           d.agentDebugLog?.({
-            hypothesisId: 'butler-immediate-plan',
+            hypothesisId: 'butler-confirm-run',
             location: 'brain/legacyChat',
             message: error.message,
             data: { taskId: butlerObservation.task.id },
           });
         }
-        const taskBlock = d.butlerKernel.taskPromptBlock(butlerObservation.task.id, execution);
-        if (taskBlock) systemContent = `${systemContent}\n\n${taskBlock}`;
+      } else if (butlerObservation.promptBlock) {
+        systemContent = `${systemContent}\n\n${butlerObservation.promptBlock}`;
+      } else {
+        const active = d.butlerKernel.getActiveTasks?.() || [];
+        if (active[0]) {
+          const taskBlock = d.butlerKernel.taskPromptBlock(active[0].id);
+          if (taskBlock) systemContent = `${systemContent}\n\n${taskBlock}`;
+        }
       }
+      systemContent = `${systemContent}\n\n${d.butlerAgencyHint || [
+        '【动手登记】只有当你决定亲自去办一件可用工具完成的现实事（开应用、找文件、设提醒、查系统等）时，在台词末尾另起一行写：',
+        '⟦AMADEUS_TASK{"title":"短标题","description":"要办的事"}⟧',
+        '社交请求、给他派任务玩、闲聊、安慰、抬杠：不要写这一行。没有这一行就不会启动执行。台词里不要念出标记本身。',
+      ].join('\n')}`;
     }
 
     if (!userContent) {
@@ -681,7 +715,8 @@ async function runChatTurn(req, res) {
         relHigh,
         recentEvents: d.memorySystem.events.slice(-6),
       }),
-      expressionVariantBlock: buildExpressionVariantBlock(s.currentPAD, d.innerStateSix, { relHigh }),
+      expressionVariantBlock: '',
+      emotionalBandwidthBlock: '',
       behaviorContextLine: d.behaviorIngest.toPromptLine(),
       clientContextBlock,
       ragCtx: useLongTermMemory && ragCtx ? `【背景知识】\n${ragCtx}` : '',
@@ -691,6 +726,20 @@ async function runChatTurn(req, res) {
       strategyContext: useLongTermMemory ? st.strategyCtx : '',
       goalInjection: useLongTermMemory ? st.goalInjection : '',
     };
+
+    const affect = (d.emotionalBandwidth || new EmotionalBandwidthEngine()).resolve({
+      userText: cognitiveInput,
+      pad: s.currentPAD,
+      relScore,
+      relHigh,
+    });
+    behaviorContext.emotionalBandwidthBlock = affect.block || '';
+    behaviorContext._affectBand = affect.band || '';
+    behaviorContext.expressionVariantBlock = buildExpressionVariantBlock(
+      s.currentPAD,
+      d.innerStateSix,
+      { relHigh, affectBand: affect.band || '' },
+    );
 
     behaviorContext.recentUserLines = recentUserLinesForMem.slice(-8);
     behaviorContext.partnerIsOkabe = partnerIsOkabe(whoamiRecord);
@@ -860,13 +909,60 @@ async function runChatTurn(req, res) {
 
     // 非流式（/api/chat 返回 message.content；/api/generate 才是 response）
     if (!useStream) {
-      const ollamaPayload = await ollamaRes.json();
-      const raw = (ollamaPayload.message && ollamaPayload.message.content)
-        || ollamaPayload.response
-        || ollamaPayload.choices?.[0]?.message?.content
-        || '';
+      const extractChatText = (payload) => {
+        const msg = payload?.message || {};
+        return String(
+          msg.content
+          || payload?.response
+          || payload?.choices?.[0]?.message?.content
+          || ''
+        );
+      };
+      let ollamaPayload = await ollamaRes.json();
+      let raw = extractChatText(ollamaPayload);
       let content = d.stripModelThinkingAll(raw);
+      // content 空但 thinking 里有正文时再剥一次；仍空则加长重试一轮
+      if (!String(content || '').trim()) {
+        const thinkingBits = [ollamaPayload?.message?.thinking, ollamaPayload?.thinking]
+          .filter(Boolean).join('\n');
+        if (thinkingBits) content = d.stripModelThinkingAll(thinkingBits);
+      }
+      if (!String(content || '').trim() && Number(ollamaOptions.num_predict) < 512) {
+        console.warn('[chat] empty content after first pass, retry with higher num_predict');
+        const retryOpts = { ...ollamaOptions, num_predict: 512 };
+        const promptForModel = fitSystemForDialogue(fullPrompt, dialogueForOllama, maxPromptChars);
+        const ollamaMessages = continuityMessages?.length
+          ? continuityMessages
+          : buildOllamaMessages(promptForModel, dialogueForOllama, maxPromptChars);
+        const retryRes = await fetch(`${d.OLLAMA_BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: ollamaMessages,
+            stream: false,
+            think: false,
+            options: retryOpts,
+            keep_alive: keepAlive,
+          }),
+          signal: lease.signal,
+        });
+        if (retryRes.ok) {
+          ollamaPayload = await retryRes.json();
+          raw = extractChatText(ollamaPayload);
+          content = d.stripModelThinkingAll(raw);
+          if (!String(content || '').trim()) {
+            const thinkingBits = [ollamaPayload?.message?.thinking, ollamaPayload?.thinking]
+              .filter(Boolean).join('\n');
+            if (thinkingBits) content = d.stripModelThinkingAll(thinkingBits);
+          }
+        }
+      }
       content = stripChatMarkdown(content);
+      {
+        const accepted = await _acceptAgencyTaskFromReply(d, content, { turnId: lease.turnId });
+        content = accepted.spoken || content;
+      }
       const userCorpus = recentUserLinesForMem.join('\n');
       content = stripOrphanClosingSentence(content, userContent, userCorpus);
       const oocOpts = autonomyInitiative
@@ -886,8 +982,12 @@ async function runChatTurn(req, res) {
        });
        const out = polished.chinese || content;
        if (!lease.isCurrent()) return;
+       if (out && behaviorContext._affectBand && d.emotionalBandwidth?.registerSpoken) {
+         d.emotionalBandwidth.registerSpoken(behaviorContext._affectBand);
+       }
        const sent = res.json({
          response: out,
+         affectBand: behaviorContext._affectBand || null,
          choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content: out}}],
        });
        lease.complete();
@@ -911,8 +1011,54 @@ async function runChatTurn(req, res) {
       streamFinalizePromise = (async () => {
         if (replyUpdated) return;
         replyUpdated = true;
+        // 流式首轮空正文：常见于 thinking 吃光 num_predict；非流式加长重试一次
+        if (!String(fullResponse || '').trim() && lease.isCurrent() && !res.writableEnded) {
+          try {
+            console.warn('[chat] empty stream content, retry non-stream with higher num_predict');
+            const promptForModel = fitSystemForDialogue(fullPrompt, dialogueForOllama, maxPromptChars);
+            const ollamaMessages = continuityMessages?.length
+              ? continuityMessages
+              : buildOllamaMessages(promptForModel, dialogueForOllama, maxPromptChars);
+            const retryRes = await fetch(`${d.OLLAMA_BASE}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model,
+                messages: ollamaMessages,
+                stream: false,
+                think: false,
+                options: { ...ollamaOptions, num_predict: Math.max(512, Number(ollamaOptions.num_predict) || 0) },
+                keep_alive: keepAlive,
+              }),
+              signal: lease.signal,
+            });
+            if (retryRes.ok) {
+              const payload = await retryRes.json();
+              let recovered = d.stripModelThinkingAll(
+                payload?.message?.content || payload?.response || ''
+              );
+              if (!recovered) {
+                recovered = d.stripModelThinkingAll(
+                  [payload?.message?.thinking, payload?.thinking].filter(Boolean).join('\n')
+                );
+              }
+              recovered = stripChatMarkdown(recovered);
+              if (recovered) {
+                fullResponse = recovered;
+                res.write(`data: ${JSON.stringify({ text: recovered })}\n\n`);
+              }
+            }
+          } catch (e) {
+            console.warn('[chat] empty-stream retry failed:', e.message);
+          }
+        }
         const userCorpus = recentUserLinesForMem.join('\n');
-        const cleaned = stripRoleplayActions(stripChatMarkdown(d.stripModelThinkingAll(fullResponse)));
+        const cleanedRaw = stripRoleplayActions(stripChatMarkdown(d.stripModelThinkingAll(fullResponse)));
+        let cleaned = cleanedRaw;
+        {
+          const accepted = await _acceptAgencyTaskFromReply(d, cleanedRaw, { turnId: lease.turnId });
+          cleaned = accepted.spoken || cleanedRaw;
+        }
         let trimmed = stripOrphanClosingSentence(cleaned, userContent, userCorpus);
         const oocOpts = autonomyInitiative
           ? { autonomy: true, userAnchor: lastRealUserLine }
@@ -931,6 +1077,9 @@ async function runChatTurn(req, res) {
             conversationId: lease.conversationId,
             turnId: lease.turnId,
           });
+          if (canonicalStreamText && behaviorContext._affectBand && d.emotionalBandwidth?.registerSpoken) {
+            d.emotionalBandwidth.registerSpoken(behaviorContext._affectBand);
+          }
           if (lease.isCurrent() && !res.writableEnded) {
             res.write('data: [DONE]\n\n');
             res.end();
@@ -960,6 +1109,9 @@ async function runChatTurn(req, res) {
           const finalCn = polished.chinese || oocFixed;
           const finalJp = polished.japanese || '';
           if (finalCn) fullResponse = finalCn;
+          if (finalCn && behaviorContext._affectBand && d.emotionalBandwidth?.registerSpoken) {
+            d.emotionalBandwidth.registerSpoken(behaviorContext._affectBand);
+          }
           const shouldReplace = (finalCn.length > 0)
             && (shouldReplaceStreamText(cleaned, finalCn)
               || finalCn !== cleaned

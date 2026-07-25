@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const {
   detectReplyingToHerThread,
   buildProactiveReplyFocus,
+  replyLooksLikeAutonomyFabrication,
 } = require('../cognitive/turnContinuity');
 const { stripOrphanClosingSentence } = require('../cognitive/replyAlign');
 
@@ -29,4 +30,19 @@ test('stripOrphanClosingSentence keeps short two-sentence IM replies', () => {
   const raw = '行啊。那你说说看。';
   const out = stripOrphanClosingSentence(raw, '随便', '');
   assert.equal(out, raw);
+});
+
+test('autonomy fabrication catches invented phone-call presence', () => {
+  assert.equal(
+    replyLooksLikeAutonomyFabrication(
+      '好无聊好无聊',
+      '你们明明还没有打电话过来，还是刚刚才注意到吧？',
+      { alreadyTalking: true },
+    ),
+    true,
+  );
+  assert.equal(
+    replyLooksLikeAutonomyFabrication('好无聊', '无聊就找点事做，别光打字。'),
+    false,
+  );
 });

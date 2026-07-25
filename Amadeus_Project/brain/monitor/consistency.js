@@ -31,12 +31,22 @@ function checkOoc(userText, reply, opts = {}) {
     });
   }
 
+  if (/刚才那句不算|我重新说|说重点。?$|听着呢。?$|又是[这那]个话题吗|停止指定话题/.test(reply)) {
+    violations.push({
+      id: 'consistency.product_meta',
+      severity: 'block',
+      rewriteHint: '禁止产品元话语与语气词池；只说有思考的当场对白。',
+    });
+  }
+
   if (opts.autonomy && typeof turnContinuity.replyLooksLikeAutonomyFabrication === 'function') {
-    if (turnContinuity.replyLooksLikeAutonomyFabrication(opts.userAnchor || userText, reply)) {
+    if (turnContinuity.replyLooksLikeAutonomyFabrication(opts.userAnchor || userText, reply, {
+      alreadyTalking: opts.alreadyTalking === true || !!String(opts.userAnchor || '').trim(),
+    })) {
       violations.push({
         id: 'consistency.autonomy_fabrication',
         severity: 'block',
-        rewriteHint: '主动轮禁止编造实验/论文；像随口想起才发一句。',
+        rewriteHint: '主动轮禁止编造实验/电话/刚注意到；情景必须符合当前窗口。',
       });
     }
   }

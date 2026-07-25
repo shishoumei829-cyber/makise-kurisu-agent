@@ -73,10 +73,12 @@ class ExpressionMapper {
   }
 
   _ttsFromPreset(presetId, pad) {
+    if (presetId === 'shocked' || (pad.A > 0.7 && pad.D < 0)) return 'excited';
     if (presetId === 'shy' || (pad.D < -0.25 && pad.A > 0.2)) return 'shy';
     if (presetId === 'cold' || pad.P < -0.35) return 'cold';
     if (presetId === 'excited' || pad.A > 0.55) return 'excited';
     if (presetId === 'sad') return 'sad';
+    if (presetId === 'warm' && pad.S > 0.55) return 'shy';
     return 'default';
   }
 

@@ -10,10 +10,8 @@ const { GlobalWorkspace } = require('./workspace');
 function isMonitorEnabled() {
   if (process.env.AMADEUS_BRAIN_MONITOR === '0') return false;
   if (process.env.AMADEUS_BRAIN_MONITOR === '1') return true;
-  if (String(process.env.AMADEUS_BRAIN || '0').trim() === '1') return true;
-  // 意识层默认开启 Monitor（与意识工程配套）
-  if (process.env.AMADEUS_BRAIN_CONSCIOUSNESS !== '0') return true;
-  return false;
+  // 仅 AMADEUS_BRAIN=1 时默认开；禁止因意识层误开后注入模板句
+  return String(process.env.AMADEUS_BRAIN || '0').trim() === '1';
 }
 
 function isPromptSlimEnabled() {
@@ -139,33 +137,44 @@ function createBrainPipeline(deps) {
         selfModel: _turnCtx?.selfSnapshot || brainSelfModel?.snapshot?.(),
       };
 
+      // 默认只旁观、不重写：她说的话就是她的话（AMADEUS_BRAIN_MONITOR_REWRITE=1 才启用改写）
+      const rewriteEnabled = ['1', 'true', 'yes', 'on'].includes(
+        String(process.env.AMADEUS_BRAIN_MONITOR_REWRITE || '0').trim().toLowerCase(),
+      );
+
       let current = text;
       let delib = _turnCtx?.deliberation || { constraints: [] };
       let monitorResult = monitor.check(current, ctx);
       let rewrites = 0;
       let delibLlmUsed = false;
 
-      while (!monitorResult.pass && rewrites < 2) {
-        delib = deliberation.reviseFromMonitor(delib, monitorResult);
-        current = deliberation.localReviseDraft(current, monitorResult);
+      if (!rewriteEnabled) {
+        if (!monitorResult.pass) {
+          console.warn('[brain/monitor] advisory only; keep model original');
+        }
+      } else {
+        while (!monitorResult.pass && rewrites < 2) {
+          delib = deliberation.reviseFromMonitor(delib, monitorResult);
+          current = deliberation.localReviseDraft(current, monitorResult);
 
-        if (!monitor.check(current, ctx).pass && deliberationLlm.shouldUseDelibLlm(monitorResult)) {
-          current = await deliberationLlm.rewriteDraft(current, {
-            userText: ctx.userText,
-            monitorResult,
-            deliberation: delib,
-            consciousness: _turnCtx?.consciousness,
-          }, deps);
-          delibLlmUsed = true;
+          if (!monitor.check(current, ctx).pass && deliberationLlm.shouldUseDelibLlm(monitorResult)) {
+            current = await deliberationLlm.rewriteDraft(current, {
+              userText: ctx.userText,
+              monitorResult,
+              deliberation: delib,
+              consciousness: _turnCtx?.consciousness,
+            }, deps);
+            delibLlmUsed = true;
+          }
+
+          monitorResult = monitor.check(current, ctx);
+          rewrites += 1;
         }
 
-        monitorResult = monitor.check(current, ctx);
-        rewrites += 1;
-      }
-
-      if (!monitorResult.pass) {
-        current = deliberation.localReviseDraft(current, monitorResult) || '……刚才那句不算，我重新说。';
-        monitorResult = monitor.check(current, ctx);
+        if (!monitorResult.pass) {
+          console.warn('[brain/monitor] keep model original; no template fallback');
+          current = text;
+        }
       }
 
       const oocRepaired = applyLegacyOocRepair(opts.streamedRaw || '', current, ctx.userText, ctx.oocOpts);
