@@ -88,10 +88,20 @@ test('bored chat can produce a lightweight poke instead of a task', () => {
   assert.equal(out.action, 'poke');
   assert.ok(out.delivery.bubbleCount >= 1 && out.delivery.bubbleCount <= 3);
   assert.equal(out.delivery.allowNonSemantic, true);
-  assert.ok(out.delivery.maxCharsPerBubble <= 24);
+  assert.ok(out.delivery.maxCharsPerBubble >= 24);
 });
 
-test('initiative reevaluation happens in seconds rather than a long countdown', () => {
+test('thin exchange without strong motive can stay silent', () => {
+  const out = engine().decide({
+    userText: '嗯',
+    replyText: '嗯。',
+    phase: 'floor_release',
+    relScore: 0,
+  });
+  assert.equal(out.shouldSpeak, false);
+});
+
+test('bored chat speaks from motive not entropy dice', () => {
   const out = engine().decide({
     userText: '好无聊啊',
     replyText: '我知道。',
@@ -99,8 +109,8 @@ test('initiative reevaluation happens in seconds rather than a long countdown', 
     entropy: 0.99,
     relScore: 0.5,
   });
-  assert.equal(out.shouldSpeak, false);
-  assert.ok(out.reevaluateAfterMs >= 2200 && out.reevaluateAfterMs <= 7000);
+  assert.equal(out.shouldSpeak, true);
+  assert.equal(out.action, 'poke');
 });
 
 test('idle initiative uses an adaptive state machine and learns from replies', () => {
@@ -181,6 +191,23 @@ test('presence phase respects a short notice cooldown', () => {
   });
   assert.equal(held.shouldSpeak, false);
   assert.equal(held.reason, 'presence_cooldown');
+});
+
+test('already chatting can still poke, but as copresence not first-notice', () => {
+  const e = engine();
+  e.markSessionStart(100000);
+  const out = e.decidePresence({
+    now: 160000,
+    facePresent: true,
+    proactiveQuotaOk: true,
+    entropy: 0,
+    alreadyTalking: true,
+    lastUserText: '好无聊好无聊',
+  });
+  assert.equal(out.shouldSpeak, true);
+  assert.equal(out.phase, 'copresence');
+  assert.match(out.reason, /同一窗口|不是第一次/);
+  assert.equal(out.useAnchor, true);
 });
 
 test('coldness phase can poke or tease after short replies', () => {

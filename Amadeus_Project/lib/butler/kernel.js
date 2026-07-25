@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 const { ButlerEventJournal } = require('./eventJournal');
 const { ButlerTaskStore } = require('./taskStore');
-const { extractUserText, classifyButlerIntent } = require('./intent');
+const { extractUserText, inferTaskMeta, parseAgencyTaskProposal } = require('./intent');
 const { ButlerPlanner } = require('./planner');
 const { ReminderStore } = require('./reminderStore');
 const { registerLocalCapabilities } = require('./localCapabilities');
@@ -325,16 +325,34 @@ class ButlerKernel {
   failPlanning(taskId, error, options = {}) {
     let task = this.tasks.getTask(taskId);
     if (!task) return null;
-    const reason = `执行脑规划失败：${String(error?.message || error || 'unknown error').slice(0, 600)}`;
+    const detail = String(error?.message || error || 'unknown error').slice(0, 600);
+    const reason = this._friendlyPlannerFailure(detail);
     if (task.status === 'proposed') task = this.tasks.transition(taskId, 'planned', { actor: 'planner' });
     if (['planned', 'waiting_confirmation'].includes(task.status)) {
       task = this.tasks.transition(taskId, 'blocked', {
         actor: 'planner', blockedReason: reason, nextAction: '检查执行脑连接后重新规划',
       });
     }
-    this.journal.append('planning.failed', { taskId, reason }, { actor: 'planner', correlationId: taskId });
+    this.journal.append('planning.failed', { taskId, reason, detail }, { actor: 'planner', correlationId: taskId });
     if (options.followup !== false) this._queueFollowup(task, 'blocked');
     return task;
+  }
+
+  _friendlyPlannerFailure(detail) {
+    const raw = String(detail || '');
+    if (/deepseek-chat|deepseek-reasoner|supported API model/i.test(raw)) {
+      return '执行脑模型名已过期，改成 deepseek-v4-flash 或 deepseek-v4-pro 后再试。';
+    }
+    if (/401|403|Unauthorized|invalid.?api.?key|api.?key/i.test(raw)) {
+      return '执行脑鉴权失败，检查 API Key。';
+    }
+    if (/timeout|ETIMEDOUT|AbortError|aborted/i.test(raw)) {
+      return '执行脑超时了，稍后再试一次。';
+    }
+    if (/planner \d{3}|fetch failed|ECONNREFUSED|ENOTFOUND/i.test(raw)) {
+      return '执行脑暂时连不上，稍后再试。';
+    }
+    return `执行脑规划失败：${raw.slice(0, 120)}`;
   }
 
   updatesSince(since = 0, limit = 30) {
@@ -498,7 +516,15 @@ class ButlerKernel {
 
   observeUserRequest(input = {}) {
     const text = extractUserText(input.body || input.text || input);
-    if (!text) return { text: '', intent: classifyButlerIntent(''), task: null, created: false, promptBlock: '' };
+    if (!text) {
+      return {
+        text: '',
+        intent: { actionable: false, category: 'empty', confidence: 1, risk: 'low' },
+        task: null,
+        created: false,
+        promptBlock: '',
+      };
+    }
     const source = input.source || 'chat';
     const requestKey = String(input.turnId || input.requestKey || '').trim();
     const event = this.journal.append('user.request_observed', { text }, {
@@ -521,30 +547,85 @@ class ButlerKernel {
         return { event, text, intent: { actionable: true, category: 'confirmation' }, task, created: false, action: 'confirmation_approved', promptBlock: this.taskPromptBlock(task) };
       }
     }
-    const intent = classifyButlerIntent(text);
-    let task = null;
-    let created = false;
-    if (intent.actionable) {
-      const result = this.tasks.createTask({
-        title: intent.title,
-        description: text,
-        type: intent.category,
-        risk: intent.risk,
-        requiresConfirmation: intent.requiresConfirmation,
-        source,
-        requestKey,
-        nextAction: '等待执行脑生成可验证计划',
-      });
-      task = result.task;
-      created = result.created;
-    }
+
+    // 用户原句不再按词表自动建任务。进队只走 proposeTask / 回复里的 agency 标记。
     return {
       event,
       text,
-      intent,
-      task,
-      created,
-      promptBlock: task ? this.taskPromptBlock(task) : '',
+      intent: { actionable: false, category: 'conversation', confidence: 1, risk: 'low', gatedBy: 'agency_only' },
+      task: null,
+      created: false,
+      promptBlock: '',
+    };
+  }
+
+  /**
+   * 红莉栖（或显式 API）决定动手后登记任务。
+   * 这是进队的唯一常规入口；不扫描用户原句礼貌词。
+   */
+  proposeTask(input = {}) {
+    const description = String(input.description || input.text || input.title || '').trim();
+    if (!description) {
+      return {
+        task: null,
+        created: false,
+        intent: { actionable: false, category: 'empty', confidence: 1, risk: 'low' },
+      };
+    }
+    const meta = inferTaskMeta(description);
+    const risk = ['low', 'medium', 'high'].includes(String(input.risk || '').toLowerCase())
+      ? String(input.risk).toLowerCase()
+      : meta.risk;
+    const category = String(input.category || input.type || meta.category || 'general').trim() || 'general';
+    const source = input.source || 'agency';
+    const requestKey = String(input.turnId || input.requestKey || '').trim();
+    const result = this.tasks.createTask({
+      title: String(input.title || description).trim().slice(0, 180),
+      description,
+      type: category,
+      risk,
+      requiresConfirmation: input.requiresConfirmation === true || risk === 'high',
+      source,
+      requestKey,
+      nextAction: '等待执行脑生成可验证计划',
+    });
+    this.journal.append('agency.task_proposed', {
+      taskId: result.task.id,
+      title: result.task.title,
+      source,
+    }, { actor: source === 'api' ? 'api' : 'kurisu', source, correlationId: requestKey || result.task.id });
+    return {
+      task: result.task,
+      created: result.created,
+      intent: {
+        actionable: true,
+        category,
+        confidence: 1,
+        risk,
+        requiresConfirmation: result.task.requiresConfirmation,
+        title: result.task.title,
+        gatedBy: 'agency',
+      },
+      promptBlock: this.taskPromptBlock(result.task.id),
+    };
+  }
+
+  /** 从她的完整回复里提取动手标记、登记任务，并返回可展示台词。 */
+  consumeAgencyReply(rawText, options = {}) {
+    const { proposal, spoken } = parseAgencyTaskProposal(rawText);
+    if (!proposal) return { spoken, task: null, created: false, proposal: null };
+    const accepted = this.proposeTask({
+      ...proposal,
+      source: options.source || 'agency',
+      turnId: options.turnId,
+      requestKey: options.requestKey,
+    });
+    return {
+      spoken,
+      proposal,
+      task: accepted.task,
+      created: accepted.created,
+      promptBlock: accepted.promptBlock,
     };
   }
 

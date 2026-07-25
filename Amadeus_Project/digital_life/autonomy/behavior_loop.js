@@ -1,9 +1,11 @@
 'use strict';
 
 const { AUTONOMY_ACTIONS } = require('./constants');
+const { shouldSpeakNow, readSocialField } = require('../../cognitive/socialRead');
 
 /**
- * 自主行为环：把内驱力冲动转化为可执行意图（开口/等待/内化），并产出目标种子
+ * 自主行为环：把内驱冲动变成「要不要开口」。
+ * 时机看读场，不看随机骰和「空闲满 N 分钟」硬门。
  */
 class AutonomousBehaviorLoop {
   constructor(driveDynamics, curiosity, creativity) {
@@ -29,13 +31,21 @@ class AutonomousBehaviorLoop {
       proactiveQuotaOk = true,
       sheSpokeRecently = false,
       dreamCarryover = null,
+      facePresent = false,
+      social: socialIn = null,
     } = ctx;
 
     const idleMin = idleMs / 60000;
     const urges = this.drive.getActiveUrges();
     const primary = urges[0] || null;
     const energy = this.drive.internalState.energy;
-    const social = this.drive.internalState.socialBattery;
+    const socialBattery = this.drive.internalState.socialBattery;
+    const social = socialIn || readSocialField({
+      ...ctx,
+      facePresent,
+      idleMs,
+      dnd,
+    });
 
     let action = AUTONOMY_ACTIONS.WAIT;
     let shouldAct = false;
@@ -48,7 +58,7 @@ class AutonomousBehaviorLoop {
       shouldAct = true;
       speakHint = `梦境残念：${dreamCarryover.hint || dreamCarryover.mood || '有话想说'}`;
       this._logDecision({ action, reason: 'dream_carryover', primary: null });
-      return this._pack(action, shouldAct, speakHint, false, goalSeeds, null);
+      return this._pack(action, shouldAct, speakHint, false, goalSeeds, null, social);
     }
 
     if (userPresenceActive || dnd) {
@@ -56,33 +66,32 @@ class AutonomousBehaviorLoop {
       suppressProactive = true;
       speakHint = '他之前说过别打扰——冲动在，但行为要克制';
       this._logDecision({ action, reason: 'presence_dnd', primary });
-      return this._pack(action, shouldAct, speakHint, suppressProactive, goalSeeds, primary);
+      return this._pack(action, shouldAct, speakHint, suppressProactive, goalSeeds, primary, social);
     }
 
-    if (!proactiveQuotaOk || sheSpokeRecently) {
+    // 配额不再挡；刚说过话才先内化（留一口气）
+    void proactiveQuotaOk;
+    if (sheSpokeRecently) {
       action = AUTONOMY_ACTIONS.REFLECT;
-      speakHint = '刚说过话或配额用尽——先内化';
-      this._logDecision({ action, reason: 'quota_or_gap', primary });
-      return this._pack(action, shouldAct, speakHint, true, goalSeeds, primary);
+      speakHint = '刚说过话——先喘口气';
+      this._logDecision({ action, reason: 'just_spoke', primary });
+      return this._pack(action, shouldAct, speakHint, true, goalSeeds, primary, social);
     }
 
-    if (energy < 0.28 || social < 0.18) {
+    if (energy < 0.28 || socialBattery < 0.18) {
       action = AUTONOMY_ACTIONS.REFLECT;
       speakHint = '社交余量或能量偏低，更想安静';
       this._logDecision({ action, reason: 'low_energy', primary });
-      return this._pack(action, false, speakHint, true, goalSeeds, primary);
+      return this._pack(action, false, speakHint, true, goalSeeds, primary, social);
     }
 
     if (!primary) {
-      if (idleMin > 40 && relScore > 0.3 && energy > 0.4) {
-        action = AUTONOMY_ACTIONS.SPEAK;
-        shouldAct = Math.random() < 0.35;
-        speakHint = '没有强冲动，但很久没聊——可能轻轻敲一句';
-      } else {
-        action = AUTONOMY_ACTIONS.WAIT;
-      }
-      this._logDecision({ action, reason: 'no_urge', primary });
-      return this._pack(action, shouldAct, speakHint, !shouldAct, goalSeeds, primary);
+      action = AUTONOMY_ACTIONS.WAIT;
+      speakHint = facePresent
+        ? '人在旁边，但心里还没攒够想说的话——可以只是坐着'
+        : '没有强冲动，先待着';
+      this._logDecision({ action, reason: 'no_urge', primary, social });
+      return this._pack(action, false, speakHint, true, goalSeeds, null, social);
     }
 
     const intent = primary.intentKey || primary.intent;
@@ -93,15 +102,45 @@ class AutonomousBehaviorLoop {
       shouldAct = false;
       speakHint = primary.promptHint;
       suppressProactive = intensity > 0.55;
-    } else if (intent === 'REACH_OUT') {
-      const threshold = Math.max(0.35, 0.55 - relScore * 0.15 - Math.min(idleMin / 120, 0.2));
-      shouldAct = isAutonomyTick && idleMin >= 12 && intensity >= threshold;
-      action = shouldAct ? AUTONOMY_ACTIONS.SPEAK : AUTONOMY_ACTIONS.WAIT;
-      speakHint = primary.promptHint;
-    } else if (intent === 'ASK_QUESTION' || intent === 'EXPLORE_TOPIC') {
-      shouldAct = isAutonomyTick && intensity > 0.5 && idleMin >= 15 && Math.random() < 0.45 + intensity * 0.2;
-      action = shouldAct ? AUTONOMY_ACTIONS.SPEAK : AUTONOMY_ACTIONS.REFLECT;
-      speakHint = primary.promptHint;
+      this._logDecision({ action, reason: 'hold_back', intent, intensity });
+      return this._pack(action, shouldAct, speakHint, suppressProactive, goalSeeds, primary, social);
+    }
+
+    if (pad.P < -0.35 && intent !== 'REACH_OUT') {
+      this._logDecision({ action: AUTONOMY_ACTIONS.REFLECT, reason: 'low_mood', intent, intensity });
+      return this._pack(
+        AUTONOMY_ACTIONS.REFLECT,
+        false,
+        '情绪低落——冲动在，但不想开口',
+        true,
+        goalSeeds,
+        primary,
+        social,
+      );
+    }
+
+    const gate = shouldSpeakNow(intensity, social, { relScore });
+    if (!isAutonomyTick || !gate.ok) {
+      action = AUTONOMY_ACTIONS.WAIT;
+      speakHint = gate.reason === 'urge_not_ripe'
+        ? `想说，但还没到时候（冲动 ${(intensity * 100).toFixed(0)}% / 需要 ${(gate.need * 100).toFixed(0)}%）`
+        : primary.promptHint;
+      this._logDecision({
+        action,
+        reason: gate.reason || 'not_now',
+        intent,
+        intensity,
+        need: gate.need,
+        social,
+      });
+      return this._pack(action, false, speakHint, false, goalSeeds, primary, social);
+    }
+
+    shouldAct = true;
+    action = AUTONOMY_ACTIONS.SPEAK;
+    speakHint = primary.promptHint;
+
+    if (intent === 'ASK_QUESTION' || intent === 'EXPLORE_TOPIC') {
       goalSeeds.push(this._goalFromUrge(primary, '好奇驱动'));
     } else if (intent === 'CREATE_IDEA') {
       const idea = this.creativity.generateIdea({
@@ -109,8 +148,6 @@ class AutonomousBehaviorLoop {
         driveIntent: intent,
         lastEvent: primary.target,
       });
-      shouldAct = isAutonomyTick && pad.A > 0.35 && intensity > 0.48 && Math.random() < 0.4;
-      action = shouldAct ? AUTONOMY_ACTIONS.SPEAK : AUTONOMY_ACTIONS.REFLECT;
       speakHint = `创造冲动：${idea.slice(0, 80)}`;
       goalSeeds.push({
         id: 'CREATIVE_IMPULSE',
@@ -118,30 +155,21 @@ class AutonomousBehaviorLoop {
         priority: intensity,
         prompt_injection: speakHint,
       });
-    } else if (intent === 'DEEPEN_BOND' || intent === 'SELF_EXPRESSION') {
-      shouldAct = isAutonomyTick && relScore > 0.25 && idleMin >= 18 && intensity > 0.45;
-      shouldAct = shouldAct && Math.random() < 0.35 + relScore * 0.25;
-      action = shouldAct ? AUTONOMY_ACTIONS.SPEAK : AUTONOMY_ACTIONS.WAIT;
-      speakHint = primary.promptHint;
+    } else if (intent === 'DEEPEN_BOND' || intent === 'SELF_EXPRESSION' || intent === 'REACH_OUT') {
       goalSeeds.push(this._goalFromUrge(primary, '关系驱动'));
-    } else if (intent === 'DEFEND_SELF' || intent === 'PLAYFUL_JAB') {
-      shouldAct = isAutonomyTick && intensity > 0.52 && Math.random() < 0.25;
-      action = shouldAct ? AUTONOMY_ACTIONS.SPEAK : AUTONOMY_ACTIONS.WAIT;
-      speakHint = primary.promptHint;
-    } else {
-      shouldAct = isAutonomyTick && intensity > 0.5 && idleMin >= 20 && Math.random() < 0.3;
-      action = shouldAct ? AUTONOMY_ACTIONS.SPEAK : AUTONOMY_ACTIONS.WAIT;
-      speakHint = primary.promptHint;
     }
 
-    if (pad.P < -0.35 && intent !== 'REACH_OUT') {
-      shouldAct = false;
-      action = AUTONOMY_ACTIONS.REFLECT;
-      speakHint = '情绪低落——冲动在，但不想开口';
-    }
-
-    this._logDecision({ action, shouldAct, intent, intensity, idleMin });
-    return this._pack(action, shouldAct, speakHint, suppressProactive, goalSeeds, primary);
+    this._logDecision({
+      action,
+      shouldAct,
+      reason: gate.reason,
+      intent,
+      intensity,
+      need: gate.need,
+      idleMin,
+      social,
+    });
+    return this._pack(action, shouldAct, speakHint, suppressProactive, goalSeeds, primary, social);
   }
 
   _goalFromUrge(urge, labelPrefix) {
@@ -155,7 +183,7 @@ class AutonomousBehaviorLoop {
     };
   }
 
-  _pack(action, shouldAct, speakHint, suppressProactive, goalSeeds, primaryUrge) {
+  _pack(action, shouldAct, speakHint, suppressProactive, goalSeeds, primaryUrge, social = null) {
     const decision = {
       action,
       shouldAct,
@@ -165,9 +193,12 @@ class AutonomousBehaviorLoop {
       primaryUrge: primaryUrge ? {
         drive: primaryUrge.drive,
         intent: primaryUrge.intent,
+        intentKey: primaryUrge.intentKey,
         intensity: primaryUrge.effectiveIntensity(),
         target: primaryUrge.target,
+        promptHint: primaryUrge.promptHint,
       } : null,
+      social,
       at: Date.now(),
     };
     this.lastDecision = decision;

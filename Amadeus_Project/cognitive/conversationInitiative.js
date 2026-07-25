@@ -3,11 +3,10 @@
 /**
  * 主动对话设计规范（人对人，不是定时器）：
  *
- * 1. 在场优先：打开窗口 / 看见你，她应「察觉到你」，并有概率先开口。
- *    两个人相见，总有一方先说话；不必等你先打字。
+ * 1. 坐在旁边：摄像头只回答「他还在不在」。要不要讲话、讲什么、什么时候讲，
+ *    由内驱冲动 × 读场时机决定——可以只是安静待着。
  * 2. 存在感：动机可以是搞笑、骚扰、开玩笑、发出一点动静——社交动作本身可以是目的。
  * 3. 人格不让位：动机可以轻，措辞必须是牧濑红莉栖（聪明、嘴硬、熟人拌嘴）。
- *    action 只描述「为什么想开口」，不规定台词模板，不把她锁成通用戳一戳。
  * 4. 冷感回拉：察觉冷漠、敷衍、沉默变僵时，换轻话题或闹一下，而不是继续查岗。
  * 5. 对话内跟话：仍有动机才叠话；任务句/告别/她刚反问时不抢。
  * 6. 勿扰仍尊重：明确忙碌/睡觉时闭嘴。
@@ -179,7 +178,8 @@ class ConversationInitiativeEngine {
     candidates.sort((a, b) => b.score - a.score);
     const selected = candidates[0];
     const holdScore = phase === 'floor_release' ? 0.5 : 0.4;
-    if (!selected || selected.score <= holdScore || entropy > selected.probability + (phase === 'silence' ? 0.16 : 0)) {
+    // 有动机就说：不再用 entropy 骰子挡掉——沉默只因动机不够或对话边界
+    if (!selected || selected.score <= holdScore) {
       const salient = Boolean(features.vulnerable || features.personal || features.unfinished || features.opinion || features.playful || features.bored || features.cold);
       const reevaluateAfterMs = phase === 'floor_release' && salient
         ? 2000 + Math.floor(stableEntropy(turnId) * 3600)
@@ -191,13 +191,15 @@ class ConversationInitiativeEngine {
       turnId,
       phase,
       score: selected.score,
-      entropy: stableEntropy(`${turnId}${selected.action}delivery`),
+      entropy: 0.4,
     });
   }
 
   /**
-   * 察觉在场：开机见面 / 人脸出现。
-   * 这是「两个人相见，总有人先开口」的主入口。
+   * 在场感开口。
+   * - 尚未开聊：可以是「先打个照面」
+   * - 已经在聊：仍然可以主动插话（不必你一句我一句），但情景必须是「已在同一窗口」，
+   *   绝不能演「刚刚才注意到 / 电话还没打过来」——那才是不合理，不是她不该存在。
    */
   decidePresence(input = {}) {
     const now = Number(input.now) || Date.now();
@@ -208,38 +210,138 @@ class ConversationInitiativeEngine {
     const sinceNotice = now - Number(this.state.lastPresenceNoticeAt || 0);
     const sinceSpoken = now - Number(this.state.lastSpokenAt || 0);
     const sessionAge = now - Number(this.state.sessionStartedAt || now);
-    if (dnd || quotaBlocked) {
-      return { shouldSpeak: false, action: ACTIONS.HOLD, reason: dnd ? 'presence_or_dnd' : 'quota', nextCheckMs: 60000 };
+    const alreadyTalking = input.alreadyTalking === true || input.dialogueStarted === true;
+    const lastUser = String(input.lastUserText || input.userText || '').trim();
+    const senseDriven = input.senseDriven === true || input.eventDriven === true;
+    const facePresent = input.facePresent === true;
+    if (dnd) {
+      return { shouldSpeak: false, action: ACTIONS.HOLD, reason: 'presence_or_dnd', nextCheckMs: 60000 };
     }
-    // 同一次「看见你」不要连发；但见面窗口内应明显比空闲勤
-    if (sinceNotice < 45000 || sinceSpoken < 16000) {
+    // 感知在场：没看见人就不开 presence（强制观察除外）
+    if (senseDriven && !facePresent && input.force !== true) {
+      return { shouldSpeak: false, action: ACTIONS.HOLD, reason: 'no_face', nextCheckMs: 4000 };
+    }
+    // 同一次冲动不要连发；已在聊时冷却略短
+    const noticeGap = alreadyTalking ? 28000 : 45000;
+    const speakGap = alreadyTalking ? 12000 : 16000;
+    if (sinceNotice < noticeGap || sinceSpoken < speakGap) {
       return {
         shouldSpeak: false,
         action: ACTIONS.HOLD,
         reason: 'presence_cooldown',
-        nextCheckMs: Math.max(8000, Math.min(40000, 45000 - sinceNotice)),
+        nextCheckMs: Math.max(8000, Math.min(40000, noticeGap - sinceNotice)),
       };
     }
 
-    const relScore = clamp(Number(input.relScore) || 0);
-    // 刚打开 / 刚被看见：开口概率要高，否则没有「她感觉到我」
-    const bootBoost = sessionAge < 3 * 60000 ? 0.22 : 0;
-    const faceBoost = input.facePresent === true ? 0.16 : 0.08;
-    const speakProbability = Math.min(0.92, 0.62 + bootBoost + faceBoost + relScore * 0.1 - Math.min(3, this.state.ignoredStreak) * 0.04);
-    if (entropy > speakProbability) {
-      return { shouldSpeak: false, action: ACTIONS.HOLD, reason: 'noticed_but_shy', nextCheckMs: 12000 + Math.floor(entropy * 20000) };
+    // 按内容选动机，不用骰子抽 bag；配额不再挡「想说」
+    void quotaBlocked;
+    void sessionAge;
+    void entropy;
+    let action = ACTIONS.POKE;
+    if (/无聊|没事干/.test(lastUser)) action = ACTIONS.TEASE;
+    else if (alreadyTalking && lastUser.length > 20) action = ACTIONS.SHARE;
+    else if (!alreadyTalking) action = ACTIONS.POKE;
+    this.state.lastPresenceNoticeAt = now;
+
+    if (alreadyTalking) {
+      return this._speak(now, action, lastUser
+        ? '你们已经在同一窗口里；她想再插一句/接一下场子，不是第一次发现他'
+        : '你们已经在同一窗口里；她想发出一点存在感，不是打电话也不是刚察觉', {
+        phase: 'copresence',
+        entropy: stableEntropy(`${now}${action}copresence`),
+        contextFresh: !!lastUser,
+        useAnchor: !!lastUser,
+        presence: true,
+      });
     }
 
-    const bag = [ACTIONS.POKE, ACTIONS.POKE, ACTIONS.TEASE, ACTIONS.SHARE, ACTIONS.POKE];
-    const action = bag[Math.min(bag.length - 1, Math.floor(entropy * bag.length))];
-    this.state.lastPresenceNoticeAt = now;
-    return this._speak(now, action, input.facePresent
-      ? '她察觉到你在场，想先发出一点存在感'
+    return this._speak(now, action, facePresent
+      ? '她正看着你，想先发出一点存在感'
       : '窗口打开了，她想先跟你打个照面', {
       phase: 'presence',
       entropy: stableEntropy(`${now}${action}presence`),
       contextFresh: false,
       useAnchor: false,
+      presence: true,
+    });
+  }
+
+  /**
+   * 共在开口：内驱已经想说 + 读场允许 → 决定 action/phase。
+   * 不再用「看见脸 / 看够 N 秒」当扳机。
+   */
+  decideBeside(input = {}) {
+    const now = Number(input.now) || Date.now();
+    this._expireThread(now);
+    if (input.dnd === true) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: 'presence_or_dnd',
+        nextCheckMs: 60000,
+        phase: 'copresence',
+      };
+    }
+    if (input.autonomyShouldAct !== true) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: input.autonomyReason || 'no_urge_or_moment',
+        nextCheckMs: Number(input.nextCheckMs) || 8000,
+        phase: input.alreadyTalking ? 'copresence' : 'presence',
+        speakHint: input.speakHint || '',
+      };
+    }
+
+    const alreadyTalking = input.alreadyTalking === true || input.dialogueStarted === true;
+    const idleMs = Math.max(0, Number(input.idleMs) || 0);
+    const socialPre = input.social || {};
+    // 正在正常聊天：别插队半截谜语；等他安静一会儿再说（冷感除外）
+    if (alreadyTalking && idleMs < 75000 && !socialPre.cold && !socialPre.bored) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: 'active_chat_quiet',
+        nextCheckMs: Math.max(8000, 75000 - idleMs),
+        phase: 'copresence',
+      };
+    }
+
+    const sinceSpoken = now - Number(this.state.lastSpokenAt || 0);
+    if (sinceSpoken < 12000) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: 'just_spoke',
+        nextCheckMs: 12000 - sinceSpoken + 1500,
+        phase: 'copresence',
+      };
+    }
+
+    const social = input.social || {};
+    const lastUser = String(input.lastUserText || '').trim();
+    const intentKey = String(input.urgeIntentKey || input.urgeIntent || '').toUpperCase();
+    let action = ACTIONS.POKE;
+    if (/PLAYFUL|TEASE|JAB/.test(intentKey)) action = ACTIONS.TEASE;
+    else if (/ASK|PROBE|QUESTION|EXPLORE/.test(intentKey)) action = ACTIONS.PROBE;
+    else if (/CARE|BOND|REACH|DEEPEN|CONNECTION/.test(intentKey)) action = ACTIONS.POKE;
+    else if (/CREATE|SHARE|IDEA|MEANING|SELF/.test(intentKey)) action = ACTIONS.SHARE;
+    else if (/STANCE|DEFEND/.test(intentKey)) action = ACTIONS.STANCE;
+
+    let phase = 'presence';
+    if (alreadyTalking) phase = social.cold || social.bored ? 'coldness' : 'copresence';
+    else if (social.facePresent) phase = 'presence';
+
+    const reason = input.speakHint
+      || (alreadyTalking
+        ? '人在旁边，心里有点想开口——不是第一次发现他'
+        : '人在旁边，心里攒了一点想说的话');
+
+    return this._speak(now, action, reason, {
+      phase,
+      entropy: stableEntropy(`${now}${action}beside`),
+      contextFresh: alreadyTalking && !!lastUser,
+      useAnchor: alreadyTalking && !!lastUser && (social.tension > 0.35 || action === ACTIONS.PROBE),
       presence: true,
     });
   }
@@ -252,7 +354,7 @@ class ConversationInitiativeEngine {
     this._expireThread(now);
     const features = analyzeTurn(input.lastUserText || input.userText, input.replyText || '');
     const entropy = Number.isFinite(input.entropy) ? clamp(input.entropy) : stableEntropy(`${now}cold${this.state.sentCount}`);
-    if (input.dnd === true || input.proactiveQuotaOk === false) {
+    if (input.dnd === true) {
       return { shouldSpeak: false, action: ACTIONS.HOLD, reason: 'presence_or_dnd', nextCheckMs: 90000 };
     }
     if (!features.cold && !features.bored) {
@@ -261,15 +363,17 @@ class ConversationInitiativeEngine {
     if (now - this.state.lastSpokenAt < 20000) {
       return { shouldSpeak: false, action: ACTIONS.HOLD, reason: 'adaptive_cooldown', nextCheckMs: 20000 };
     }
-    if (entropy > 0.78) {
-      return { shouldSpeak: false, action: ACTIONS.HOLD, reason: 'held_back', nextCheckMs: 25000 };
-    }
-    const action = entropy > 0.45 ? ACTIONS.TEASE : ACTIONS.POKE;
-    return this._speak(now, action, '察觉到气氛有点冷/敷衍，想换轻松一点的动静把场子拉回来', {
+    const action = features.bored ? ACTIONS.TEASE : ACTIONS.POKE;
+    void entropy;
+    const hasAnchor = String(input.lastUserText || input.userText || '').trim().length > 0;
+    return this._speak(now, action, features.bored
+      ? '他嫌无聊——接他处境给一点具体动静，禁止「又是这个话题吗/好无聊」收束'
+      : '察觉到气氛有点冷/敷衍，想换轻松一点的动静把场子拉回来', {
       phase: 'coldness',
       entropy: stableEntropy(`${now}${action}cold`),
-      contextFresh: false,
-      useAnchor: false,
+      // 有上一句就接上一句，禁止空降「刚注意到/打电话」
+      contextFresh: hasAnchor,
+      useAnchor: hasAnchor,
     });
   }
 
@@ -278,44 +382,36 @@ class ConversationInitiativeEngine {
     const now = Number(input.now) || Date.now();
     this._expireThread(now);
     const idleMs = Math.max(0, Number(input.idleMs) || 0);
-    const entropy = Number.isFinite(input.entropy) ? clamp(input.entropy) : stableEntropy(`${now}${this.state.sentCount}`);
     const presenceBlocked = input.dnd === true;
-    const quotaBlocked = input.proactiveQuotaOk === false;
     const ignored = Math.min(3, Math.max(0, Number(this.state.ignoredStreak) || 0));
     const adaptiveGap = Math.min(4 * 60000, this.cooldownMs + ignored * 28000);
     const minIdle = Math.min(2 * 60000, 22000 + ignored * 16000);
-    if (presenceBlocked || quotaBlocked || now - this.state.lastSpokenAt < adaptiveGap || idleMs < minIdle) {
+    // 冷却与勿扰仍尊重；配额与骰子不再挡
+    if (presenceBlocked || now - this.state.lastSpokenAt < adaptiveGap || idleMs < minIdle) {
       return {
         shouldSpeak: false,
         action: ACTIONS.HOLD,
-        reason: presenceBlocked ? 'presence_or_dnd' : quotaBlocked ? 'quota' : 'adaptive_cooldown',
+        reason: presenceBlocked ? 'presence_or_dnd' : 'adaptive_cooldown',
         nextCheckMs: Math.max(10000, Math.min(70000, Math.max(minIdle - idleMs, adaptiveGap - (now - this.state.lastSpokenAt)))),
       };
     }
 
-    // 冷感优先走冷感回拉
     const lastUser = String(input.lastUserText || '');
     if (analyzeTurn(lastUser, '').cold && idleMs >= 25000) {
-      return this.decideColdness({ ...input, now, entropy });
+      return this.decideColdness({ ...input, now });
     }
 
     const contextFresh = input.contextFresh === true && input.topicContaminated !== true;
     const relScore = clamp(Number(input.relScore) || 0);
-    const choices = contextFresh
-      ? [ACTIONS.TEASE, ACTIONS.POKE, ACTIONS.SHARE, ACTIONS.POKE]
-      : [ACTIONS.POKE, ACTIONS.POKE, ACTIONS.TEASE, ACTIONS.SHARE];
-    let action = choices[Math.min(choices.length - 1, Math.floor(entropy * choices.length))];
+    let action = contextFresh ? ACTIONS.SHARE : ACTIONS.POKE;
+    if (/无聊/.test(lastUser)) action = ACTIONS.TEASE;
     if (relScore < 0.15 && action === ACTIONS.TEASE) action = ACTIONS.POKE;
-    const speakProbability = Math.min(0.88, 0.55 + Math.min(idleMs / 360000, 0.2) + relScore * 0.12 - ignored * 0.04);
-    if (entropy > speakProbability) {
-      return { shouldSpeak: false, action: ACTIONS.HOLD, reason: 'no_social_impulse', nextCheckMs: 18000 + Math.floor(entropy * 35000) };
-    }
 
     return this._speak(now, action, contextFresh
       ? '他还在附近，她想随手接一下场子'
       : '安静太久，她想制造一点存在感', {
       phase: 'idle',
-      entropy: stableEntropy(`${now}${action}idle`),
+      entropy: 0.4,
       contextFresh,
       useAnchor: contextFresh && action !== ACTIONS.POKE,
     });
@@ -418,20 +514,15 @@ class ConversationInitiativeEngine {
     return '这句话在她脑中引发了一个属于自己的联想';
   }
 
-  _deliveryFor(action, entropy, phase) {
+  _deliveryFor(action, _entropy, phase) {
     const micro = action === ACTIONS.POKE || action === ACTIONS.TEASE;
-    let bubbleCount = 1;
-    if (micro && entropy > 0.28) bubbleCount = 2;
-    if (micro && entropy > 0.68) bubbleCount = 3;
-    if (!micro && (action === ACTIONS.SHARE || action === ACTIONS.CARE || action === ACTIONS.PROBE) && entropy > 0.55) {
-      bubbleCount = 2;
-    }
-    const presencePhase = phase === 'presence' || phase === 'coldness';
+    // 不硬卡字数/条数——长短由她自己决定；只给轻度建议
+    const presencePhase = phase === 'presence' || phase === 'copresence' || phase === 'coldness';
     return {
       style: action === ACTIONS.POKE ? 'poke' : action === ACTIONS.TEASE ? 'banter'
         : action === ACTIONS.CARE ? 'soft' : action === ACTIONS.STANCE ? 'opinion' : 'casual',
-      bubbleCount,
-      maxCharsPerBubble: micro ? (presencePhase ? 20 : 24) : 36,
+      bubbleCount: micro ? 2 : 2,
+      maxCharsPerBubble: micro ? 64 : 96,
       pauseMinMs: presencePhase ? 380 : 480,
       pauseMaxMs: presencePhase ? 1100 : 1400,
       allowNonSemantic: micro,

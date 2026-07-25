@@ -112,25 +112,45 @@ test('AutonomousBehaviorLoop: suppresses proactive under DND', () => {
   assert.equal(decision.suppressProactive, true);
 });
 
-test('AutonomousBehaviorLoop: REACH_OUT may speak after long idle', () => {
+test('AutonomousBehaviorLoop: speaks when urge is ripe and social field is open', () => {
   const d = new DriveDynamics();
-  for (let i = 0; i < 3; i++) {
-    d.tick(60000, { pad: { P: 0.1, A: 0.2, S: 0.55 }, relScore: 0.5, idleMs: 50 * 60 * 1000 });
-  }
-  d.generateUrges({ relScore: 0.5, idleMs: 50 * 60 * 1000 });
-  const loop = new AutonomousBehaviorLoop(d, new CuriosityEngine(), new CreativityModule());
-  let spoke = false;
-  for (let i = 0; i < 20; i++) {
-    const decision = loop.execute({
-      isAutonomyTick: true,
-      idleMs: 50 * 60 * 1000,
-      pad: { P: 0.1, A: 0.3, S: 0.55 },
-      relScore: 0.5,
-      proactiveQuotaOk: true,
+  for (let i = 0; i < 4; i++) {
+    d.tick(8000, {
+      pad: { P: 0.15, A: 0.35, S: 0.55 },
+      relScore: 0.55,
+      idleMs: 8 * 60 * 1000,
+      quietMs: 8 * 60 * 1000,
+      facePresent: true,
+      faceMs: 5 * 60 * 1000,
+      social: { comfortableSilence: 0.15, tension: 0.55 },
     });
-    if (decision.shouldAct) spoke = true;
   }
-  assert.ok(spoke, 'expected at least one speak decision in 20 trials');
+  d.generateUrges({
+    relScore: 0.55,
+    idleMs: 8 * 60 * 1000,
+    quietMs: 8 * 60 * 1000,
+    facePresent: true,
+  });
+  const loop = new AutonomousBehaviorLoop(d, new CuriosityEngine(), new CreativityModule());
+  const decision = loop.execute({
+    isAutonomyTick: true,
+    idleMs: 8 * 60 * 1000,
+    quietMs: 8 * 60 * 1000,
+    facePresent: true,
+    faceMs: 5 * 60 * 1000,
+    pad: { P: 0.15, A: 0.35, S: 0.55 },
+    relScore: 0.55,
+    proactiveQuotaOk: true,
+    social: {
+      facePresent: true,
+      comfortableSilence: 0.15,
+      tension: 0.55,
+      atmospherePressure: 0.4,
+      floorOpen: true,
+      ending: false,
+    },
+  });
+  assert.equal(decision.shouldAct, true);
 });
 
 test('AutonomySubsystem: conversation turn yields goal seeds and prompt', () => {

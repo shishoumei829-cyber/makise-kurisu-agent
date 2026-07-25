@@ -165,12 +165,9 @@ function replyLooksLikeUnknownOkabe(userText, reply) {
   return false;
 }
 
-function unknownOkabeFallback(userText) {
-  const t = String(userText || '');
-  if (userClaimsOkabe(t)) return '……你不就是冈部吗？还想让我走一遍认亲流程？';
-  if (userAsksAboutOkabe(t)) return '哈？凤凰院凶真，你今天又中二到连自己都不认识了？';
-  if (/我是谁|你还记得我是谁/.test(t)) return '你是冈部伦太郎啊……除非你又想听一遍全名才满意？';
-  return '……冈部，你今天怎么回事？';
+function unknownOkabeFallback(_userText) {
+  // 禁止固定句；身份纠偏走 prompt，不走台词池
+  return '';
 }
 
 const api = {

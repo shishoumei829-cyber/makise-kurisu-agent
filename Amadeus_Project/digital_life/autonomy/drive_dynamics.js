@@ -180,6 +180,25 @@ class DriveDynamics {
     if (idleMin > 30) this._stimulate('MEANING', 0.08);
     if (idleMin > 45) this._stimulate('CURIOSITY', 0.05);
 
+    // 人坐在旁边：连接/玩心缓慢累积，不是「看见脸」脉冲开枪
+    if (ctx.facePresent === true) {
+      const faceMin = Math.max(0, Number(ctx.faceMs) || 0) / 60000;
+      const quietMin = Math.max(0, Number(ctx.quietMs) || ctx.idleMs || 0) / 60000;
+      const social = ctx.social || {};
+      this._stimulate('CONNECTION', 0.012 + Math.min(0.05, faceMin * 0.018));
+      if (quietMin > 0.4) {
+        this._stimulate('PLAYFULNESS', 0.015 + Math.min(0.04, quietMin * 0.012));
+      }
+      if ((social.tension || 0) > 0.4 && quietMin > 0.3) {
+        this._stimulate('CONNECTION', 0.04);
+      }
+      // 舒服的安静：允许只是待着，冲动略回落
+      if ((social.comfortableSilence || 0) > 0.62) {
+        this.activations.CONNECTION = clamp01((this.activations.CONNECTION || 0) - 0.012);
+        this.activations.PLAYFULNESS = clamp01((this.activations.PLAYFULNESS || 0) - 0.008);
+      }
+    }
+
     if (ctx.userAnsweredUrge) {
       this._satisfyMatchingUrges(ctx.userAnsweredUrge);
     }
@@ -279,7 +298,12 @@ class DriveDynamics {
       CREATIVITY: () => 'CREATE_IDEA',
       EXPLORATION: () => 'EXPLORE_TOPIC',
       MASTERY: () => 'EXPLORE_TOPIC',
-      CONNECTION: () => (ctx.idleMs > 20 * 60 * 1000 ? 'REACH_OUT' : 'DEEPEN_BOND'),
+      CONNECTION: () => {
+        // 坐旁边更像想贴一句；很久没聊才像「敲一下」
+        if (ctx.facePresent && (ctx.quietMs || ctx.idleMs || 0) < 12 * 60 * 1000) return 'DEEPEN_BOND';
+        if ((ctx.idleMs || 0) > 20 * 60 * 1000) return 'REACH_OUT';
+        return 'DEEPEN_BOND';
+      },
       AUTONOMY: () => (ctx.userWasPushy ? 'DEFEND_SELF' : 'HOLD_BACK'),
       MEANING: () => 'SELF_EXPRESSION',
       PLAYFULNESS: () => 'PLAYFUL_JAB',

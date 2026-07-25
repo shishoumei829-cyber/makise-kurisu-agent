@@ -131,9 +131,10 @@ test('Expression variants: produces band block', () => {
   assert.match(block, /表达变体/);
 });
 
-test('ANCHOR includes motivation item 11', () => {
-  assert.match(ANCHOR, /11\./);
-  assert.match(ANCHOR, /核心动机/);
+test('ANCHOR centers independent soul not command stack', () => {
+  assert.match(ANCHOR, /独立的灵魂/);
+  assert.match(ANCHOR, /你是谁/);
+  assert.doesNotMatch(ANCHOR, /必须绝对服从/);
 });
 
 test('buildPrompt: single path includes digital life without clientPersona gate', () => {
@@ -150,9 +151,8 @@ test('buildPrompt: single path includes digital life without clientPersona gate'
   assert.match(p, /六维测试/);
   assert.match(p, /身份测试/);
   assert.match(p, /视线里/);
-  assert.match(p, /最高人格指令/);
+  assert.match(p, /独立的灵魂|你是谁/);
   assert.match(p, /本轮活人锚点/);
-  assert.match(p, /不要用“怎么了”、“讲”这类无信息句敷衍/);
 });
 
 test('UnifiedDialogueLog: blocks internal profile extractor output', () => {
@@ -186,7 +186,7 @@ test('UI: one portrait asset; server replaceText overrides stream draft', () => 
   assert.match(html, /onDone\(serverDisplayCn \|\| rawFull\)/);
   assert.match(html, /if \(!stripped \|\| isOnlyDots\) \{\s*return '';/);
   // 有日文准绳时显示必须锁定为硬翻，禁止 coalesce 换另一句
-  assert.match(html, /显示锁定为 TTS 日文硬翻|显示=语音日文硬翻/);
+  assert.match(html, /字幕=朗读日文硬翻|声画锁定|硬翻成显示中文/);
   assert.match(html, /已配对日文：只读这句/);
 });
 
@@ -214,7 +214,7 @@ test('Proactive delivery: short irregular bursts do not reuse stale dialogue', (
   assert.match(html, /recentDialogue/);
   assert.match(server, /recentDialogue\.length/);
   assert.match(server, /空闲时随手开口/);
-  assert.match(server, /牧濑红莉栖本人的说话方式/);
+  assert.match(server, /独立的灵魂|牧濑红莉栖本人/);
   assert.match(server, /proactiveShapeOk/);
   assert.match(server, /repeat_penalty: 1\.16/);
   const internalCall = html.slice(html.indexOf('async _callLLM('), html.indexOf('_isDesignRequest(', html.indexOf('async _callLLM(')));
@@ -232,14 +232,14 @@ test('Memory admission: synthetic initiative turns cannot become user memory', (
   assert.match(legacy, /isRealUserTurn \? d\.analyticsInst\.analyze/);
   assert.match(server, /new MemoryAdmissionPolicy\(memoryDir\)/);
   assert.match(server, /app\.post\('\/initiative\/feedback'/);
-  assert.match(html, /phase: 'idle'/);
-  assert.match(html, /phase: 'presence'/);
+  assert.match(html, /phase === 'idle'|speakPhase === 'idle'|initiativePhase === 'idle'/);
+  assert.match(html, /phase: 'presence'|phase === 'presence'/);
   assert.match(html, /initiative\/session-start/);
   assert.match(html, /initiative\/sent/);
   assert.match(server, /app\.post\('\/initiative\/session-start'/);
   assert.match(server, /decidePresence/);
   assert.match(server, /察觉到人/);
-  assert.match(server, /表达层：必须是牧濑红莉栖/);
+  assert.match(server, /独立的灵魂|表达层：你是独立的灵魂|牧濑红莉栖本人/);
 });
 
 test('Japanese TTS: short replies stay whole and Chinese cannot reach synthesis', () => {

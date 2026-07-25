@@ -33,14 +33,14 @@ test('stripModelDecorations keeps mixed JP+CN body for literal display source', 
   assert.equal(stripModelDecorations(raw), raw);
 });
 
-test('literal JP→CN messages forbid fluent paraphrase', () => {
+test('display JP→CN messages require faithful readable Chinese', () => {
   const msgs = buildLiteralJpToCnMessages('えと、今何してるの？… 分心啊');
   assert.equal(msgs.length, 2);
   assert.equal(msgs[0].role, 'system');
   assert.equal(msgs[0].content, LITERAL_JP_TO_CN_SYSTEM);
-  assert.match(msgs[0].content, /硬翻|直译/);
-  assert.match(msgs[0].content, /不要改写成通顺对白|不要补全/);
-  assert.match(msgs[0].content, /中文的片段原样保留/);
+  assert.match(msgs[0].content, /忠实|可读/);
+  assert.match(msgs[0].content, /不要脑补|不增删事实/);
+  assert.match(msgs[0].content, /谜语|断句乱码/);
   assert.match(msgs[0].content, /もう≠再三/);
   assert.equal(msgs[1].content, 'えと、今何してるの？… 分心啊');
 });

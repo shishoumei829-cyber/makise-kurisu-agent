@@ -98,7 +98,26 @@ function inferMainEventFromInput(userInput, currentPAD) {
     candidates.push({ type: 'negative', importance: 0.5, delta: { P: -0.2, A: 0.1 }, content: `粗鲁言辞：${t.substring(0, 30)}` });
 
   if (/喜欢你|爱你|爱上/.test(t))
-    candidates.push({ type: 'intimate', importance: 0.85, delta: { P: 0.2, D: -0.28, S: 0.02 }, content: `情感表白：${t.substring(0, 30)}` });
+    candidates.push({ type: 'intimate', importance: 0.85, delta: { P: 0.2, D: -0.28, S: 0.02, A: 0.25 }, content: `情感表白：${t.substring(0, 30)}` });
+
+  // 震惊 / 冲击：拉高唤醒，允许失态半拍
+  if (/不会吧|真的假的|居然|竟然|天哪|吓死|出事了|分手|世界线|住院|什么[！!]{2,}|[？?]{2,}/.test(t)) {
+    candidates.push({
+      type: 'shock',
+      importance: 0.8,
+      delta: { P: 0.02, A: 0.42, D: -0.12 },
+      content: `冲击信息：${t.substring(0, 30)}`,
+    });
+  }
+
+  if (/陪我|想你|理理我|不要不理|抱抱/.test(t) && (pad.S > 0.4 || /嘛|啦|哼/.test(t))) {
+    candidates.push({
+      type: 'intimate',
+      importance: 0.62,
+      delta: { P: 0.1, A: 0.12, D: -0.18, S: 0.01 },
+      content: `亲近求陪伴：${t.substring(0, 30)}`,
+    });
+  }
 
   if (/孤独|一个人|没人/.test(t))
     candidates.push({ type: 'neutral', importance: 0.4, delta: { P: -0.05, A: -0.05 }, content: `提及孤独：${t.substring(0, 30)}` });
