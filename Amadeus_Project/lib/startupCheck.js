@@ -1,6 +1,6 @@
 'use strict';
 
-const DEFAULT_CHAT_MODEL = 'kurisu:latest';
+const DEFAULT_CHAT_MODEL = 'kurisu-v4-candidate:latest';
 const DEFAULT_EMBED_MODEL = 'nomic-embed-text';
 const DEFAULT_VISION_MODELS = ['llama3.2-vision:latest', 'llama3.2-vision', 'qwen2.5vl:7b'];
 
@@ -142,7 +142,9 @@ async function runStartupChecks(opts = {}) {
       visionUnderstanding: !!visionModel,
       tts: ttsOk,
       memory: ragIndexed,
-      proactiveDialogue: chatOk,
+      proactiveDialogue: chatOk && !['0', 'false', 'off', 'no'].includes(
+        String(process.env.AMADEUS_PROACTIVE ?? '1').trim().toLowerCase(),
+      ),
     },
   };
 }

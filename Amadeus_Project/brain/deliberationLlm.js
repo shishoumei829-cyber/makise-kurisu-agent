@@ -20,7 +20,7 @@ async function rewriteDraft(draft, ctx = {}, deps = {}) {
 
   const model = process.env.AMADEUS_LITE_MODEL
     || process.env.AMADEUS_CHAT_MODEL
-    || 'kurisu:latest';
+    || 'kurisu-v4-candidate:latest';
   const violations = (ctx.monitorResult?.violations || [])
     .map((v) => v.rewriteHint)
     .filter(Boolean)

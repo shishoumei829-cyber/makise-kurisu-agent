@@ -82,6 +82,15 @@ test('UnifiedDialogueLog: toOllamaDialogue merges adjacent same role', () => {
   assert.match(dlg[0].content, /在吗/);
 });
 
+test('UnifiedDialogueLog: conversation history cannot leak across conversations', () => {
+  const log = new UnifiedDialogueLog(tmpDir);
+  log.append('user', '甲会话内容', { conversationId: 'a', turnId: 'a1' });
+  log.append('assistant', '甲会话回复', { conversationId: 'a', turnId: 'a1' });
+  log.append('user', '乙会话内容', { conversationId: 'b', turnId: 'b1' });
+  const history = log.toOllamaDialogue({ conversationId: 'b' });
+  assert.deepEqual(history, [{ role: 'user', content: '乙会话内容' }]);
+});
+
 test('InnerStateSix: persists and updates from turn', () => {
   const inner = new InnerStateSix(tmpDir);
   const before = inner.state.connection;
@@ -155,6 +164,21 @@ test('buildPrompt: single path includes digital life without clientPersona gate'
   assert.match(p, /本轮活人锚点/);
 });
 
+test('buildPrompt: fine-tuned subject model gets a focused soul prompt', () => {
+  const p = buildPrompt({
+    focusedFineTune: true,
+    replyLanguage: 'ja',
+    subjectCtx: '主体关系与真实记忆',
+    emotionalBandwidthBlock: '此刻有点嘴硬但亲近',
+    conversationCtx: '大量对话实录不应在普通轮次重复注入',
+    conversationRecall: false,
+  });
+  assert.match(p, /主体关系与真实记忆/);
+  assert.match(p, /客服的な慰め/);
+  assert.doesNotMatch(p, /大量对话实录/);
+  assert.ok(p.length < 1800);
+});
+
 test('UnifiedDialogueLog: blocks internal profile extractor output', () => {
   const log = new UnifiedDialogueLog(tmpDir);
   const item = log.append('assistant', 'NAME: 某人\nTRAIT: 熬夜\nPREFER: 咖啡\nBASIC: 职业=学生');
@@ -180,10 +204,13 @@ test('UI strips consciousness leak and does not keep empty kurisu bubbles', () =
 test('UI: one portrait asset; server replaceText overrides stream draft', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'amadeus_work.html'), 'utf8');
   assert.doesNotMatch(html, /pose === 'expressive'[\s\S]{0,180}0\.png/);
-  // 服务端硬翻定稿必须覆盖流式草稿，避免界面与实录分叉
+  // 服务端定稿必须覆盖流式草稿，避免界面与实录分叉
   assert.match(html, /serverDisplayCn = rep/);
   assert.match(html, /rawFull = rep/);
   assert.match(html, /onDone\(serverDisplayCn \|\| rawFull\)/);
+  assert.doesNotMatch(html, /onToken\(rep\)/);
+  assert.match(html, /_renderFinalReplyBubbles\(cnText, msgDiv/);
+  assert.match(html, /_splitAutonomyBubbles\(text, maxBubbles = 3\)/);
   assert.match(html, /if \(!stripped \|\| isOnlyDots\) \{\s*return '';/);
   // 有日文准绳时显示必须锁定为硬翻，禁止 coalesce 换另一句
   assert.match(html, /字幕=朗读日文硬翻|声画锁定|硬翻成显示中文/);

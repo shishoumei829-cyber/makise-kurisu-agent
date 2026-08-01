@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { textFragments } = require('../lib/memoryAdmission');
+const { shouldSpeakNow } = require('./socialRead');
 
 const ACTIONS = Object.freeze({
   HOLD: 'hold',
@@ -88,6 +89,7 @@ class ConversationInitiativeEngine {
       ignoredStreak: 0,
       engagedStreak: 0,
       sentCount: 0,
+      activeThoughtId: '',
       lastPresenceNoticeAt: 0,
       sessionStartedAt: Date.now(),
     };
@@ -233,6 +235,30 @@ class ConversationInitiativeEngine {
       };
     }
 
+    if (input.pendingUserTurn === true || input.isThinking === true) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: 'pending_user_turn',
+        nextCheckMs: 6000,
+        phase: alreadyTalking ? 'copresence' : 'presence',
+      };
+    }
+
+    const idleSinceUser = Math.max(0, Number(input.idleMsSinceUser) || 0);
+    if (alreadyTalking && idleSinceUser < 120000) {
+      const features = analyzeTurn(lastUser, '');
+      if (!features.cold && !features.bored) {
+        return {
+          shouldSpeak: false,
+          action: ACTIONS.HOLD,
+          reason: 'active_chat_quiet',
+          nextCheckMs: Math.max(8000, 120000 - idleSinceUser),
+          phase: 'copresence',
+        };
+      }
+    }
+
     // 按内容选动机，不用骰子抽 bag；配额不再挡「想说」
     void quotaBlocked;
     void sessionAge;
@@ -273,6 +299,15 @@ class ConversationInitiativeEngine {
   decideBeside(input = {}) {
     const now = Number(input.now) || Date.now();
     this._expireThread(now);
+    if (input.pendingUserTurn === true || input.isThinking === true) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: input.pendingUserTurn ? 'pending_user_turn' : 'is_thinking',
+        nextCheckMs: 6000,
+        phase: input.alreadyTalking ? 'copresence' : 'presence',
+      };
+    }
     if (input.dnd === true) {
       return {
         shouldSpeak: false,
@@ -343,6 +378,76 @@ class ConversationInitiativeEngine {
       contextFresh: alreadyTalking && !!lastUser,
       useAnchor: alreadyTalking && !!lastUser && (social.tension > 0.35 || action === ACTIONS.PROBE),
       presence: true,
+    });
+  }
+
+  /**
+   * 主体思维流开口：对话引擎只负责社交边界和冷却，不再从关键词猜一种
+   * probe/poke/tease 动作。说什么来自 SoulRuntime 中已经持续存在的念头。
+   */
+  decideThought(input = {}) {
+    const now = Number(input.now) || Date.now();
+    this._expireThread(now);
+    if (
+      input.dnd === true
+      || input.pendingUserTurn === true
+      || input.isThinking === true
+      || input.awaitingReply === true
+    ) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: 'social_boundary',
+        nextCheckMs: 60000,
+      };
+    }
+    const thoughtId = String(input.thoughtId || '');
+    const thought = compact(input.thought);
+    if (!thoughtId || !thought) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: 'no_unfinished_thought',
+        nextCheckMs: Math.max(60000, Number(input.nextCheckMs) || 90000),
+      };
+    }
+    // 内在念头只是“想说”，不是“现在可以打断”。真正开口前必须经过
+    // 读场：用户是否仍在说话、TTS 是否占用声道、沉默是否舒服、关系
+    // 和情绪是否足以抵消插话成本。没有 social 时保留纯引擎调用的兼容性，
+    // 但服务端的实际主动链路始终传入 social。
+    if (input.social && input.socialGate !== false) {
+      const gate = shouldSpeakNow(Number(input.tension) || 0, input.social, {
+        relScore: input.relScore,
+      });
+      if (!gate.ok) {
+        return {
+          shouldSpeak: false,
+          action: ACTIONS.HOLD,
+          reason: `social_${gate.reason || 'not_now'}`,
+          nextCheckMs: Math.max(8000, Number(input.nextCheckMs) || 12000),
+          phase: String(input.phase || 'idle'),
+        };
+      }
+    }
+    const ignored = Math.max(0, Number(this.state.ignoredStreak) || 0);
+    const gap = Math.min(8 * 60000, this.cooldownMs * 2 + ignored * 90000);
+    const elapsed = now - Number(this.state.lastSpokenAt || 0);
+    if (elapsed < gap) {
+      return {
+        shouldSpeak: false,
+        action: ACTIONS.HOLD,
+        reason: 'thought_refractory',
+        nextCheckMs: Math.max(15000, gap - elapsed),
+      };
+    }
+    return this._speak(now, 'thought', String(input.reason || thought), {
+      phase: String(input.phase || 'idle'),
+      contextFresh: input.contextFresh === true,
+      useAnchor: false,
+      thoughtId,
+      thought,
+      desire: compact(input.desire),
+      score: Number(input.tension) || 0,
     });
   }
 
@@ -425,6 +530,8 @@ class ConversationInitiativeEngine {
     const topicKey = fragments.sort((a, b) => b.length - a.length)[0] || '';
     this.state.lastSpokenAt = now;
     this.state.lastAction = String(input.action || this.state.lastAction || ACTIONS.POKE);
+    const thoughtId = String(input.thoughtId || this.state.activeThoughtId || '');
+    if (thoughtId) this.state.activeThoughtId = thoughtId;
     this.state.sentCount += 1;
     this.state.activeThread = {
       id: `pro_${now}_${this.state.sentCount}`,
@@ -433,6 +540,7 @@ class ConversationInitiativeEngine {
       text: text.slice(0, 180),
       topicKey,
       replied: false,
+      thoughtId,
     };
     if (topicKey) {
       this.state.recentTopics.push({ topicKey, at: now });
@@ -452,6 +560,7 @@ class ConversationInitiativeEngine {
       this.state.engagedStreak = Math.min(8, this.state.engagedStreak + 1);
       this.state.ignoredStreak = 0;
       this.state.activeThread = null;
+      this.state.activeThoughtId = '';
     } else if (type === 'presence') {
       this.state.ignoredStreak = Math.max(0, this.state.ignoredStreak - 1);
       if (this.state.ignoredStreak === 0) this.state.engagedStreak = Math.min(8, this.state.engagedStreak + 1);
@@ -459,6 +568,7 @@ class ConversationInitiativeEngine {
       this.state.ignoredStreak = Math.min(4, this.state.ignoredStreak + 1);
       this.state.engagedStreak = 0;
       this.state.activeThread = null;
+      this.state.activeThoughtId = '';
     }
     this._save();
     return this.snapshot();
@@ -478,6 +588,7 @@ class ConversationInitiativeEngine {
     this.state.lastAction = action;
     if (extra.turnId) this.state.lastTurnId = extra.turnId;
     this.state.recentActions = [...this.state.recentActions, action].slice(-8);
+    if (extra.thoughtId) this.state.activeThoughtId = String(extra.thoughtId);
     this._save();
     return {
       shouldSpeak: true,
@@ -490,6 +601,9 @@ class ConversationInitiativeEngine {
       contextFresh: extra.contextFresh === true,
       useAnchor: extra.useAnchor === true,
       presence: extra.presence === true,
+      thoughtId: extra.thoughtId || '',
+      thought: extra.thought || '',
+      desire: extra.desire || '',
       reevaluateAfterMs: 0,
       nextCheckMs: 0,
     };
@@ -516,13 +630,15 @@ class ConversationInitiativeEngine {
 
   _deliveryFor(action, _entropy, phase) {
     const micro = action === ACTIONS.POKE || action === ACTIONS.TEASE;
-    // 不硬卡字数/条数——长短由她自己决定；只给轻度建议
     const presencePhase = phase === 'presence' || phase === 'copresence' || phase === 'coldness';
+    const expansive = action === ACTIONS.CARE
+      || action === ACTIONS.STANCE
+      || action === ACTIONS.SHARE;
     return {
       style: action === ACTIONS.POKE ? 'poke' : action === ACTIONS.TEASE ? 'banter'
         : action === ACTIONS.CARE ? 'soft' : action === ACTIONS.STANCE ? 'opinion' : 'casual',
-      bubbleCount: micro ? 2 : 2,
-      maxCharsPerBubble: micro ? 64 : 96,
+      bubbleCount: micro ? 2 : expansive ? 4 : 3,
+      maxCharsPerBubble: micro ? 44 : 72,
       pauseMinMs: presencePhase ? 380 : 480,
       pauseMaxMs: presencePhase ? 1100 : 1400,
       allowNonSemantic: micro,

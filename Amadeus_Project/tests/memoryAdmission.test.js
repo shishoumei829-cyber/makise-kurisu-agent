@@ -24,6 +24,15 @@ test('explicit user preferences can enter durable memory', () => {
   assert.equal(out.allowInference, true);
 });
 
+test('short lived and relationship events enter episodic memory', () => {
+  const policy = new MemoryAdmissionPolicy();
+  for (const text of ['准备去健身房了', '健身回来咯', '流鼻血了', '你喜欢我吗']) {
+    const decision = policy.assessUserText(text, { source: 'user' });
+    assert.equal(decision.allowEvent, true, text);
+    assert.equal(decision.allowInference, true, text);
+  }
+});
+
 test('synthetic initiative input is rejected by every memory channel', () => {
   const policy = new MemoryAdmissionPolicy();
   const out = policy.assessUserText('（想说话）继续旧话题', { source: 'synthetic', synthetic: true });

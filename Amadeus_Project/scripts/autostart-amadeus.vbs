@@ -1,8 +1,12 @@
-'use strict';
-// Hidden launcher for Windows Startup — no console flash
-var sh = new ActiveXObject('WScript.Shell');
-var fso = new ActiveXObject('Scripting.FileSystemObject');
-var scriptDir = fso.GetParentFolderName(WScript.ScriptFullName);
-var ps1 = scriptDir + '\\autostart-amadeus.ps1';
-var cmd = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + ps1 + '"';
-sh.Run(cmd, 0, false);
+' Launch Amadeus Pure Window on Windows Startup
+Dim sh, fso, scriptDir, bat, cmd
+Set sh = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
+bat = scriptDir & "\launch-pure-window.bat"
+If Not fso.FileExists(bat) Then
+  WScript.Quit 1
+End If
+cmd = "cmd.exe /c """ & bat & """"
+' 0 = hide console flash from the bat
+sh.Run cmd, 0, False

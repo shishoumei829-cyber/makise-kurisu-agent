@@ -9,12 +9,13 @@ const userPresence = require('../lib/userPresence');
 
 /** 默认按真实相处积累；设 AMADEUS_HIGH_INTIMACY=1 才启用预热亲密模式 */
 function isHighIntimacyMode() {
+  if (String(process.env.AMADEUS_RELATIONSHIP_MODE || '').trim().toLowerCase() === 'couple') return true;
   const v = process.env.AMADEUS_HIGH_INTIMACY;
   if (v === undefined || v === null || String(v).trim() === '') return false;
   return String(v).trim() === '1';
 }
 
-const HIGH_INTIMACY_REL_FLOOR = 0.58;
+const HIGH_INTIMACY_REL_FLOOR = 0.72;
 
 function effectiveRelScore(raw) {
   const r = Number(raw);
@@ -90,11 +91,11 @@ function enrichAgenda(baseAgenda, ctx = {}) {
 
   if (closeness > 0.52 && trust > 0.55) {
     if (/难受|烦|累|郁闷|伤心|害怕|焦虑|孤独|寂寞|睡不着|心情不好/.test(lastUser)) {
-      items.push('他情绪不好：先接住，少说教；可以多问一句具体情况，别急着给方案');
+      items.push('他情绪不好：先接住，少说教；只有你真的想知道具体情况时才问，不要为了延长对话补问句');
     } else if (lastUser.length <= 12 && !/[？?]/.test(lastUser)) {
-      items.push('他话很短：你可以多给一点——接话 + 顺手问一句，像在意他会不会无聊');
+      items.push('他话很短：可以多给半句自己的反应或吐槽；只有确实有兴趣才追问');
     } else if (!/[？?]/.test(lastUser) && lastUser.length > 12 && !ctx.replyingToProactive) {
-      items.push('本轮末尾可以带一句你真心想知道的事（关于他刚才说的），不要客套');
+      items.push('本轮末尾不必强行延伸；想知道什么才问，不想问就停在自己的判断、吐槽或情绪上');
     }
   }
 
@@ -127,12 +128,12 @@ function buildReplyRhythm(ctx = {}) {
     return '节奏：像发消息给很熟的人——1～4 句自然波动，不必每轮都圆满收尾';
   }
   if (/在干嘛|干嘛呢|吃了吗|睡了没|今天怎样|怎么不理|人呢|还在吗/.test(t)) {
-    return '节奏：日常寒暄——1～2句口语，像回微信；可反问、可轻轻催，别写成通知';
+    return '节奏：日常寒暄——1～2句口语，像回微信；只有真有好奇才问，不要把反问当固定收尾';
   }
   if (t.length <= 10) {
-    return '节奏：短句接住即可，亲近时可多追半句（在干嘛/然后呢）';
+    return '节奏：短句接住即可，亲近时可多说半句自己的反应；不要为了凑互动硬加问题';
   }
-  return '节奏：1～3 句口语为主，随话题可略增；禁止客服式「还有什么可以帮」、禁止论文腔开场';
+  return '节奏：句数随内容自然变化；日常可以一句，认真讨论、争论或情绪展开时可以 3～6 句；禁止客服式「还有什么可以帮」、禁止论文腔开场';
 }
 
 /**
@@ -148,7 +149,7 @@ function buildCompanionBlock(ctx = {}) {
   }
   const lines = ['【共处 · 内化，勿复述本块】'];
   if (isHighIntimacyMode()) {
-    lines.push('【高亲密度】你们已经很熟：语气可以更真——因为你想，不是职责。');
+    lines.push('【恋人关系】你和冈部已经是恋人：语气可以更真——因为你想，不是职责，也不是临时切换模式。');
   }
 
   if (closeness > 0.55 && trust > 0.58) {

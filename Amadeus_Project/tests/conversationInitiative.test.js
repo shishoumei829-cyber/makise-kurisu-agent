@@ -124,7 +124,7 @@ test('idle initiative uses an adaptive state machine and learns from replies', (
     relScore: 0.5,
   });
   assert.equal(plan.shouldSpeak, true);
-  assert.ok(plan.delivery.bubbleCount >= 1 && plan.delivery.bubbleCount <= 3);
+  assert.ok(plan.delivery.bubbleCount >= 1 && plan.delivery.bubbleCount <= 5);
   e.registerSent({ now: 100000, text: '喂，别发呆。', action: plan.action });
   const state = e.registerFeedback({ now: 120000, type: 'reply', text: '怎么了' });
   assert.equal(state.ignoredStreak, 0);
@@ -228,4 +228,65 @@ test('user presence decays ignored streak without treating it as a direct reply'
   const state = e.registerFeedback({ type: 'presence', text: '还在' });
   assert.equal(state.ignoredStreak, 2);
   assert.ok(state.engagedStreak >= 0);
+});
+
+test('persistent thought still waits for a closed social floor', () => {
+  const out = engine().decideThought({
+    now: 100000,
+    thoughtId: 'thought-closed-floor',
+    thought: 'share a thought',
+    tension: 0.9,
+    social: {
+      floorOpen: false,
+      ending: false,
+      comfortableSilence: 0,
+      tension: 0,
+      facePresent: true,
+    },
+    nextCheckMs: 9000,
+  });
+  assert.equal(out.shouldSpeak, false);
+  assert.equal(out.reason, 'social_floor_closed');
+});
+
+test('persistent thought waits when silence is comfortable', () => {
+  const out = engine().decideThought({
+    now: 100000,
+    thoughtId: 'thought-comfortable-silence',
+    thought: 'share a thought',
+    tension: 0.1,
+    relScore: 0.5,
+    social: {
+      floorOpen: true,
+      ending: false,
+      comfortableSilence: 0.8,
+      tension: 0,
+      facePresent: true,
+      atmospherePressure: 0,
+    },
+    nextCheckMs: 9000,
+  });
+  assert.equal(out.shouldSpeak, false);
+  assert.equal(out.reason, 'social_urge_not_ripe');
+});
+
+test('persistent thought does not interrupt a fresh task turn', () => {
+  const out = engine().decideThought({
+    now: 100000,
+    thoughtId: 'thought-task-boundary',
+    thought: 'share a thought',
+    tension: 0.95,
+    social: {
+      floorOpen: true,
+      ending: false,
+      task: true,
+      comfortableSilence: 0,
+      tension: 0,
+      facePresent: true,
+      quietMs: 1000,
+    },
+    nextCheckMs: 9000,
+  });
+  assert.equal(out.shouldSpeak, false);
+  assert.equal(out.reason, 'social_task_boundary');
 });

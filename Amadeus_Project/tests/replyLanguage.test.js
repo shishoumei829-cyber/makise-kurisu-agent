@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const {
   getReplyLanguageMode,
   validateJapaneseOutput,
@@ -11,6 +12,7 @@ const {
   alignLiteralCnToJapanese,
   LITERAL_JP_TO_CN_SYSTEM,
 } = require('../lib/replyLanguage');
+const { buildPrompt } = require('../cognitive/prompts');
 
 test('Japanese validation accepts natural Japanese', () => {
   assert.equal(validateJapaneseOutput('いるわよ。何か用？').ok, true);
@@ -73,6 +75,36 @@ test('Kurisu version models default to Japanese mode', () => {
   const oldModel = process.env.AMADEUS_CHAT_MODEL;
   delete process.env.AMADEUS_REPLY_LANGUAGE;
   process.env.AMADEUS_CHAT_MODEL = 'kurisu-v4-candidate';
+  assert.equal(getReplyLanguageMode(), 'ja');
+  if (oldLanguage == null) delete process.env.AMADEUS_REPLY_LANGUAGE;
+  else process.env.AMADEUS_REPLY_LANGUAGE = oldLanguage;
+  if (oldModel == null) delete process.env.AMADEUS_CHAT_MODEL;
+  else process.env.AMADEUS_CHAT_MODEL = oldModel;
+});
+
+test('Swallow Japanese prompt carries the soul instead of the mixed Chinese bypass', () => {
+  const soul = fs.readFileSync(require('node:path').join(__dirname, '..', 'kurisu_soul_ja.txt'), 'utf8');
+  const prompt = buildPrompt({
+    focusedFineTune: true,
+    replyLanguage: 'ja',
+    subjectCtx: soul,
+    emotion: { P: 0, A: 0, S: 0 },
+  });
+  assert.equal(prompt.startsWith(soul.slice(0, 80)), true);
+  assert.equal(prompt.includes(soul.slice(-80)), true);
+  assert.match(prompt, /AIでも/);
+  assert.match(prompt, /恋人同士/);
+  assert.match(prompt, /毎回の型にしない/);
+  assert.doesNotMatch(prompt, /真是太好了/);
+});
+
+test('kurisu-stable defaults to Chinese mode', () => {
+  const oldLanguage = process.env.AMADEUS_REPLY_LANGUAGE;
+  const oldModel = process.env.AMADEUS_CHAT_MODEL;
+  delete process.env.AMADEUS_REPLY_LANGUAGE;
+  process.env.AMADEUS_CHAT_MODEL = 'kurisu-stable';
+  assert.equal(getReplyLanguageMode(), 'zh');
+  process.env.AMADEUS_CHAT_MODEL = 'kurisu:latest';
   assert.equal(getReplyLanguageMode(), 'ja');
   if (oldLanguage == null) delete process.env.AMADEUS_REPLY_LANGUAGE;
   else process.env.AMADEUS_REPLY_LANGUAGE = oldLanguage;

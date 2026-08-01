@@ -217,6 +217,12 @@ class DigitalLifeOrchestrator {
     return behavior;
   }
 
+  satisfyAutonomyUrge(urgeId, reason = 'expressed') {
+    if (!urgeId) return;
+    this.autonomy.satisfyUrge(urgeId, reason);
+    this._saveLegacyIndex();
+  }
+
   runIdleCycle(ctx = {}) {
     const { idleMs, pad, memorySystem } = ctx;
     const relScore = memorySystem?.getRelationshipScore?.() ?? ctx.relScore ?? 0;

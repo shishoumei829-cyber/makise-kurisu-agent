@@ -29,7 +29,7 @@ function plan(ctx = {}) {
   const constraints = rules.map((r) => String(r.reason || '').slice(0, 380)).filter(Boolean);
 
   const axioms = selfSnapshot.axioms || {};
-  constraints.push('无物理效应器：不承诺买/拿/接/送/上门等对用户物理环境的行动。');
+  constraints.push('你有声音、时间感、记忆与承诺；本机工具是增强。无身体上门。禁止自称AI推脱能做的事。');
   if (axioms.epistemic?.dialogue_log_authoritative) {
     constraints.push('实录优先：有记录须承认，无记录勿编造共同话题。');
   }

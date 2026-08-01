@@ -43,7 +43,7 @@ test('collectCandidates: physical request boosts self axiom', () => {
     selfSnapshot: { axioms: createDefaultAxioms(), tensions: { physical_promise: 3 } },
     pad: { P: 0, A: 0.2, S: 0.3 },
   });
-  const self = items.find((i) => i.kind === CONTENT_KINDS.SELF && /物理效应器/.test(i.content));
+  const self = items.find((i) => i.kind === CONTENT_KINDS.SELF && /没有身体|原生能力/.test(i.content));
   assert.ok(self);
   assert.ok(self.salience >= 0.9);
   const meta = items.find((i) => i.kind === CONTENT_KINDS.META);

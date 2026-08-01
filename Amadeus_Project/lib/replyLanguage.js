@@ -5,7 +5,11 @@ function getReplyLanguageMode() {
   if (['ja', 'jp', 'japanese'].includes(env)) return 'ja';
   if (['zh', 'cn', 'chinese'].includes(env)) return 'zh';
   const model = String(process.env.AMADEUS_CHAT_MODEL || '').toLowerCase();
-  return /kurisu(?:-v\d+|:v\d+)?/.test(model) ? 'ja' : 'zh';
+  // 仅「日语微调底」默认 ja；kurisu-stable（Qwen2.5 中文 Instruct+人设）必须走 zh
+  if (/kurisu-stable/.test(model)) return 'zh';
+  if (/^kurisu(?::[\w.-]+)?$/.test(model)) return 'ja';
+  if (/kurisu-v\d+|kurisu:v\d+/.test(model)) return 'ja';
+  return 'zh';
 }
 
 function countScriptChars(text) {
@@ -25,6 +29,9 @@ function validateJapaneseOutput(text) {
   const issues = [];
   if (!value) issues.push('empty');
   if (counts.cyrillic > 0) issues.push('cyrillic');
+  // GPT-SoVITS 的日语前端在 Windows GBK 环境无法编码带重音的拉丁字符；
+  // 这类字符混入时宁可让翻译重试，也不要把会 400 的文本送进语音服务。
+  if (/[\u0080-\u024f\u1e00-\u1eff]/.test(value)) issues.push('non_ascii_latin');
   if (counts.kana < 1) issues.push('missing-kana');
   if (/(?:作为|我是一个|人工智能|语言模型|无法满足|抱歉，我)/.test(value)) {
     issues.push('chinese-template');
@@ -69,6 +76,8 @@ function stripConsciousnessEcho(text) {
   t = t.replace(/^(?:说重点|怎么了|有事|听着呢|讲)[。.!！?？]?$/g, '');
   t = t.replace(/又是[这那]个话题吗[。.!！?？]?/g, '');
   t = t.replace(/停止指定话题吧[，,]?[^\n]*/g, '');
+  t = t.replace(/我作为AI程序[^。！？!?\n]*/g, '');
+  t = t.replace(/人工智能无法干涉现实[^。！？!?\n]*/g, '');
   return t.replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -97,15 +106,16 @@ function extractJapaneseBody(text) {
  * TTS 仍念日语原文，字幕跟这句译文对齐。
  */
 const LITERAL_JP_TO_CN_SYSTEM = [
-  '你是日译中翻译器。把下面角色说的话从日语翻成简体中文。',
+  '你是牧濑红莉栖对白的日译中翻译器。把下面日语原话翻成自然简体中文。',
   '硬性规则：',
   '1. 忠实：不增删事实、不脑补未说的意思、不改成另一套剧情。',
-  '2. 可读：译文必须是正常人能一眼看懂的完整中文句子；不要逐词死译成谜语或断句乱码。',
-  '3. 语气：保留冷淡/吐槽/傲娇等口气，但用自然中文表达，不要夹日语助词残骸。',
-  '4. 原文里已经是中文的片段原样保留。',
-  '5. 去掉动作旁白括号（如（歪头）（推眼镜）），只留对白。',
-  '6. 只输出译文正文，不要解释、不要 JP:/CN: 前缀、不要用引号包整句。',
-  '7. 高频词：もう≠再三；もう？→又？/已经？；まだ→还/还在；もう一度→再一次。',
+  '2. 可读：译文必须像她直接发来的中文消息；禁止逐词死译、谜语、断句乱码，也不要把短促口语统一改成完整客服句。',
+  '3. 人格：完整保留锋利、亲密、嘴硬、羞恼、停顿和口语节奏。中文要像熟人聊天，不要改写成客服关怀、礼貌建议或通用助手语气。',
+  '4. 不要凭空添加“哎呀、原来如此、所以、我们可以、有什么需要”等中文套话；原文没有的问句、建议和情绪词不要补。',
+  '5. 原文里已经是中文的片段原样保留。',
+  '6. 去掉动作旁白括号（如（歪头）（推眼镜）），只留对白。',
+  '7. 只输出译文正文，不要解释、不要 JP:/CN: 前缀、不要用引号包整句。',
+  '8. 高频词：もう≠再三；もう？→又？/已经？；まだ→还/还在；もう一度→再一次。',
   '示例：もう？ まだ心配してるの → 又？还在担心吗？',
 ].join('\n');
 

@@ -260,6 +260,11 @@ class AutonomySubsystem {
     return this.drives.toPromptBlock();
   }
 
+  satisfyUrge(urgeId, reason = 'expressed') {
+    this.drives.satisfyUrge(urgeId, reason);
+    this._save();
+  }
+
   snapshot() {
     return this.getPublicState();
   }

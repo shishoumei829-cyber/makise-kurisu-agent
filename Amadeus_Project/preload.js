@@ -27,6 +27,19 @@ contextBridge.exposeInMainWorld('amadeusDesktop', {
     ipcRenderer.removeAllListeners('system-wakeup');
   },
 
+  minimize() {
+    return ipcRenderer.invoke('window-minimize');
+  },
+  maximize() {
+    return ipcRenderer.invoke('window-maximize');
+  },
+  close() {
+    return ipcRenderer.invoke('window-close');
+  },
+  isMaximized() {
+    return ipcRenderer.invoke('window-is-maximized');
+  },
+
   /**
    * 获取运行平台
    */

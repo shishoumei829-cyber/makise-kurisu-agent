@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, globalShortcut, powerMonitor, dialog, session } = require('electron');
+const { app, BrowserWindow, Menu, Tray, globalShortcut, powerMonitor, dialog, session, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
@@ -19,6 +19,8 @@ function loadDotEnv() {
       || (value.startsWith("'") && value.endsWith("'"))
     ) value = value.slice(1, -1);
     if (process.env[key] == null || process.env[key] === '') process.env[key] = value;
+    // build-kurisu-stable 可能写过 User 环境变量；项目 .env 优先
+    if (/^AMADEUS_(CHAT_MODEL|LITE_MODEL|REPLY_LANGUAGE|PROACTIVE)$/.test(key)) process.env[key] = value;
   }
 }
 loadDotEnv();
@@ -28,6 +30,20 @@ let mainWindow = null;
 let backendProcess = null;
 const BACKEND_PORT = Number(process.env.AMADEUS_BACKEND_PORT) || 3000;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
+
+function resolveUiMode(argv = process.argv) {
+  const fromEnv = String(process.env.AMADEUS_UI_MODE || '').trim().toLowerCase();
+  if (fromEnv === 'pure' || fromEnv === 'window') return 'pure';
+  if (fromEnv === 'lab') return 'lab';
+  const flag = argv.find((a) => /^--ui=/i.test(String(a)));
+  if (flag) {
+    const value = String(flag).split('=')[1]?.trim().toLowerCase();
+    if (value === 'pure' || value === 'window') return 'pure';
+    if (value === 'lab') return 'lab';
+  }
+  if (argv.some((a) => String(a).toLowerCase() === '--pure-window')) return 'pure';
+  return 'lab';
+}
 
 function resolveIconPath() {
   const candidates = [
@@ -159,14 +175,24 @@ function configureMediaPermissions() {
 }
 
 function createWindow() {
+  const uiMode = resolveUiMode();
+  const overlayColor = uiMode === 'pure' ? '#1a1814' : '#050508';
+  const overlaySymbol = uiMode === 'pure' ? '#d8d2c6' : '#ff9a2e';
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1080,
     minHeight: 680,
-    frame: false,
+    // 保留系统最小化/最大化/关闭；隐藏原生标题文字栏，用页面顶部拖动区
+    frame: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: overlayColor,
+      symbolColor: overlaySymbol,
+      height: 36,
+    },
     transparent: false,
-    backgroundColor: '#000000',
+    backgroundColor: overlayColor,
     alwaysOnTop: false,
     resizable: true,
     hasShadow: true,
@@ -179,8 +205,12 @@ function createWindow() {
     icon: resolveIconPath(),
   });
 
-  mainWindow.loadURL(BACKEND_URL).catch(() => {
-    mainWindow.loadFile('amadeus_work.html');
+  const entryUrl = uiMode === 'pure'
+    ? `${BACKEND_URL}/amadeus_work.html?ui=pure`
+    : BACKEND_URL;
+  mainWindow.loadURL(entryUrl).catch(() => {
+    const fileOpts = uiMode === 'pure' ? { search: 'ui=pure' } : undefined;
+    mainWindow.loadFile('amadeus_work.html', fileOpts);
   });
   
   // Power Monitor Events
@@ -220,6 +250,22 @@ function createWindow() {
   });
 }
 
+function registerWindowControlIpc() {
+  ipcMain.handle('window-minimize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize();
+  });
+  ipcMain.handle('window-maximize', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+    return mainWindow.isMaximized();
+  });
+  ipcMain.handle('window-close', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  });
+  ipcMain.handle('window-is-maximized', () => !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMaximized()));
+}
+
 function createTray() {
     tray = new Tray(resolveIconPath());
     const contextMenu = Menu.buildFromTemplate([
@@ -245,6 +291,7 @@ function toggleWindow() {
 
 app.whenReady().then(async () => {
   configureMediaPermissions();
+  registerWindowControlIpc();
   const ready = await ensureBackendRunning();
   if (!ready) {
     await dialog.showMessageBox({
@@ -279,11 +326,17 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine = []) => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
+    const uiMode = resolveUiMode(commandLine);
+    if (uiMode === 'pure') {
+      mainWindow.loadURL(`${BACKEND_URL}/amadeus_work.html?ui=pure`).catch(() => {
+        mainWindow.loadFile('amadeus_work.html', { search: 'ui=pure' });
+      });
+    }
   });
 }
 

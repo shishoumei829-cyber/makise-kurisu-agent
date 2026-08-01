@@ -31,8 +31,7 @@ test('replyNeedsOocRepair should mark generic lecture style on casual input', ()
   assert.equal(out.needs, true);
 });
 
-test('repairKurisuReply should return fallback on empty content', () => {
+test('repairKurisuReply should leave empty empty (no template filler)', () => {
   const out = repairKurisuReply('你好', '');
-  assert.ok(typeof out === 'string');
-  assert.ok(out.length > 0);
+  assert.equal(out, '');
 });

@@ -35,6 +35,7 @@ function readSocialField(input = {}) {
     || /不想聊|随便你|都行|无所谓/.test(lastUser);
   const bored = /无聊|没事干|好闲|闲得|陪我|说点什么/.test(lastUser);
   const ending = /晚安|睡了|先忙|拜拜|再见|不用回|我走了/.test(lastUser);
+  const task = /^(请|帮我|给我|打开|关闭|启动|停止|删除|保存|运行|执行|修复|检查|测试|生成|写一个|查一下|搜索|计算|翻译)/.test(lastUser);
   const asked = /[?？]\s*$/.test(lastReply);
   const shortUser = lastUser.replace(/\s/g, '').length > 0 && lastUser.replace(/\s/g, '').length <= 4;
 
@@ -73,6 +74,7 @@ function readSocialField(input = {}) {
   if (isThinking || ttsPlaying) interruptCost = 0.95;
   if (asked && quietMs < 14000) interruptCost = Math.max(interruptCost, 0.78);
   if (ending) interruptCost = 0.98;
+  if (task && quietMs < 90000) interruptCost = Math.max(interruptCost, 0.9);
   if (input.dnd === true) interruptCost = 1;
 
   const floorOpen = interruptCost < 0.55;
@@ -97,6 +99,7 @@ function readSocialField(input = {}) {
     cold,
     bored,
     ending,
+    task,
     asked,
   };
 }
@@ -109,6 +112,9 @@ function shouldSpeakNow(urgeIntensity, social, opts = {}) {
   const intensity = Number(urgeIntensity) || 0;
   if (!social) return { ok: false, reason: 'no_social', need: 1, intensity };
   if (social.ending) return { ok: false, reason: 'ending', need: 1, intensity };
+  if (social.task && (Number(social.quietMs) || 0) < 90000) {
+    return { ok: false, reason: 'task_boundary', need: 1, intensity };
+  }
   if (!social.floorOpen) return { ok: false, reason: 'floor_closed', need: 1, intensity };
 
   const comfortPenalty = (social.comfortableSilence || 0) * 0.38;

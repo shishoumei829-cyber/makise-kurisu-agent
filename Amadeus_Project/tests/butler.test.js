@@ -33,6 +33,59 @@ test('polite request words alone do not enter the butler queue', () => {
   assert.equal(kernel.tasks.listTasks().length, 0);
 });
 
+test('butler followups stay inside the conversation that explicitly created the task', () => {
+  const { kernel } = makeKernel();
+  const created = kernel.proposeTask({
+    title: 'scoped task',
+    description: 'scoped task',
+    source: 'chat',
+    conversationId: 'conversation-a',
+    turnId: 'turn-a',
+  });
+  kernel.failPlanning(created.task.id, new Error('planner unavailable'));
+  assert.equal(kernel.updatesSince(0, 10, { conversationId: 'conversation-b' }).length, 0);
+  assert.equal(kernel.updatesSince(0, 10, { conversationId: 'conversation-a' }).length, 1);
+});
+
+test('wake-up with parseable time commits intention and local reminder', () => {
+  const { kernel } = makeKernel();
+  const result = kernel.observeUserRequest({ text: '早上8点能叫我起床吗', turnId: 'wake-1' });
+  assert.ok(result.intention);
+  assert.equal(result.action, 'intention_committed');
+  assert.equal(result.intention.trigger.kind, 'at_time');
+  assert.equal(kernel.reminders.list().length, 1);
+  assert.match(kernel.reminders.list()[0].content, /起床|叫醒|叫我/);
+});
+
+test('any timed speak request schedules deferred speak, not only alarms', () => {
+  const { kernel } = makeKernel();
+  const result = kernel.observeUserRequest({ text: '下午3点记得回来找我说话', turnId: 'speak-1' });
+  assert.ok(result.intention);
+  assert.equal(result.action, 'intention_committed');
+  assert.ok(kernel.reminders.list().some((r) => /找我|说话/.test(r.content)));
+});
+
+test('open notepad is judged augmented and proposes task without agency marker', () => {
+  const { kernel } = makeKernel();
+  const result = kernel.observeUserRequest({ text: '打开记事本', turnId: 'app-1' });
+  assert.equal(result.judgment?.verdict, 'augmented');
+  assert.ok(result.task);
+});
+
+test('buy coffee is forbidden by agency loop', () => {
+  const { kernel } = makeKernel();
+  const result = kernel.observeUserRequest({ text: '帮我去买杯咖啡', turnId: 'coffee-1' });
+  assert.equal(result.action, 'agency_forbidden');
+  assert.equal(result.task, null);
+  assert.equal(result.intention, null);
+});
+
+test('future time without speak intent does not auto-schedule', () => {
+  const { kernel } = makeKernel();
+  const result = kernel.observeUserRequest({ text: '明天早上8点有课', turnId: 'fact-1' });
+  assert.equal(result.task, null);
+});
+
 test('agency proposals become persistent tasks and retry is idempotent', () => {
   const { dataDir, kernel } = makeKernel();
   const first = kernel.proposeTask({ text: '帮我整理下载文件夹', turnId: 'turn-1' });

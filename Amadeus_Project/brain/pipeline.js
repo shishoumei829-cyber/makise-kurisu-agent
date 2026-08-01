@@ -34,6 +34,7 @@ function createBrainPipeline(deps) {
   const workspace = deps.globalWorkspace || new GlobalWorkspace();
   const consciousness = deps.consciousnessLayer
     || new ConsciousnessLayer({ workspace });
+  const subjectCore = deps.subjectCore;
 
   // 挂回 deps，供 Brain / server 读取
   deps.globalWorkspace = workspace;
@@ -93,12 +94,27 @@ function createBrainPipeline(deps) {
         consciousness: consciousnessCycle,
       });
 
+      // The workspace and deliberation are signals, not independent speakers.
+      // A single persistent subject selects the actual topic and speech act.
+      const subject = subjectCore?.deliberate?.({
+        perceived: legacyCtx.perceived,
+        userText: legacyCtx.perceived?.cognitiveInput || legacyCtx.perceived?.userContent,
+        pad: legacyCtx.pad,
+        motivationState: deps.motivationState || {},
+        openThoughts: deps.soulRuntime?.snapshot?.().thoughts || [],
+      }) || null;
+      if (subject?.intent) {
+        delib.intent = `subject:${subject.intent.action}`;
+        delib.intentReason = subject.intent.reason;
+      }
+
       _turnCtx = {
         perceived,
         worldSnapshot,
         selfSnapshot,
         deliberation: delib,
         consciousness: consciousnessCycle,
+        subject,
         reqBody: legacyCtx.reqBody,
       };
 
@@ -115,6 +131,7 @@ function createBrainPipeline(deps) {
         out.brainWorkspaceBlock = consciousnessCycle
           ? consciousness.toPromptBlock(consciousnessCycle)
           : '';
+        out.brainSubjectBlock = subject?.promptBlock || '';
         out.digitalLifeCtx = '';
         out.skipSymbolicInPrompt = true;
       }
@@ -123,8 +140,26 @@ function createBrainPipeline(deps) {
 
     async processReply(draft, opts = {}) {
       const text = String(draft || '').trim();
+      const applyGate = (raw) => {
+        try {
+          const { gateAssistantReply } = require('../lib/generationGate');
+          const gated = gateAssistantReply(raw, {
+            autonomy: !!(opts.oocOpts && opts.oocOpts.autonomy),
+            proactive: !!(opts.oocOpts && opts.oocOpts.autonomy),
+          });
+          if (gated.action === 'drop') {
+            console.warn('[brain/pipeline] generationGate drop:', (gated.reasons || []).join(','));
+            return '';
+          }
+          if (gated.action === 'sanitize' && gated.text) return gated.text;
+          return String(raw || '').trim();
+        } catch {
+          return String(raw || '').trim();
+        }
+      };
+
       if (!isMonitorEnabled()) {
-        return applyLegacyOocRepair('', text, opts.userText || '', opts.oocOpts || {});
+        return applyGate(applyLegacyOocRepair('', text, opts.userText || '', opts.oocOpts || {}));
       }
 
       const ctx = {
@@ -150,7 +185,17 @@ function createBrainPipeline(deps) {
 
       if (!rewriteEnabled) {
         if (!monitorResult.pass) {
-          console.warn('[brain/monitor] advisory only; keep model original');
+          const hardViolation = monitorResult.violations.some((violation) => (
+            violation.severity === 'block'
+            && /^(effector\.physical|epistemic\.fabrication|dialogue\.partner_unknown|identity\.ai_tone)/.test(violation.id)
+          ));
+          if (hardViolation) {
+            current = deliberation.localReviseDraft(current, monitorResult);
+            monitorResult = monitor.check(current, ctx);
+            rewrites += 1;
+          } else {
+            console.warn('[brain/monitor] advisory only; keep model original');
+          }
         }
       } else {
         while (!monitorResult.pass && rewrites < 2) {
@@ -179,21 +224,34 @@ function createBrainPipeline(deps) {
 
       const oocRepaired = applyLegacyOocRepair(opts.streamedRaw || '', current, ctx.userText, ctx.oocOpts);
 
+      // 生成硬闸：与是否开启 monitor rewrite 无关；脏稿不得出脑管道
+      const gatedOut = applyGate(oocRepaired);
+      const subjectCheck = subjectCore?.evaluateReply?.(gatedOut, _turnCtx?.subject?.intent) || { ok: true };
+      if (!subjectCheck.ok) console.warn('[subject-core] reply advisory:', subjectCheck.reason);
+      subjectCore?.integrateOutcome?.({
+        mode: _turnCtx?.subject?.intent?.mode || 'responsive',
+        intent: _turnCtx?.subject?.intent,
+        reply: gatedOut,
+        accepted: !!gatedOut,
+      });
+
       learner?.observe?.({
         monitorResult,
         userText: ctx.userText,
-        draft: oocRepaired,
+        draft: gatedOut,
         brainSelfModel,
       });
 
       const ws = _turnCtx?.consciousness?.workspace;
       _lastTrace = {
-        pass: monitorResult.pass,
+        pass: monitorResult.pass && !!gatedOut,
         confidence: monitorResult.confidence,
         violations: monitorResult.violations.map((v) => v.id),
         rewrites,
         delibLlmUsed,
         intent: delib.intent,
+        subject: _turnCtx?.subject?.intent || null,
+        subjectCheck,
         consciousness: {
           narrative: ws?.narrative || '',
           broadcastKinds: (ws?.broadcast || []).map((b) => b.kind),
@@ -208,11 +266,18 @@ function createBrainPipeline(deps) {
         console.log(`[brain/consciousness] ${ws.broadcast.length} broadcast · ${ws.narrative.slice(0, 80)}`);
       }
 
-      return oocRepaired;
+      return gatedOut;
     },
 
     /** 供 /chat/lite 与主动开口：是否应由意识驱动说话 */
     evaluateProactiveSpeech(ctx = {}) {
+      const subjectPlan = subjectCore?.planProactive?.({
+        ...ctx,
+        pad: ctx.pad || deps.state?.currentPAD || {},
+        motivationState: deps.motivationState || {},
+        openThoughts: deps.soulRuntime?.snapshot?.().thoughts || [],
+      });
+      if (subjectPlan) return subjectPlan;
       if (!isConsciousnessEnabled()) {
         return { shouldSpeak: false, reason: 'consciousness_off' };
       }

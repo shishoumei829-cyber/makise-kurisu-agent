@@ -104,7 +104,7 @@ function buildAutonomyContinuityBlock(opts = {}) {
     '口吻靠传记/whoami/最近对话维持，记忆照常用；只禁止编造他没提过的课题，别把本人演成陌生人。',
   );
   lines.push(
-    '可连发 1～3 条短消息（像微信连发），每条单独一行，行与行之间空一行；每条 1～2 句；同一主题连发时换说法，禁止三条都在重复抱怨同一外号。',
+    '可连发 1～5 条消息（像微信连发），每条单独一行，行与行之间空一行；长短随内容自然变化；同一主题连发时换说法，禁止多条都在重复同一意思。',
   );
   lines.push('禁止每条都用「那个笨蛋」起手；对冈部可直接叫「你」或冈部/凶真。');
   return lines.join('\n');
@@ -176,6 +176,28 @@ function replyLooksLikeAutonomyFabrication(userAnchor, reply, opts = {}) {
   }
   if (/无聊/.test(u) && /^[\s…\.．]*又是[这那]个话题|^[\s…\.．]*好无聊[。.!！]?$/.test(o.trim())) {
     return true;
+  }
+
+  // 已经有具体话题时，模型不能把主动消息退化成与上下文无关的
+  // 「累了就直说/无理しないで」客服安慰。没有疲劳、睡眠或身体不适
+  // 线索时，这类句子不是关心，而是错题；宁可静默也不要污染关系记录。
+  const genericCare = /疲れているなら|疲れてる|疲れたなら|無理しないで|ゆっくり休んで|累了就直说|累了就说|无理的话就休息|没事吧|どうしたの/;
+  const fatigueAnchor = /累|疲|眠|睡|困|辛|痛|不舒服|体调|疲れ|眠い|寝/.test(u);
+  if (alreadyTalking && genericCare.test(o) && !fatigueAnchor) return true;
+  const genericConcern = /心配だった|心配してた|気になってた|大丈夫|元気|担心|没事吧/;
+  const vulnerableAnchor = /累|疲|眠|睡|困|辛|痛|不舒服|体调|烦|崩溃|压力|难受|寂寞|疲れ|眠い|寝|つら|しんど|悩/.test(u);
+  if (alreadyTalking && genericConcern.test(o) && !vulnerableAnchor) return true;
+  // 同理，报告/工作话题不能凭空跳到“那就马上睡觉”。
+  if (alreadyTalking && /(?:今すぐ|すぐに)?眠る|寝る|睡觉/.test(o) && !fatigueAnchor) return true;
+
+  // 主动开口崩成身份/效应器/产品腔：走结构阀门，不堆样本标签
+  try {
+    const { isDialoguePoison } = require('../lib/generationGate');
+    if (isDialoguePoison(o, { autonomy: true })) return true;
+  } catch (_) {
+    if (/我是AI程序|我可是AI程序|本质是程序|人工智能在进行物理|AI不能干涉现实|无法干涉现实/.test(o)) {
+      return true;
+    }
   }
 
   return false;

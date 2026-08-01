@@ -133,6 +133,7 @@ class ButlerTaskStore {
       nextAction: String(input.nextAction || '等待规划').slice(0, 500),
       source: input.source || 'user',
       requestKey,
+      conversationId: String(input.conversationId || '').trim(),
       createdAt: now(),
       updatedAt: now(),
     };

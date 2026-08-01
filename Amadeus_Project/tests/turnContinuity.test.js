@@ -46,3 +46,18 @@ test('autonomy fabrication catches invented phone-call presence', () => {
     false,
   );
 });
+
+test('autonomy fabrication catches generic care unrelated to the current topic', () => {
+  assert.equal(
+    replyLooksLikeAutonomyFabrication(
+      '我今天终于把报告写完了',
+      '……疲れているなら、そう言えばいい。決まり文句で慰めるつもりはないわ。',
+      { alreadyTalking: true },
+    ),
+    true,
+  );
+  assert.equal(
+    replyLooksLikeAutonomyFabrication('今天真的累坏了', '疲れているなら、そう言えばいい。', { alreadyTalking: true }),
+    false,
+  );
+});

@@ -1,0 +1,30 @@
+'use strict';
+
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+const { extractSpeechCandidate, salvageAssistantReply } = require('../lib/salvageReply');
+const { gateAssistantReply } = require('../lib/generationGate');
+
+describe('salvage extractSpeechCandidate', () => {
+  it('pulls spoken tail from cot-heavy draft', () => {
+    const dirty = [
+      '好的，用户现在提到熬夜。首先需要分析需求和对话历史。',
+      '凌晨三点才睡，身体会垮的。',
+    ].join('\n');
+    const got = extractSpeechCandidate(dirty);
+    assert.ok(got.includes('凌晨三点') || got.includes('身体'));
+    assert.equal(gateAssistantReply(got).action !== 'drop', true);
+  });
+
+  it('drops pure identity collapse drafts', () => {
+    assert.equal(extractSpeechCandidate('作为有逻辑的人工智能，这种信息应该记住。'), '');
+  });
+
+  it('salvage uses extract before llm', async () => {
+    const out = await salvageAssistantReply({}, {
+      userText: '我喜欢喝什么',
+      previousDraft: '用户突然提问。\n胡椒博士啊，别装忘。',
+    });
+    assert.match(out, /胡椒博士/);
+  });
+});

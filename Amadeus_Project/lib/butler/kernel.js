@@ -12,6 +12,7 @@ const { FileUndoStore } = require('./fileUndoStore');
 const { registerFileMutationCapabilities } = require('./fileMutationCapabilities');
 const { registerWindowsCapabilities } = require('./windowsCapabilities');
 const { ButlerUserWorld } = require('./userWorld');
+const { AgencyLoop } = require('../agency/loop');
 
 class ButlerKernel {
   constructor(options = {}) {
@@ -32,11 +33,65 @@ class ButlerKernel {
     registerLocalCapabilities(this, { allowedRoots });
     registerFileMutationCapabilities(this, { allowedRoots });
     registerWindowsCapabilities(this, { allowedRoots, ...(options.windowsOptions || {}) });
+    this.agency = options.agency || new AgencyLoop({
+      dataDir: options.dataDir,
+      journal: this.journal,
+      butlerKernel: this,
+    });
   }
 
   _registerFoundationCapabilities() {
-    this.registerCapability({ id: 'task.manage', name: '目标与任务管理', available: true, risk: 'low' });
-    this.registerCapability({ id: 'task.verify', name: '执行证据与完成验证', available: true, risk: 'low' });
+    this.registerCapability({ id: 'task.manage', name: '目标与任务管理', available: true, risk: 'low' }, {
+      execute: async (inputs = {}) => {
+        const action = String(inputs?.action || 'list');
+        if (action === 'list') {
+          const tasks = (this.tasks.listTasks ? this.tasks.listTasks() : [])
+            .filter((t) => !['completed', 'failed', 'cancelled'].includes(t.status));
+          return {
+            ok: true,
+            summary: `当前进行中的任务：${tasks.length} 个`,
+            artifact: tasks.slice(0, 8).map((t) => `${t.title}(${t.status})`).join('、') || '无',
+            data: { count: tasks.length, tasks: tasks.slice(0, 8).map((t) => ({ id: t.id, title: t.title, status: t.status })) },
+          };
+        }
+        if (action === 'create' && String(inputs?.title || '').trim()) {
+          const created = this.proposeTask({ title: inputs.title, description: inputs.title, risk: 'low', source: 'api' });
+          if (created.task) {
+            return { ok: true, summary: `已登记任务：${inputs.title}`, artifact: created.task.id, data: { taskId: created.task.id, status: created.task.status } };
+          }
+          return { ok: false, summary: '任务登记失败' };
+        }
+        if (action === 'status' && String(inputs?.taskId || '').trim()) {
+          const task = this.tasks.getTask(inputs.taskId);
+          if (!task) return { ok: false, summary: `未找到任务 ${inputs.taskId}` };
+          return { ok: true, summary: `任务「${task.title}」状态：${task.status}`, artifact: task.status, data: { id: task.id, title: task.title, status: task.status, evidence: (task.evidence || []).length } };
+        }
+        return { ok: false, summary: `未知任务操作：${action}` };
+      },
+      verify: async (result) => ({
+        passed: result?.ok === true,
+        summary: '任务记录已与任务库核对。',
+      }),
+    });
+    this.registerCapability({ id: 'task.verify', name: '执行证据与完成验证', available: true, risk: 'low' }, {
+      execute: async (inputs = {}) => {
+        const taskId = String(inputs?.taskId || '').trim();
+        if (!taskId) return { ok: false, summary: '缺少 taskId' };
+        const task = this.tasks.getTask(taskId);
+        if (!task) return { ok: false, summary: `未找到任务 ${taskId}` };
+        const evidence = task.evidence || [];
+        return {
+          ok: true,
+          summary: `任务「${task.title}」：状态=${task.status}，证据 ${evidence.length} 条${task.verification ? '，已验证=' + (task.verification.passed === true ? '通过' : '未通过') : ''}`,
+          artifact: task.status,
+          data: { id: task.id, title: task.title, status: task.status, evidenceCount: evidence.length, lastEvidence: evidence[evidence.length - 1] || null, verification: task.verification || null },
+        };
+      },
+      verify: async (result) => ({
+        passed: result?.ok === true,
+        summary: '任务状态与证据链已复核。',
+      }),
+    });
     this.registerCapability({
       id: 'system.inspect',
       name: '读取本机运行状态',
@@ -268,7 +323,10 @@ class ButlerKernel {
   _isRecoverable(task) {
     if (!task || task.status !== 'blocked') return false;
     const lastEvidence = task.evidence?.[task.evidence.length - 1];
-    if (!lastEvidence || lastEvidence.ok !== false) return false;
+    // 规划阶段的失败没有执行证据（failPlanning 旧版不写 evidence）；
+    // 只要 blockedReason 是规划/执行脑失败，就允许自动恢复。
+    const plannerBlocked = !lastEvidence && /规划失败|planner|执行脑/.test(String(task.blockedReason || ''));
+    if (!plannerBlocked && (!lastEvidence || lastEvidence.ok !== false)) return false;
     const max = Number(process.env.AMADEUS_BUTLER_MAX_REPLANS) || 2;
     return (task.recovery?.replans || 0) < max;
   }
@@ -283,7 +341,8 @@ class ButlerKernel {
     const failureContext = (task.evidence || [])
       .filter((item) => item.ok === false)
       .slice(-3)
-      .map((item) => `${item.capability || item.kind}: ${item.summary}`);
+      .map((item) => `${item.capability || item.kind}: ${item.summary}`)
+      .concat(task.blockedReason ? [`planner: ${task.blockedReason}`] : []);
     this.journal.append('task.recovery_started', {
       taskId,
       attempt: task.recovery.replans,
@@ -332,6 +391,14 @@ class ButlerKernel {
       task = this.tasks.transition(taskId, 'blocked', {
         actor: 'planner', blockedReason: reason, nextAction: '检查执行脑连接后重新规划',
       });
+      // 留 ok:false 证据，operatorTick 的 _isRecoverable 才能自动重规划
+      this.tasks.addEvidence(taskId, {
+        ok: false,
+        kind: 'planning_failed',
+        capability: 'planner',
+        summary: reason,
+        details: { raw: detail },
+      });
     }
     this.journal.append('planning.failed', { taskId, reason, detail }, { actor: 'planner', correlationId: taskId });
     if (options.followup !== false) this._queueFollowup(task, 'blocked');
@@ -355,10 +422,16 @@ class ButlerKernel {
     return `执行脑规划失败：${raw.slice(0, 120)}`;
   }
 
-  updatesSince(since = 0, limit = 30) {
+  updatesSince(since = 0, limit = 30, options = {}) {
     const after = Math.max(0, Number(since) || 0);
+    const conversationId = String(options.conversationId || '').trim();
     return this.journal.recent(1000, { type: 'task.followup_required' })
       .filter((event) => event.ts > after)
+      .filter((event) => {
+        if (!conversationId) return true;
+        const task = this.tasks.getTask(event.payload?.taskId);
+        return task && task.conversationId === conversationId;
+      })
       .slice(-Math.min(100, Math.max(1, Number(limit) || 30)))
       .map((event) => {
         const task = this.tasks.getTask(event.payload?.taskId);
@@ -378,7 +451,14 @@ class ButlerKernel {
           text = `“${task.title}”现在无法继续：${task.blockedReason || '缺少必要条件'}。`;
         }
         if (!text) return null;
-        return { id: event.id, ts: event.ts, taskId: task.id, status, text };
+        return {
+          id: event.id,
+          ts: event.ts,
+          taskId: task.id,
+          status,
+          text,
+          conversationId: task.conversationId || '',
+        };
       })
       .filter(Boolean);
   }
@@ -527,6 +607,7 @@ class ButlerKernel {
     }
     const source = input.source || 'chat';
     const requestKey = String(input.turnId || input.requestKey || '').trim();
+    const conversationId = String(input.conversationId || '').trim();
     const event = this.journal.append('user.request_observed', { text }, {
       actor: 'user', source, correlationId: requestKey,
     });
@@ -548,7 +629,40 @@ class ButlerKernel {
       }
     }
 
-    // 用户原句不再按词表自动建任务。进队只走 proposeTask / 回复里的 agency 标记。
+    // 能力判决 → 承诺（原生到点开口 / 增强工具 / 禁止域）
+    const agencyResult = this.agency.perceiveUser(text, {
+      source,
+      turnId: requestKey,
+      requestKey,
+      conversationId,
+      now: input.now,
+    });
+    if (agencyResult.action !== 'agency_none') {
+      const actionable = agencyResult.judgment?.verdict === 'native'
+        || agencyResult.judgment?.verdict === 'augmented';
+      return {
+        event,
+        text,
+        intent: {
+          actionable,
+          category: agencyResult.judgment?.category || agencyResult.judgment?.verdict || 'agency',
+          confidence: 1,
+          risk: agencyResult.judgment?.verdict === 'augmented' ? 'low' : 'low',
+          gatedBy: 'agency_loop',
+          verdict: agencyResult.judgment?.verdict,
+          alternative: agencyResult.judgment?.alternative,
+        },
+      task: agencyResult.task || null,
+        created: Boolean(agencyResult.created || agencyResult.taskCreated),
+        action: agencyResult.action,
+        promptBlock: agencyResult.promptBlock || this.agency.openIntentionsPrompt(3),
+        intention: agencyResult.intention || null,
+      deferred: agencyResult.deferred || null,
+        judgment: agencyResult.judgment || null,
+        promptHint: agencyResult.promptHint || '',
+      };
+    }
+
     return {
       event,
       text,
@@ -579,6 +693,7 @@ class ButlerKernel {
     const category = String(input.category || input.type || meta.category || 'general').trim() || 'general';
     const source = input.source || 'agency';
     const requestKey = String(input.turnId || input.requestKey || '').trim();
+    const conversationId = String(input.conversationId || '').trim();
     const result = this.tasks.createTask({
       title: String(input.title || description).trim().slice(0, 180),
       description,
@@ -587,6 +702,7 @@ class ButlerKernel {
       requiresConfirmation: input.requiresConfirmation === true || risk === 'high',
       source,
       requestKey,
+      conversationId,
       nextAction: '等待执行脑生成可验证计划',
     });
     this.journal.append('agency.task_proposed', {
@@ -613,19 +729,40 @@ class ButlerKernel {
   /** 从她的完整回复里提取动手标记、登记任务，并返回可展示台词。 */
   consumeAgencyReply(rawText, options = {}) {
     const { proposal, spoken } = parseAgencyTaskProposal(rawText);
-    if (!proposal) return { spoken, task: null, created: false, proposal: null };
-    const accepted = this.proposeTask({
-      ...proposal,
-      source: options.source || 'agency',
+    let task = null;
+    let created = false;
+    let promptBlock = '';
+    let proposalOut = null;
+    if (proposal) {
+      const accepted = this.proposeTask({
+        ...proposal,
+        source: options.source || 'agency',
+        turnId: options.turnId,
+        requestKey: options.requestKey,
+        conversationId: options.conversationId,
+      });
+      task = accepted.task;
+      created = accepted.created;
+      promptBlock = accepted.promptBlock;
+      proposalOut = proposal;
+    }
+
+    // 入口 B：口头承诺 → Intention（不依赖 TASK 标记）
+    const promiseResult = this.agency.perceiveHerReply({
+      userText: options.userText || '',
+      replyText: spoken,
       turnId: options.turnId,
-      requestKey: options.requestKey,
+      now: options.now,
     });
+
     return {
       spoken,
-      proposal,
-      task: accepted.task,
-      created: accepted.created,
-      promptBlock: accepted.promptBlock,
+      proposal: proposalOut,
+      task: task || promiseResult.task || null,
+      created: created || Boolean(promiseResult.created),
+      promptBlock,
+      intention: promiseResult.intention || null,
+      promiseAction: promiseResult.action,
     };
   }
 

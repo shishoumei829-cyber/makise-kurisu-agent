@@ -191,6 +191,7 @@ class AutonomousBehaviorLoop {
       suppressProactive,
       goalSeeds,
       primaryUrge: primaryUrge ? {
+        id: primaryUrge.id,
         drive: primaryUrge.drive,
         intent: primaryUrge.intent,
         intentKey: primaryUrge.intentKey,

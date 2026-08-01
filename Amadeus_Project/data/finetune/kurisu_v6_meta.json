@@ -1,0 +1,9 @@
+{
+  "builtAt": "2026-07-30T12:34:20.949Z",
+  "total": 87,
+  "train": 71,
+  "eval": 16,
+  "targeted": 61,
+  "targetedDialogues": 10,
+  "translated": 0
+}

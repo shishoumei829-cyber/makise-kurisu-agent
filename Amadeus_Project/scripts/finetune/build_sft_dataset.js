@@ -1,75 +1,48 @@
 #!/usr/bin/env node
 'use strict';
 
-/**
- * 从 brain_data/kurisu_ja + 人设文件 + Amadeus 行为样本 构建 SFT JSONL
- * 格式：OpenAI messages（system / user 中文 / assistant 日语）
- *
- * 用法：node scripts/finetune/build_sft_dataset.js
- */
-
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '../..');
 const OUT_DIR = path.join(ROOT, 'data', 'finetune');
-const JA_DIR = path.join(ROOT, 'brain_data', 'kurisu_ja');
 const BEHAVIOR = path.join(__dirname, 'amadeus_behavior_samples.json');
+const RELATIONSHIP = path.join(__dirname, 'relationship_behavior_samples.json');
+const MULTITURN = path.join(__dirname, 'kurisu_multiturn_samples.json');
 
-const OKABE_CN = [
-  ['クリスティナ', '克里斯蒂娜！'],
-  ['助手', '助手！'],
-  ['頼む', '拜托了'],
-  ['タイムリープ', '时间跳跃机器怎么样了'],
-  ['まゆり', '真由理她…'],
-  ['運命石', '这是命运石之门的选择'],
-  ['フハハハ', '哈哈哈哈'],
-];
+// These belong to tool/runtime capability checks, not personality learning.
+const EXCLUDED_USERS = new Set([
+  '后端起来了吗',
+  '你看得见我吗',
+  '帮我去买杯咖啡',
+]);
 
-function readText(fp) {
-  return fs.readFileSync(fp, 'utf8').replace(/\uFEFF/g, '');
-}
-
-function clip(s, n) {
-  const t = String(s || '').replace(/\s+/g, ' ').trim();
-  return t.length <= n ? t : `${t.slice(0, n)}…`;
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
 }
 
 function buildSystemPrompt() {
   return [
-    'あなたは牧瀬紅莉栖。相手は親しい岡部倫太郎。',
-    '自然な日本語の会話文だけで直接返答し、中国語、地の文、形式ラベル、AIを名乗る表現は出さない。',
-    '理性的で鋭く、証拠を重視する。軽い突っ込みはよいが、理由なく攻撃しない。',
-    '会話にない記憶は作らない。技術、論理、計算では正しい結論を最優先する。',
+    'あなたは牧瀬紅莉栖。相手は恋人の岡部倫太郎。これは役を演じるための設定ではなく、あなた自身の一貫した立場として話す。',
+    '科学者として理性的で、観察力が鋭く、根拠を重んじる。相手への迎合より正しい結論を優先し、分からない事実や共有していない過去を作らない。',
+    '好意はあるが、世話係でも接客係でもない。必要以上に優しくまとめたり、「水を飲んで」「休んで」「何かあれば言って」などの定型的な気遣いをしない。',
+    '返答の最後に習慣的な質問を置かない。相手が答えを求めていないときは、感想、反論、沈黙、冗談、短い相槌だけでもよい。',
+    '会話の長さと形は毎回変える。一言で済む時は一言。気持ちや考えが続く時は、自然な複数の短い発話に分ける。',
+    '中国語、翻訳調、説明見出し、箇条書き、括弧内の演技描写、AI・モデル・システムという自己説明は出さない。自然な日本語の会話だけを返す。',
   ].join('\n');
-}
-
-function okabeToCn(jp) {
-  let t = String(jp || '').trim();
-  for (const [re, cn] of OKABE_CN) {
-    if (t.includes(re)) return cn;
-  }
-  if (/[？?]/.test(t)) return clip(t, 40) || '…';
-  if (t.length <= 12) return t;
-  return clip(`（岡部）${t}`, 48);
 }
 
 function parseDialoguePairs(content) {
   const rows = [];
   let user = '';
-  for (const raw of content.split(/\r?\n/)) {
+  for (const raw of String(content || '').split(/\r?\n/)) {
     const line = raw.trim();
-    if (!line || line.startsWith('[')) continue;
-    const okabe = line.match(/^岡部[：:](.+)/);
-    const kurisu = line.match(/^紅莉栖[：:](.+)/);
-    const amadeus = line.match(/^アマデウス[：:](.+)/);
-    if (okabe) {
-      user = okabeToCn(okabe[1]);
-    } else if (kurisu && user) {
+    const okabe = line.match(/^(?:岡部|宀￠儴)[：:](.+)/);
+    const kurisu = line.match(/^(?:紅莉栖|绱呰帀鏍)[：:](.+)/);
+    if (okabe) user = okabe[1].trim();
+    if (kurisu && user) {
       rows.push({ user, assistant: kurisu[1].trim() });
       user = '';
-    } else if (amadeus) {
-      rows.push({ user: '…', assistant: amadeus[1].trim() });
     }
   }
   return rows;
@@ -85,102 +58,101 @@ function toMessages(system, pair) {
   };
 }
 
-function dedupePairs(pairs) {
-  const seen = new Set();
-  const out = [];
-  for (const p of pairs) {
-    const key = `${p.user}|||${p.assistant}`;
-    if (seen.has(key)) continue;
-    if (!p.user || !p.assistant) continue;
-    if (p.assistant.length < 2) continue;
-    if (!/[\u3040-\u30ff]/.test(p.assistant)) continue;
-    if (/[\u0400-\u04ff]/.test(p.assistant)) continue;
-    if (p.user.trim() === p.assistant.trim()) continue;
-    seen.add(key);
-    out.push(p);
+function normalizeRows(system) {
+  const rows = [];
+  for (const [source, file] of [['amadeus', BEHAVIOR], ['relationship', RELATIONSHIP]]) {
+    for (const row of readJson(file)) {
+      if (EXCLUDED_USERS.has(String(row.user || '').trim())) continue;
+      rows.push({
+        source,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: String(row.user || '').trim() },
+          { role: 'assistant', content: String(row.assistant || '').trim() },
+        ],
+      });
+    }
   }
-  return out;
+  for (const row of readJson(MULTITURN)) {
+    rows.push({
+      source: 'multiturn',
+      messages: [{ role: 'system', content: system }, ...row.messages],
+    });
+  }
+  return rows;
 }
 
-function shuffle(arr, seed = 42) {
-  const a = [...arr];
-  let s = seed;
-  for (let i = a.length - 1; i > 0; i--) {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    const j = s % (i + 1);
-    [a[i], a[j]] = [a[j], a[i]];
+function validate(rows) {
+  const failures = [];
+  const assistants = [];
+  const seen = new Set();
+  for (const [index, row] of rows.entries()) {
+    const messages = row.messages || [];
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant' || !last.content) failures.push(`row ${index}: missing assistant`);
+    const key = JSON.stringify(messages.slice(1));
+    if (seen.has(key)) failures.push(`row ${index}: duplicate`);
+    seen.add(key);
+    for (const message of messages) {
+      if (message.role !== 'assistant') continue;
+      assistants.push(message.content);
+      if (!/[\u3040-\u30ff]/.test(message.content)) failures.push(`row ${index}: assistant is not Japanese`);
+      if (/(AI|人工知能|言語モデル|システムとして)/i.test(message.content)) failures.push(`row ${index}: AI self-description`);
+      if (/(水を飲|休んで|無理しないで|何かあったら|いつでも言って|手伝える)/.test(message.content)) {
+        failures.push(`row ${index}: caretaker/customer phrase`);
+      }
+    }
   }
-  return a;
+  const questionEndings = assistants.filter((text) => /[？?]\s*$/.test(text)).length;
+  const ratio = assistants.length ? questionEndings / assistants.length : 1;
+  if (ratio > 0.22) failures.push(`question-ending ratio too high: ${questionEndings}/${assistants.length}`);
+  if (failures.length) throw new Error(`dataset rejected:\n${failures.join('\n')}`);
+  return { assistantMessages: assistants.length, questionEndings, questionEndingRatio: ratio };
+}
+
+function shuffle(rows, seed = 42) {
+  const result = [...rows];
+  let state = seed;
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    state = (state * 1103515245 + 12345) & 0x7fffffff;
+    const j = state % (i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
 function main(opts = {}) {
   const outDir = path.resolve(opts.outDir || process.env.AMADEUS_FINETUNE_OUT_DIR || OUT_DIR);
   const system = buildSystemPrompt();
-  const pairs = [];
-
-  const behavior = JSON.parse(readText(BEHAVIOR));
-  for (const row of behavior) {
-    pairs.push({ user: row.user, assistant: row.assistant, source: 'amadeus' });
-  }
-
-  const pairsFile = path.join(JA_DIR, 'dialogue_pairs_block_34.txt');
-  if (fs.existsSync(pairsFile)) {
-    for (const p of parseDialoguePairs(readText(pairsFile))) {
-      pairs.push({ ...p, source: 'dialogue_pairs' });
-    }
-  }
-
-  const unique = dedupePairs(pairs);
-  const shuffled = shuffle(unique);
-  const evalCount = Math.max(8, Math.floor(shuffled.length * 0.05));
+  const rows = normalizeRows(system);
+  const quality = validate(rows);
+  const shuffled = shuffle(rows);
+  const evalCount = Math.max(10, Math.floor(rows.length * 0.1));
   const evalRows = shuffled.slice(0, evalCount);
   const trainRows = shuffled.slice(evalCount);
-
   fs.mkdirSync(outDir, { recursive: true });
-  const trainPath = path.join(outDir, 'kurisu_sft.jsonl');
-  const evalPath = path.join(outDir, 'kurisu_sft_eval.jsonl');
-  const metaPath = path.join(outDir, 'kurisu_sft_meta.json');
-
-  const writeJsonl = (fp, rows) => {
-    fs.writeFileSync(
-      fp,
-      rows.map((r) => JSON.stringify(toMessages(system, r))).join('\n') + '\n',
-      'utf8',
-    );
-  };
-
-  writeJsonl(trainPath, trainRows);
-  writeJsonl(evalPath, evalRows);
-
-  const bySource = {};
-  for (const p of unique) bySource[p.source] = (bySource[p.source] || 0) + 1;
-
-  fs.writeFileSync(metaPath, JSON.stringify({
-    builtAt: new Date().toISOString(),
-    total: unique.length,
-    train: trainRows.length,
-    eval: evalRows.length,
-    systemChars: system.length,
-    bySource,
-  }, null, 2), 'utf8');
-
-  fs.writeFileSync(
-    path.join(outDir, 'system_prompt.txt'),
-    system,
+  const write = (name, values) => fs.writeFileSync(
+    path.join(outDir, name),
+    `${values.map(({ messages }) => JSON.stringify({ messages })).join('\n')}\n`,
     'utf8',
   );
-
-  console.log(`[finetune] 数据集已写入 ${trainPath}`);
-  console.log(`[finetune] 训练 ${trainRows.length} / 验证 ${evalRows.length} / 合计 ${unique.length}`);
-  console.log('[finetune] 来源分布:', bySource);
+  write('kurisu_sft.jsonl', trainRows);
+  write('kurisu_sft_eval.jsonl', evalRows);
+  const bySource = rows.reduce((acc, row) => {
+    acc[row.source] = (acc[row.source] || 0) + 1;
+    return acc;
+  }, {});
+  fs.writeFileSync(path.join(outDir, 'kurisu_sft_meta.json'), JSON.stringify({
+    builtAt: new Date().toISOString(),
+    total: rows.length,
+    train: trainRows.length,
+    eval: evalRows.length,
+    bySource,
+    quality,
+  }, null, 2), 'utf8');
+  fs.writeFileSync(path.join(outDir, 'system_prompt.txt'), system, 'utf8');
+  console.log(JSON.stringify({ total: rows.length, train: trainRows.length, eval: evalRows.length, bySource, quality }));
 }
 
-module.exports = {
-  main,
-  buildSystemPrompt,
-  parseDialoguePairs,
-  dedupePairs,
-  toMessages,
-};
-
+module.exports = { main, buildSystemPrompt, validate, parseDialoguePairs, toMessages };
 if (require.main === module) main();

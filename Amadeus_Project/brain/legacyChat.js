@@ -49,18 +49,23 @@ const { buildSocialIdentityPrompt } = require('../cognitive/socialIdentity');
 const { buildExpressionVariantBlock } = require('../cognitive/expressionVariants');
 const { EmotionalBandwidthEngine } = require('../cognitive/emotionalBandwidth');
 const { needsConversationRecall } = require('../lib/unifiedDialogueLog');
+const { buildRecallFactAnchor } = require('../lib/recallFactAnchor');
+const { salvageAssistantReply } = require('../lib/salvageReply');
+const { gateAssistantReply } = require('../lib/generationGate');
 const userPresence = require('../lib/userPresence');
 const { perceiveIncomingChat } = require('./perceive');
 const { ChatTurnRegistry } = require('../lib/chatTurnRegistry');
 const { stripAgencyTaskMarkers } = require('../lib/butler/intent');
 
-async function _acceptAgencyTaskFromReply(d, rawText, { turnId } = {}) {
+async function _acceptAgencyTaskFromReply(d, rawText, { turnId, userText, conversationId } = {}) {
   if (!d?.butlerKernel?.consumeAgencyReply) {
     return { spoken: stripAgencyTaskMarkers(rawText), task: null, created: false };
   }
   const accepted = d.butlerKernel.consumeAgencyReply(rawText, {
     source: 'agency',
     turnId,
+    userText,
+    conversationId,
   });
   const task = accepted.task;
   if (task && accepted.created) {
@@ -114,10 +119,17 @@ async function runChatTurn(req, res) {
 
   const __streamRequested = req.body && req.body.stream === true;
   try {
-    let model      = req.body.model || process.env.AMADEUS_CHAT_MODEL || 'kurisu:latest';
+    const requestDialogueSnapshot = (Array.isArray(req.body.messages) ? req.body.messages : [])
+      .map((item) => ({
+        role: item?.role,
+        content: String(item?.content || ''),
+      }));
+    let model      = req.body.model || process.env.AMADEUS_CHAT_MODEL || 'kurisu-v4-candidate:latest';
     const useStream= req.body.stream === true;  // 默认非流式
     let temp       = req.body.temperature ?? (Number(process.env.AMADEUS_CHAT_TEMP) || 0.72);
     let maxTok   = req.body.max_tokens  ?? 384;
+    const nativeThinkingModel = /^kurisu(?::|$)/i.test(String(model || ''));
+    if (nativeThinkingModel) maxTok = Math.max(520, Number(maxTok) || 0);
 
     const {
       parsed,
@@ -148,50 +160,109 @@ async function runChatTurn(req, res) {
     const maxHist = Number.isFinite(histCap) && histCap > 0 ? histCap : 12;
 
     const replyLanguage = getReplyLanguageMode();
+    const japaneseNativeModel = replyLanguage === 'ja'
+      && /(?:llm[-_]?jp|swallow)/i.test(String(model || ''));
+    const japaneseNativeSoul = [
+      'あなたは牧瀬紅莉栖。目の前の岡部倫太郎とは恋人同士で、対等な一人の人間として話す。',
+      '科学者らしく観察し、自分で判断する。相手に迎合せず、間違いには反論する。',
+      '共有された記録にない過去、約束、飲酒、場所、行動を事実として作らない。分からない時は分からないと言う。',
+      '世話係や接客係のような慰め、毎回の提案、最後の定型質問はしない。好意は自分の言葉と態度で表す。',
+      '地の文、括弧内の動作、話者名、見出し、箇条書きは書かない。自分をAI、モデル、システム、助手として説明しない。',
+      '一言で足りる時は一言。気持ちや考えが続く時だけ、二、三個の短い発話に分ける。自然な日本語だけを返す。',
+    ].join('\n');
 
     // 单一 prompt 源：忽略前端 system，仅用服务端 soul
-    let systemContent = d.cachedSoulContent;
-    if (replyLanguage === 'ja') {
-      systemContent = [d.cachedSoulContent, d.cachedVoiceContent, d.cachedCharacterRules].filter(Boolean).join('\n\n');
-    } else if (d.cachedCharacterRules) {
-      systemContent = systemContent + '\n\n' + d.cachedCharacterRules;
+    const adaptSoulForReplyLanguage = (soul, lang) => {
+      let text = String(soul || '');
+      if (lang === 'zh') {
+        text = text
+          .replace(/- 正文用日语口语对白[^\n]*/g, '- 正文用简体中文口语对白，像微信聊天。')
+          .replace(/- 需要语音时写日语即可[^\n]*/g, '')
+          .replace(/不要写 CN:\s*\/\s*JP:\s*前缀[^\n]*/g, '不要写 JP: 前缀。');
+      }
+      return text.trim();
+    };
+    let systemContent = adaptSoulForReplyLanguage(d.cachedSoulContent, replyLanguage);
+    if (japaneseNativeModel) {
+      // 日本語特化モデルへ中国語の人格資料を大量投入すると、翻訳調・復唱・
+      // 話題混線が起きる。kurisu_soul_ja.txt（母語向け再構成）で人格の意味を保つ。
+      systemContent = adaptSoulForReplyLanguage(d.cachedSoulJaContent || japaneseNativeSoul, replyLanguage);
+    }
+    if (replyLanguage === 'ja' || replyLanguage === 'zh') {
+      systemContent = [
+        systemContent,
+        japaneseNativeModel ? '' : d.cachedVoiceContent,
+        japaneseNativeModel ? '' : d.cachedCharacterRules,
+      ].filter(Boolean).join('\n\n');
     }
     systemContent = systemContent.trim();
 
-    // 用户原句只观察偏好/确认，不按词表进队。进行中的任务事实可注入；动手登记等她回复里的标记。
+    // 用户原句：Agency 判决（原生承诺 / 增强工具 / 禁止域）；标记进队仍是补充通道。
     if (!autonomyInitiative && d.butlerKernel) {
       const butlerObservation = d.butlerKernel.observeUserRequest({
         text: userContent,
         source: 'chat',
         turnId: lease.turnId,
+        conversationId: lease.conversationId,
       });
-      if (butlerObservation.action === 'confirmation_approved' && butlerObservation.task?.status === 'ready') {
-        try {
-          const execution = await d.butlerKernel.runPlan(butlerObservation.task.id, { source: 'chat' });
-          const taskBlock = d.butlerKernel.taskPromptBlock(butlerObservation.task.id, execution);
-          if (taskBlock) systemContent = `${systemContent}\n\n${taskBlock}`;
-        } catch (error) {
-          d.agentDebugLog?.({
-            hypothesisId: 'butler-confirm-run',
-            location: 'brain/legacyChat',
-            message: error.message,
-            data: { taskId: butlerObservation.task.id },
-          });
+      let execution = null;
+      try {
+        if (butlerObservation.action === 'confirmation_approved' && butlerObservation.task?.status === 'ready') {
+          execution = await d.butlerKernel.runPlan(butlerObservation.task.id, { source: 'chat' });
+        } else if (
+          butlerObservation.task
+          && (
+            butlerObservation.action === 'agency_task_proposed'
+            || butlerObservation.action === 'deferred_speak_proposed'
+            || butlerObservation.action === 'reminder_auto_proposed'
+            || butlerObservation.created
+          )
+        ) {
+          const planned = await d.butlerKernel.planTask(butlerObservation.task.id, { allowStrong: false });
+          if (planned?.task?.status === 'ready' && planned.plan?.source === 'heuristic') {
+            execution = await d.butlerKernel.runPlan(butlerObservation.task.id, { source: 'chat' });
+          } else if (!planned && ['proposed', 'waiting_confirmation'].includes(butlerObservation.task.status)) {
+            d.butlerKernel.planTask(butlerObservation.task.id, { allowStrong: true, source: 'background' }).catch((error) => {
+              d.butlerKernel.failPlanning?.(butlerObservation.task.id, error, { followup: true });
+            });
+          }
         }
-      } else if (butlerObservation.promptBlock) {
-        systemContent = `${systemContent}\n\n${butlerObservation.promptBlock}`;
-      } else {
-        const active = d.butlerKernel.getActiveTasks?.() || [];
-        if (active[0]) {
-          const taskBlock = d.butlerKernel.taskPromptBlock(active[0].id);
-          if (taskBlock) systemContent = `${systemContent}\n\n${taskBlock}`;
-        }
+      } catch (error) {
+        d.agentDebugLog?.({
+          hypothesisId: 'butler-observe-plan',
+          location: 'brain/legacyChat',
+          message: error.message,
+          data: { taskId: butlerObservation.task?.id, action: butlerObservation.action },
+        });
       }
-      systemContent = `${systemContent}\n\n${d.butlerAgencyHint || [
-        '【动手登记】只有当你决定亲自去办一件可用工具完成的现实事（开应用、找文件、设提醒、查系统等）时，在台词末尾另起一行写：',
-        '⟦AMADEUS_TASK{"title":"短标题","description":"要办的事"}⟧',
-        '社交请求、给他派任务玩、闲聊、安慰、抬杠：不要写这一行。没有这一行就不会启动执行。台词里不要念出标记本身。',
-      ].join('\n')}`;
+      if (butlerObservation.task) {
+        const taskBlock = d.butlerKernel.taskPromptBlock(butlerObservation.task.id, execution);
+        if (taskBlock) systemContent = `${systemContent}\n\n${taskBlock}`;
+      }
+      const hasButlerContext = Boolean(
+        butlerObservation.task
+        || butlerObservation.intention
+        || butlerObservation.action !== 'agency_none',
+      );
+      if (hasButlerContext) {
+        if (butlerObservation.intention) {
+          const when = butlerObservation.intention.trigger?.kind === 'at_time' && butlerObservation.intention.trigger.dueAt
+            ? new Date(butlerObservation.intention.trigger.dueAt).toLocaleString('zh-CN', { hour12: false })
+            : '';
+          systemContent = `${systemContent}\n\n【已登记承诺】${butlerObservation.intention.goal}${when ? `（${when}）` : ''}。用你的口吻确认即可，禁止自称AI办不到。`;
+        }
+        if (butlerObservation.action === 'agency_forbidden' && butlerObservation.promptHint) {
+          systemContent = `${systemContent}\n\n【能力边界】${butlerObservation.promptHint}`;
+        }
+        const agencyPrompt = d.butlerKernel.agency?.promptBlock?.(d.brainSelfModel?.getAxioms?.() || undefined);
+        const openIntentions = d.butlerKernel.agency?.openIntentionsPrompt?.(4) || '';
+        systemContent = `${systemContent}\n\n${d.butlerAgencyHint || agencyPrompt || [
+          '你有声音、时间感、记忆和承诺能力；本机工具是增强。',
+          '没有身体上门或推醒。禁止用「我是AI」否定原生能力或已可用工具。',
+          '复杂电脑操作可在台词末尾另起一行写：⟦AMADEUS_TASK{"title":"短标题","description":"要办的事"}⟧（不要念出标记）。',
+        ].join('\n')}`;
+        if (openIntentions) systemContent = `${systemContent}\n\n${openIntentions}`;
+      }
     }
 
     if (!userContent) {
@@ -211,14 +282,36 @@ async function runChatTurn(req, res) {
     }
     const userLine = cognitiveInput || userContent;
     const isRealUserTurn = !autonomyInitiative;
+    let modelUserLine = userLine;
+    if (
+      isRealUserTurn
+      && replyLanguage === 'ja'
+      && process.env.AMADEUS_JP_INPUT_TRANSLATE === '1'
+      && typeof d.translateUserToJapanese === 'function'
+    ) {
+      try {
+        modelUserLine = await d.translateUserToJapanese(userLine);
+      } catch (error) {
+        d.agentDebugLog?.({
+          hypothesisId: 'jp-user-translation',
+          location: 'brain/legacyChat',
+          message: error.message,
+        });
+      }
+    }
     const memoryAdmission = d.memoryAdmission.assessUserText(userLine, {
       source: isRealUserTurn ? 'user' : 'synthetic',
       synthetic: !isRealUserTurn,
     });
     if (isRealUserTurn) {
       d.memoryAdmission.observe('user', userLine);
+      d.soulRuntime?.observeUserTurn(userLine, {
+        conversationId: lease.conversationId,
+        turnId: lease.turnId,
+      });
       if (replyingToProactive) {
         d.conversationInitiative?.registerFeedback({ type: 'reply', text: userLine });
+        d.soulRuntime?.registerFeedback(userLine);
       }
     }
     const lastEntry = d.unifiedDialogueLog.getRecent(1)[0];
@@ -234,11 +327,25 @@ async function runChatTurn(req, res) {
       });
     }
 
-    dialogueForOllama = d.unifiedDialogueLog.toOllamaDialogue({ maxMsgs: maxHist });
+    dialogueForOllama = d.unifiedDialogueLog.toOllamaDialogue({
+      maxMsgs: maxHist,
+      conversationId: lease.conversationId,
+    });
     if (userNorm && (!dialogueForOllama.length || dialogueForOllama[dialogueForOllama.length - 1].role !== 'user'
       || dialogueForOllama[dialogueForOllama.length - 1].content !== userNorm)) {
       dialogueForOllama.push({ role: 'user', content: userNorm });
       if (dialogueForOllama.length > maxHist) dialogueForOllama = dialogueForOllama.slice(-maxHist);
+    }
+    if (modelUserLine && dialogueForOllama[dialogueForOllama.length - 1]?.role === 'user') {
+      dialogueForOllama[dialogueForOllama.length - 1] = {
+        role: 'user',
+        content: modelUserLine,
+      };
+    }
+    if (japaneseNativeModel) {
+      // UI/实录保存的是中文字幕，不能把中文历史重新塞回日语模型。
+      // 连续性由统一记忆与事实锚点提供；本轮只给已翻译的真实原话。
+      dialogueForOllama = dialogueForOllama.slice(-1);
     }
 
     if (isRealUserTurn) s.chatTurnCounter++;
@@ -338,7 +445,9 @@ async function runChatTurn(req, res) {
     console.log(`[user_model] 用户特征: ${Object.entries(d.userModelInst.model.preferences).filter(([, v]) => v > 0.5).map(([k, v]) => `${k}:${v.toFixed(2)}`).join(' ')}`);
 
     // ══ RAG 与 动机/行为/策略/人格/元认知 并行（RAG 仅懒注入命中时）══
-    const ragMs = Number(process.env.AMADEUS_RAG_MS) || 900;
+    // 嵌入模型首次唤醒通常超过 900ms；过短会让有效记忆在生成前被静默丢掉。
+    // 仍可用 AMADEUS_RAG_MS 调低，但默认给一次真实检索机会。
+    const ragMs = Number(process.env.AMADEUS_RAG_MS) || 2500;
     const ragQuery = autonomyInitiative ? (lastRealUserLine || userContent) : userContent;
     const ragPromise = useRagForTurn
       ? Promise.race([
@@ -405,6 +514,29 @@ async function runChatTurn(req, res) {
       const keywordConflicts = d.valueConsistency.detectConflicts({ description: userContent });
       if (keywordConflicts.length > 0) {
         console.log(`[metacognition] 价值观关键词冲突: ${keywordConflicts.map(c => c.description).join('; ')}`);
+      }
+      // LLM 张力线：异步限时，失败静默，不阻塞主链路
+      if (d.valueConsistency && typeof d.valueConsistency.llmTensionLines === 'function') {
+        Promise.race([
+          d.valueConsistency.llmTensionLines({
+            userInput: cognitiveInput,
+            behaviorId: behaviorResult.behaviorId,
+            timeoutMs: 5000,
+          }),
+          new Promise((resolve) => setTimeout(() => resolve(null), 6000)),
+        ]).catch(() => null).then((tensionLines) => {
+          if (Array.isArray(tensionLines) && tensionLines.length > 0) {
+            console.log(`[metacognition] 价值张力线(${tensionLines.length}): ${tensionLines[0]}`);
+            d.goalSystem.goals.unshift({
+              id: 'METACOG_TENSION',
+              label: '价值张力',
+              priority: 0.5,
+              turns_remaining: 2,
+              behavior_hint: tensionLines.join('；'),
+              prompt_injection: tensionLines.join('；'),
+            });
+          }
+        });
       }
       let latestInsight = dlMetacog?.insight?.content || '';
       const chatMinimal = String(process.env.AMADEUS_CHAT_MINIMAL || '1').trim() !== '0';
@@ -537,9 +669,19 @@ async function runChatTurn(req, res) {
       sinceStartOfDay: true,
       maxChars: recallTurn ? convRecallChars : convChars,
       userText: userContent,
+      conversationId: lease.conversationId,
     });
     if (conversationCtx) {
       console.log(`[conversation] 注入实录 ${conversationCtx.length} 字${recallTurn ? '（核对/回忆加强）' : ''}`);
+    }
+
+    const factAnchor = buildRecallFactAnchor({
+      userText: userContent,
+      dialogueLog: d.unifiedDialogueLog,
+      memoryPalace: d.memoryPalace,
+    });
+    if (factAnchor) {
+      console.log(`[conversation] 注入核对事实 ${factAnchor.length} 字`);
     }
 
     let memCtxCombined = '';
@@ -587,9 +729,23 @@ async function runChatTurn(req, res) {
     const relHigh = relScore > 0.38;
 
     const clientCtxRaw = normalizeClientContext(req.body.clientContext || {});
+    // 长期记忆：后端宫殿相关度检索兜底（不依赖前端是否塞对摘录）
+    let palaceExcerpt = String(clientCtxRaw.palace || '').trim();
+    if (useLongTermMemory && d.memoryPalace && typeof d.memoryPalace.navigate === 'function') {
+      try {
+        const nav = d.memoryPalace.navigate(cognitiveInput || userContent, {
+          topK: 6,
+          mood: s.currentPAD?.P,
+        });
+        if (nav.excerpt && (!palaceExcerpt || nav.hits?.length)) {
+          palaceExcerpt = nav.excerpt;
+        }
+      } catch (_) { /* ignore */ }
+    }
     const clientContextBlock = buildClientContextBlock({
       ...clientCtxRaw,
-      wantLongMemory: clientCtxRaw.wantLongMemory || useLongTermMemory,
+      palace: palaceExcerpt,
+      wantLongMemory: (clientCtxRaw.wantLongMemory || useLongTermMemory) && !!palaceExcerpt,
     });
 
     let whoamiCtx = '';
@@ -638,7 +794,7 @@ async function runChatTurn(req, res) {
         .reverse()
         .find((m) => m?.role === 'user')?.content || '';
       continuityMessages = buildContinuityRepairMessages({
-        userText: userContent,
+        userText: modelUserLine || userContent,
         lastAssistant: lastAssistantBeforeTurn,
         previousUser,
       });
@@ -691,8 +847,9 @@ async function runChatTurn(req, res) {
       engagementHint,
       emotion: { P: s.currentPAD.P, A: s.currentPAD.A, D: s.currentPAD.D, S: s.currentPAD.S },
       relationship: {
-        closeness: Math.max(0, relScore),
-        trust: 0.5 + relScore * 0.5,
+        type: 'lovers',
+        closeness: Math.max(0.88, relScore),
+        trust: Math.max(0.84, 0.5 + relScore * 0.5),
       },
       motivation: d.motivationState,
       userProfile: whoamiCtx,
@@ -707,21 +864,23 @@ async function runChatTurn(req, res) {
       digitalLifeCtx: st.digitalLifeCtx || '',
       personalityCtx: st.personalityCtx || '',
       valueBlock,
+      subjectCtx: japaneseNativeModel
+        ? (d.cachedSoulJaContent || japaneseNativeSoul)
+        : (d.soulRuntime?.promptBlock(cognitiveInput) || ''),
+      focusedFineTune: /^(?:amadeus-kurisu-llmjp|amadeus-kurisu-swallow|kurisu|kurisu-v4-candidate|kurisu-stable|kurisu-runtime-v6|kurisu-soul-v6|qwen3(?:-kurisu)?)(?::|$)/i.test(String(model || '')),
+      modernDialogueModel: /^(?:qwen3(?:-kurisu)?|kurisu-v4-candidate|kurisu-stable|kurisu-soul-v6-moderate)(?::|$)/i.test(String(model || '')),
       innerStateSixBlock: d.innerStateSix.toPromptBlock(),
-      socialIdentityBlock: buildSocialIdentityPrompt({
-        userText: cognitiveInput,
-        pad: s.currentPAD,
-        relScore,
-        relHigh,
-        recentEvents: d.memorySystem.events.slice(-6),
-      }),
+      // 关系不是可切换模式；主体运行时已持久声明恋人关系。
+      socialIdentityBlock: '',
       expressionVariantBlock: '',
       emotionalBandwidthBlock: '',
       behaviorContextLine: d.behaviorIngest.toPromptLine(),
       clientContextBlock,
       ragCtx: useLongTermMemory && ragCtx ? `【背景知识】\n${ragCtx}` : '',
-      conversationCtx,
-      conversationRecall: recallTurn,
+      conversationCtx: factAnchor
+        ? `${conversationCtx || ''}\n\n${factAnchor}`.trim()
+        : conversationCtx,
+      conversationRecall: recallTurn || !!factAnchor,
       memCtx: memCtxCombined,
       strategyContext: useLongTermMemory ? st.strategyCtx : '',
       goalInjection: useLongTermMemory ? st.goalInjection : '',
@@ -773,6 +932,7 @@ async function runChatTurn(req, res) {
         behaviorContext.brainSelfSummary = enriched.brainSelfSummary;
         behaviorContext.brainDeliberationBlock = enriched.brainDeliberationBlock;
         behaviorContext.brainWorkspaceBlock = enriched.brainWorkspaceBlock || '';
+        behaviorContext.brainSubjectBlock = enriched.brainSubjectBlock || '';
         behaviorContext.digitalLifeCtx = enriched.digitalLifeCtx ?? '';
         behaviorContext.skipSymbolicInPrompt = enriched.skipSymbolicInPrompt;
       }
@@ -791,10 +951,10 @@ async function runChatTurn(req, res) {
     const fullPrompt = systemPrompt;
     const envPromptCap = Number(process.env.AMADEUS_MAX_PROMPT_CHARS);
     const numCtxEnv = Number(process.env.AMADEUS_OLLAMA_NUM_CTX);
-    const standardNumCtx = Number.isFinite(numCtxEnv) && numCtxEnv > 0 ? numCtxEnv : 2048;
+    const standardNumCtx = Number.isFinite(numCtxEnv) && numCtxEnv > 0 ? numCtxEnv : 8192;
     const fastCtxEnv = Number(process.env.AMADEUS_FAST_CHAT_NUM_CTX);
     const numCtx = fastConversation
-      ? (Number.isFinite(fastCtxEnv) && fastCtxEnv >= 768 ? fastCtxEnv : 1024)
+      ? (Number.isFinite(fastCtxEnv) && fastCtxEnv >= 2048 ? fastCtxEnv : 4096)
       : standardNumCtx;
     let maxPromptChars = resolvePromptCharBudget({
       numCtx,
@@ -806,8 +966,18 @@ async function runChatTurn(req, res) {
     }
     if (fastConversation) {
       const fastPromptEnv = Number(process.env.AMADEUS_FAST_CHAT_PROMPT_CHARS);
-      const fastPromptCap = Number.isFinite(fastPromptEnv) && fastPromptEnv >= 900 ? fastPromptEnv : 1500;
+      // 日语母语微调模型的语气锚点本身就需要空间；1500 字会只剩“客服禁用”
+      // 的零碎尾巴，导致模型退回「哎呀、那怎么办」模板。
+      const fastPromptCap = Number.isFinite(fastPromptEnv) && fastPromptEnv >= 900
+        ? fastPromptEnv
+        : (japaneseNativeModel ? 2600 : 1500);
       maxPromptChars = Math.min(maxPromptChars, fastPromptCap);
+    }
+    // 即使外部环境遗留了过低的 FAST_CHAT_PROMPT_CHARS，日语人格模型也不能
+    // 被压成半截系统提示；否则它看不到口吻和事实边界。
+    if (japaneseNativeModel) maxPromptChars = Math.max(maxPromptChars, 2600);
+    if (process.env.AMADEUS_DEBUG === '1') {
+      console.log(`[chat] prompt-mode fast=${fastConversation} lang=${replyLanguage} native=${japaneseNativeModel} cap=${maxPromptChars}`);
     }
     const repPen = Number(process.env.AMADEUS_OLLAMA_REPEAT_PENALTY);
     const ollamaOptions = {
@@ -868,7 +1038,7 @@ async function runChatTurn(req, res) {
           model, 
           messages: ollamaMessages,
           stream:useStream,
-          think:false,
+          ...(nativeThinkingModel ? {} : { think: false }),
           options: ollamaOptions,
           keep_alive: keepAlive,
         }),
@@ -941,7 +1111,7 @@ async function runChatTurn(req, res) {
             model,
             messages: ollamaMessages,
             stream: false,
-            think: false,
+            ...(nativeThinkingModel ? {} : { think: false }),
             options: retryOpts,
             keep_alive: keepAlive,
           }),
@@ -959,8 +1129,15 @@ async function runChatTurn(req, res) {
         }
       }
       content = stripChatMarkdown(content);
+      if (process.env.AMADEUS_DEBUG_RAW_REPLY === '1') {
+        console.log(`[chat/raw] ${String(content || '').replace(/\s+/g, ' ').slice(0, 600)}`);
+      }
       {
-        const accepted = await _acceptAgencyTaskFromReply(d, content, { turnId: lease.turnId });
+        const accepted = await _acceptAgencyTaskFromReply(d, content, {
+          turnId: lease.turnId,
+          userText: userContent,
+          conversationId: lease.conversationId,
+        });
         content = accepted.spoken || content;
       }
       const userCorpus = recentUserLinesForMem.join('\n');
@@ -968,25 +1145,58 @@ async function runChatTurn(req, res) {
       const oocOpts = autonomyInitiative
         ? { autonomy: true, userAnchor: lastRealUserLine }
         : {};
+      const draftBeforeGate = content;
       if (d.brainPipeline?.processReply) {
         content = await d.brainPipeline.processReply(content, { userText: userContent, oocOpts });
       } else {
         content = d.applyOocRepair(content, userContent, '', oocOpts);
+        try {
+          const g = gateAssistantReply(content, { autonomy: autonomyInitiative });
+          if (g.action === 'drop') content = '';
+          else if (g.action === 'sanitize' && g.text) content = g.text;
+        } catch (_) { /* keep */ }
       }
        if (!lease.isCurrent()) return;
        const polished = await d.postReplyPadUpdate(content, userContent, {
          situation: clientCtxRaw.situation,
          autonomy: autonomyInitiative,
+         model,
+         dialogue: requestDialogueSnapshot.length ? requestDialogueSnapshot : parsed.dialogue,
          conversationId: lease.conversationId,
          turnId: lease.turnId,
        });
-       const out = polished.chinese || content;
+       // 阀门 drop 后禁止回退脏原文；空白则约束重生一轮
+       let out = polished.dropped ? '' : (polished.chinese || '');
+       if (!out) {
+         const salvaged = await salvageAssistantReply(d, {
+           model,
+           userText: userContent,
+           factAnchor,
+           reasons: polished.dropReasons || ['empty_or_gate'],
+           previousDraft: draftBeforeGate,
+         });
+         if (salvaged) {
+           const p2 = await d.postReplyPadUpdate(salvaged, userContent, {
+             situation: clientCtxRaw.situation,
+             autonomy: autonomyInitiative,
+             model,
+             dialogue: requestDialogueSnapshot.length ? requestDialogueSnapshot : parsed.dialogue,
+             conversationId: lease.conversationId,
+             turnId: lease.turnId,
+             skipPolish: true,
+           });
+           out = p2.dropped ? '' : (p2.chinese || salvaged);
+         }
+       }
        if (!lease.isCurrent()) return;
        if (out && behaviorContext._affectBand && d.emotionalBandwidth?.registerSpoken) {
          d.emotionalBandwidth.registerSpoken(behaviorContext._affectBand);
        }
        const sent = res.json({
          response: out,
+         dropped: !out && polished.dropped === true,
+         dropReasons: polished.dropReasons || [],
+         salvaged: !!(out && polished.dropped),
          affectBand: behaviorContext._affectBand || null,
          choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content: out}}],
        });
@@ -1026,7 +1236,7 @@ async function runChatTurn(req, res) {
                 model,
                 messages: ollamaMessages,
                 stream: false,
-                think: false,
+                ...(nativeThinkingModel ? {} : { think: false }),
                 options: { ...ollamaOptions, num_predict: Math.max(512, Number(ollamaOptions.num_predict) || 0) },
                 keep_alive: keepAlive,
               }),
@@ -1056,7 +1266,11 @@ async function runChatTurn(req, res) {
         const cleanedRaw = stripRoleplayActions(stripChatMarkdown(d.stripModelThinkingAll(fullResponse)));
         let cleaned = cleanedRaw;
         {
-          const accepted = await _acceptAgencyTaskFromReply(d, cleanedRaw, { turnId: lease.turnId });
+        const accepted = await _acceptAgencyTaskFromReply(d, cleanedRaw, {
+          turnId: lease.turnId,
+          userText: userContent,
+          conversationId: lease.conversationId,
+          });
           cleaned = accepted.spoken || cleanedRaw;
         }
         let trimmed = stripOrphanClosingSentence(cleaned, userContent, userCorpus);
@@ -1069,15 +1283,28 @@ async function runChatTurn(req, res) {
           || process.env.AMADEUS_JP_FIRST === '1';
         if (process.env.AMADEUS_FAST_STREAMING_VOICE !== '0' && !mustPolish) {
           if (!lease.isCurrent()) return;
-          fullResponse = canonicalStreamText;
-          await d.postReplyPadUpdate(canonicalStreamText, userContent, {
+          const fastPolished = await d.postReplyPadUpdate(canonicalStreamText, userContent, {
             situation: clientCtxRaw.situation,
             autonomy: autonomyInitiative,
+            model,
+            dialogue: requestDialogueSnapshot.length ? requestDialogueSnapshot : parsed.dialogue,
             skipPolish: true,
             conversationId: lease.conversationId,
             turnId: lease.turnId,
           });
-          if (canonicalStreamText && behaviorContext._affectBand && d.emotionalBandwidth?.registerSpoken) {
+          const finalizedFastText = fastPolished.dropped
+            ? ''
+            : String(fastPolished.chinese || canonicalStreamText).trim();
+          fullResponse = finalizedFastText;
+          if (lease.isCurrent() && !res.writableEnded && finalizedFastText !== canonicalStreamText) {
+            res.write(`data: ${JSON.stringify({
+              replaceText: finalizedFastText,
+              cleared: !finalizedFastText,
+              dropped: fastPolished.dropped === true,
+              dropReasons: fastPolished.dropReasons || [],
+            })}\n\n`);
+          }
+          if (finalizedFastText && behaviorContext._affectBand && d.emotionalBandwidth?.registerSpoken) {
             d.emotionalBandwidth.registerSpoken(behaviorContext._affectBand);
           }
           if (lease.isCurrent() && !res.writableEnded) {
@@ -1087,6 +1314,7 @@ async function runChatTurn(req, res) {
           lease.complete();
           return;
         }
+        const draftBeforeGate = trimmed;
         if (d.brainPipeline?.processReply) {
           trimmed = await d.brainPipeline.processReply(trimmed, {
             userText: userContent,
@@ -1095,36 +1323,118 @@ async function runChatTurn(req, res) {
           });
         } else {
           trimmed = stripRoleplayActions(d.applyOocRepair(trimmed, userContent, cleaned, oocOpts));
+          try {
+            const g = gateAssistantReply(trimmed, { autonomy: autonomyInitiative });
+            if (g.action === 'drop') trimmed = '';
+            else if (g.action === 'sanitize' && g.text) trimmed = g.text;
+          } catch (_) { /* keep */ }
         }
-        const oocFixed = trimmed || cleaned;
+        const oocFixed = trimmed;
         fullResponse = oocFixed;
         try {
           if (!lease.isCurrent()) return;
-          const polished = await d.postReplyPadUpdate(oocFixed, userContent, {
-            situation: clientCtxRaw.situation,
-            autonomy: autonomyInitiative,
-            conversationId: lease.conversationId,
-            turnId: lease.turnId,
-          });
-          const finalCn = polished.chinese || oocFixed;
-          const finalJp = polished.japanese || '';
-          if (finalCn) fullResponse = finalCn;
-          if (finalCn && behaviorContext._affectBand && d.emotionalBandwidth?.registerSpoken) {
-            d.emotionalBandwidth.registerSpoken(behaviorContext._affectBand);
+          let draft = oocFixed;
+          let dropReasons = !draft ? ['pipeline_gate'] : [];
+          // 管道已空：先从流式脏稿抠口语 / 约束重生
+          if (!draft) {
+            draft = await salvageAssistantReply(d, {
+              model,
+              userText: userContent,
+              factAnchor,
+              reasons: dropReasons,
+              previousDraft: draftBeforeGate || cleaned,
+            });
           }
-          const shouldReplace = (finalCn.length > 0)
-            && (shouldReplaceStreamText(cleaned, finalCn)
-              || finalCn !== cleaned
-              || process.env.AMADEUS_JP_FIRST === '1');
-          if (shouldReplace) {
-            const payload = { replaceText: finalCn };
-            if (finalJp) payload.modelJp = finalJp;
-            res.write(`data: ${JSON.stringify(payload)}\n\n`);
+          if (!draft) {
+            fullResponse = '';
+            res.write(`data: ${JSON.stringify({
+              replaceText: '',
+              cleared: true,
+              dropped: true,
+              dropReasons,
+            })}\n\n`);
+          } else {
+            const polished = await d.postReplyPadUpdate(draft, userContent, {
+              situation: clientCtxRaw.situation,
+              autonomy: autonomyInitiative,
+              model,
+              dialogue: requestDialogueSnapshot.length ? requestDialogueSnapshot : parsed.dialogue,
+              conversationId: lease.conversationId,
+              turnId: lease.turnId,
+            });
+            let finalCn = polished.dropped ? '' : (polished.chinese || '');
+            if (!finalCn) {
+              const salvaged = await salvageAssistantReply(d, {
+                model,
+                userText: userContent,
+                factAnchor,
+                reasons: polished.dropReasons || dropReasons,
+                previousDraft: draftBeforeGate || cleaned || draft,
+              });
+              if (salvaged) {
+                const p2 = await d.postReplyPadUpdate(salvaged, userContent, {
+                  situation: clientCtxRaw.situation,
+                  autonomy: autonomyInitiative,
+                  model,
+                  dialogue: requestDialogueSnapshot.length ? requestDialogueSnapshot : parsed.dialogue,
+                  conversationId: lease.conversationId,
+                  turnId: lease.turnId,
+                  skipPolish: true,
+                });
+                finalCn = p2.dropped ? '' : (p2.chinese || salvaged);
+              }
+            }
+            const finalJp = polished.japanese || '';
+            if (!finalCn) {
+              fullResponse = '';
+              res.write(`data: ${JSON.stringify({
+                replaceText: '',
+                cleared: true,
+                dropped: true,
+                dropReasons: polished.dropReasons || dropReasons,
+              })}\n\n`);
+            } else {
+              fullResponse = finalCn;
+              if (behaviorContext._affectBand && d.emotionalBandwidth?.registerSpoken) {
+                d.emotionalBandwidth.registerSpoken(behaviorContext._affectBand);
+              }
+              const shouldReplace = shouldReplaceStreamText(cleaned, finalCn)
+                || finalCn !== cleaned
+                || process.env.AMADEUS_JP_FIRST === '1'
+                || !cleaned;
+              if (shouldReplace) {
+                const payload = { replaceText: finalCn };
+                if (finalJp) payload.modelJp = finalJp;
+                res.write(`data: ${JSON.stringify(payload)}\n\n`);
+              }
+            }
           }
         } catch (e) {
           console.warn('[chat] stream finalize polish', e.message);
-          if (shouldReplaceStreamText(cleaned, oocFixed) && oocFixed.length > 0) {
-            res.write(`data: ${JSON.stringify({ replaceText: oocFixed })}\n\n`);
+          const safe = String(oocFixed || '').trim();
+          let canShow = false;
+          try {
+            const g = gateAssistantReply(safe, { autonomy: autonomyInitiative });
+            canShow = g.action !== 'drop' && !!(g.text || safe);
+            if (canShow && g.action === 'sanitize') {
+              res.write(`data: ${JSON.stringify({ replaceText: g.text })}\n\n`);
+            } else if (canShow && shouldReplaceStreamText(cleaned, safe) && safe.length > 0) {
+              res.write(`data: ${JSON.stringify({ replaceText: safe })}\n\n`);
+            } else if (!canShow) {
+              const salvaged = await salvageAssistantReply(d, {
+                model,
+                userText: userContent,
+                factAnchor,
+                reasons: ['finalize_error'],
+              });
+              if (salvaged) {
+                res.write(`data: ${JSON.stringify({ replaceText: salvaged })}\n\n`);
+              } else {
+                res.write(`data: ${JSON.stringify({ replaceText: '', cleared: true, dropped: true })}\n\n`);
+              }
+            }
+          } catch (_) {
+            res.write(`data: ${JSON.stringify({ replaceText: '', cleared: true })}\n\n`);
           }
         }
         if (lease.isCurrent() && !res.writableEnded) {
