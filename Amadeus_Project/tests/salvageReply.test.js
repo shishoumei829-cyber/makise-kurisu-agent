@@ -29,7 +29,7 @@ describe('salvage extractSpeechCandidate', () => {
   });
 });
 
-it('style-criticism salvage never reuses a fixed self-defence', async () => {
+it('style-criticism salvage has no dedicated reply script and still rejects self-defence', async () => {
   let system = '';
   const out = await salvageAssistantReply({
     ollamaChatOnce: async (_model, messages) => {
@@ -42,8 +42,8 @@ it('style-criticism salvage never reuses a fixed self-defence', async () => {
     previousDraft: '我不会那些客服式的套话敷衍你。',
   });
   assert.equal(out, '');
-  assert.doesNotMatch(system, /客服|模板|AI/);
-  assert.match(system, /不要解释、保证、辩护/);
+  assert.doesNotMatch(system, /不要解释、保证、辩护|承接这份不满/);
+  assert.doesNotMatch(system, /客服|套话|模板|AI/);
 });
 
 it('unsafe observation discards the original draft and regenerates from user facts', async () => {

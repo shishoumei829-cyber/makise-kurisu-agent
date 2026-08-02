@@ -12,12 +12,12 @@ function createCore() {
   return { dir, core: new SubjectCore({ statePath: path.join(dir, 'subject_core.json') }) };
 }
 
-test('style criticism becomes a repair intent, never a fixed self-defence', () => {
+test('style criticism stays a normal current-turn response, never a repair script', () => {
   const { core } = createCore();
   const result = core.deliberate({ userText: '\u4f60\u600e\u4e48\u8fd8\u662f\u4e00\u80a1\u5ba2\u670d\u5473\uff0c\u592a\u5047\u4e86' });
-  assert.equal(result.intent.action, 'repair');
-  assert.match(result.promptBlock, /\u8fd4\u7b54\u306e\u4f5c\u308a\u65b9\u3084\u81ea\u5206\u306e\u6027\u8cea\u306b\u3064\u3044\u3066\u8a71\u3055\u305a/);
-  assert.doesNotMatch(result.promptBlock, /\u5ba2\u670d|\u30c6\u30f3\u30d7\u30ec\u30fc\u30c8|AI/);
+  assert.notEqual(result.intent.action, 'repair');
+  assert.ok(['respond', 'clarify'].includes(result.intent.action));
+  assert.doesNotMatch(result.promptBlock, /\u8a71\u3059\u884c\u70ba: repair/);
 });
 
 test('subject core gives a concrete user turn one stable center and speech act', () => {
