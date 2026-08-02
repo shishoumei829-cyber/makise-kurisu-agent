@@ -20,6 +20,7 @@ const targetFiles = [
   'understanding_subsystem.json',
   'user_model.json',
 ].map((name) => path.join(dataRoot, name));
+const jsonlFiles = [path.join(dataRoot, 'butler', 'events.jsonl')];
 
 // These are synthetic/debug prompts, not ordinary user criticism.  Match the
 // stored variants and their generated canned reply, not generic words alone.
@@ -71,4 +72,19 @@ for (const file of targetFiles) {
   const backup = path.join(quarantine, `${path.basename(file)}.fixed-reply-poison-${Date.now()}.bak`);
   fs.writeFileSync(backup, original, 'utf8');
   fs.writeFileSync(file, `${JSON.stringify(cleaned, null, 2)}\n`, 'utf8');
+}
+
+for (const file of jsonlFiles) {
+  if (!fs.existsSync(file)) continue;
+  const original = fs.readFileSync(file, 'utf8');
+  const lines = original.split(/\r?\n/);
+  const kept = lines.filter((line) => line && !hasPoison(line));
+  const removed = lines.filter((line) => line && hasPoison(line)).length;
+  console.log(`${path.basename(file)} records=${removed} changed=${removed > 0}`);
+  if (!apply || !removed) continue;
+  const quarantine = path.join(dataRoot, 'quarantine');
+  fs.mkdirSync(quarantine, { recursive: true });
+  const backup = path.join(quarantine, `${path.basename(file)}.fixed-reply-poison-${Date.now()}.bak`);
+  fs.writeFileSync(backup, original, 'utf8');
+  fs.writeFileSync(file, `${kept.join('\n')}\n`, 'utf8');
 }

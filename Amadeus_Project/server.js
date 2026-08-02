@@ -2779,6 +2779,11 @@ async function _polishJapaneseModelReply(jpRaw, userContent = '', extra = {}) {
       }
     } else if (additions.length) {
       console.warn('[grounding] rejected invented additions:', additions.join(','));
+      // 对用户状态的无依据观察不能用一条写死的“安慰句”覆盖。
+      // 整稿作废并交给 salvage 在当前原话范围内重新生成。
+      if (additions.includes('invented_user_state')) {
+        return _polishResult('', '', { dropped: true, dropReasons: additions });
+      }
       const safeJapanese = buildFactSafeJapaneseFallback(additions, userContent);
       if (safeJapanese) jp = safeJapanese;
       forcedChinese = buildFactSafeChineseFallback(additions, userContent);
@@ -2797,6 +2802,9 @@ async function _polishJapaneseModelReply(jpRaw, userContent = '', extra = {}) {
       evidence: authoritativeMemories,
     });
     if (deterministicIssues.length) {
+      if (deterministicIssues.includes('invented_user_state')) {
+        return _polishResult('', '', { dropped: true, dropReasons: deterministicIssues });
+      }
       const safeJapanese = buildFactSafeJapaneseFallback(deterministicIssues, userContent);
       const safeChinese = buildFactSafeChineseFallback(deterministicIssues, userContent);
       if (safeJapanese) jp = safeJapanese;
@@ -2834,6 +2842,9 @@ async function _polishJapaneseModelReply(jpRaw, userContent = '', extra = {}) {
     if ((validation.issues || []).some((item) => /回避接话/.test(item))) {
       // 原生模型偶尔把“我很累”误读成换题，禁止把这种反问直接交给用户。
       const contextSafe = buildContextSafeFallback(userContent);
+      if (!contextSafe.japanese || !contextSafe.chinese) {
+        return _polishResult('', '', { dropped: true, dropReasons: ['unresolved_context'] });
+      }
       jp = contextSafe.japanese;
       forcedChinese = contextSafe.chinese;
       validation = validateJapaneseLine(jp, { conversationLog: logBlock, partnerName: whoamiName });
@@ -3267,6 +3278,9 @@ async function _postReplyPadUpdate(reply, userContent = '', extra = {}) {
     || process.env.AMADEUS_JP_FIRST === '1'
   )) {
     const polished = await _polishReplyWithValidation(finalReply, userContent, extra);
+    // 校对层已经判定本稿不可展示时，绝不能回退到未经校对的原稿。
+    // 否则“丢弃”会在这里被悄悄撤销，静态兜底和幻觉都会重新进入实录。
+    if (polished.dropped) return polished;
     finalReply = polished.chinese || finalReply;
     modelJp = polished.japanese || '';
   }
@@ -3299,6 +3313,9 @@ async function _postReplyPadUpdate(reply, userContent = '', extra = {}) {
         issues.push('invented_drinking');
       }
       const safe = buildFactSafeChineseFallback(issues, userContent);
+      if (issues.includes('invented_user_state')) {
+        return _polishResult('', '', { dropped: true, dropReasons: issues });
+      }
       if (safe) finalReply = safe;
     }
 

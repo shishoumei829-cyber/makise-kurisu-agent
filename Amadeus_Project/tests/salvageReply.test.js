@@ -45,3 +45,21 @@ it('style-criticism salvage never reuses a fixed self-defence', async () => {
   assert.doesNotMatch(system, /客服|模板|AI/);
   assert.match(system, /不要解释、保证、辩护/);
 });
+
+it('unsafe observation discards the original draft and regenerates from user facts', async () => {
+  let system = '';
+  const out = await salvageAssistantReply({
+    ollamaChatOnce: async (_model, messages) => {
+      system = messages[0].content;
+      return '今天烦什么，直接说。';
+    },
+  }, {
+    model: 'test',
+    userText: '今天有点烦。',
+    reasons: ['invented_user_state'],
+    previousDraft: '你脸色看起来很差，肯定累坏了。',
+  });
+  assert.equal(out, '今天烦什么，直接说。');
+  assert.match(system, /不能沿用/);
+  assert.match(system, /不描述他的脸色/);
+});

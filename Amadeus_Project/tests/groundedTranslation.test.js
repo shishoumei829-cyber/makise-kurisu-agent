@@ -73,6 +73,22 @@ test('grounding rejects unsupported self activity claims', () => {
   assert.match(buildFactSafeChineseFallback(issues), /\u6ca1\u6709\u4f9d\u636e/);
 });
 
+test('unsupported observation of the user has no canned comfort fallback', () => {
+  const issues = detectUnsupportedAdditions({
+    draftJapanese: '\u4eca\u65e5\u306f\u30c7\u30fc\u30bf\u3092\u898b\u3066\u3044\u305f\u3002',
+    result: {
+      japanese: '\u9854\u8272\u304c\u60aa\u3044\u308f\u306d\u3002',
+      chinese: '\u4f60\u770b\u8d77\u6765\u5f88\u7d2f\u3002',
+    },
+    currentUser: '\u4eca\u5929\u6709\u70b9\u70e6\u3002',
+    evidence: '',
+  });
+  assert.deepEqual(issues, ['invented_user_state']);
+  assert.equal(buildFactSafeJapaneseFallback(issues), '');
+  assert.equal(buildFactSafeChineseFallback(issues), '');
+  assert.deepEqual(buildContextSafeFallback('\u4eca\u5929\u6709\u70b9\u70e6\u3002'), { japanese: '', chinese: '' });
+});
+
 test('coherence repair answers confusion and why instead of asking another question', () => {
   assert.deepEqual(
     detectReplyCoherenceIssues('\u6211\u4e0d\u7406\u89e3\u4f60\u8ddf\u6211\u8bf4\u7684\u8fd9\u4e9b\u8bdd', '\u54fc\u2026\u7a81\u7136\u600e\u4e48\u4e86\uff1f\u5230\u5e95\u60f3\u95ee\u4ec0\u4e48\uff1f'),

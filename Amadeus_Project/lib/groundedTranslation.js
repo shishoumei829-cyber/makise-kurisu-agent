@@ -153,9 +153,6 @@ function buildFactSafeJapaneseFallback(issues = [], userText = '') {
   if (set.has('invented_promise')) {
     return '約束の内容は記録にない。何を約束したのか確認させて。';
   }
-  if (set.has('invented_user_state')) {
-    return '……疲れてるのね。決まり文句で慰めるつもりはないわ。';
-  }
   if (set.has('invented_schedule_excuse') && /不主动|主动找我|連絡/.test(String(userText))) {
     return '忙しかったことを理由にはしない。最近、私から話しかけなかったのは認めるわ。';
   }
@@ -175,9 +172,6 @@ function buildFactSafeChineseFallback(issues = [], userText = '') {
   }
   if (set.has('invented_promise')) {
     return '我这里没有承诺的具体内容。你告诉我是什么，我再认真核对。';
-  }
-  if (set.has('invented_user_state')) {
-    return '……听出来你累了。我不拿那些客服式的套话敷衍你。';
   }
   if (set.has('invented_schedule_excuse') && /不主动|主动找我|連絡/.test(String(userText))) {
     return '我不拿“最近很忙”当借口。最近确实没主动找你，这点我认。';
@@ -225,10 +219,9 @@ function buildContextSafeFallback(userText = '') {
       chinese: '……我应该先说自己的判断，刚才却把话题推回给你了。',
     };
   }
-  return {
-    japanese: '……疲れているなら、そう言えばいい。決まり文句で慰めるつもりはないわ。',
-    chinese: '……累了就直说。我不拿客服套话敷衍你。',
-  };
+  // 不知道该怎么接，不等于用户累了，更不能用一句固定安慰盖过去。
+  // 交给上游重新生成；空值会触发受约束的重生，而非展示模板句。
+  return { japanese: '', chinese: '' };
 }
 
 function detectReplyCoherenceIssues(userText = '', reply = '') {

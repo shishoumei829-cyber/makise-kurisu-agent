@@ -45,7 +45,10 @@ async function salvageAssistantReply(deps, {
   reasons = [],
   previousDraft = '',
 } = {}) {
-  const fromDirty = extractSpeechCandidate(previousDraft);
+  // 无依据地判断对方外表/状态时，旧稿不能“抽一句还能说的”再放行；
+  // 必须丢掉整稿并在原话范围内重生，否则同一个臆测会循环回来。
+  const factUnsafe = reasons.includes('invented_user_state');
+  const fromDirty = factUnsafe ? '' : extractSpeechCandidate(previousDraft);
   if (fromDirty) return fromDirty;
 
   const chatOnce = deps.ollamaChatOnce;
@@ -60,6 +63,9 @@ async function salvageAssistantReply(deps, {
     '禁止分析、禁止站在对话外面说明、禁止括号旁白。',
     repairMode
       ? '对方不满的是你刚刚说的话。只承接这份不满：可以承认那句话不对，但不要解释、保证、辩护，也不要谈论自己怎样回答或是什么；不要复述他用来评价你的词，也不要反问。'
+      : '',
+    factUnsafe
+      ? '上一稿猜测了对方没有明确说出的外表或状态，不能沿用。只回应他实际说出的内容；不描述他的脸色、表情、坐姿、疲惫或任何看见的画面。'
       : '',
     !repairMode && reasons?.length ? '上一稿不能使用。直接回到他这一句的具体内容。' : '',
     factAnchor ? String(factAnchor).slice(0, 500) : '',
