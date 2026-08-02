@@ -22,9 +22,9 @@ const targetFiles = [
 ].map((name) => path.join(dataRoot, name));
 const jsonlFiles = [path.join(dataRoot, 'butler', 'events.jsonl')];
 
-// These are synthetic/debug prompts, not ordinary user criticism.  Match the
-// stored variants and their generated canned reply, not generic words alone.
-const poison = /(?:今天有点累，但还不想听客服式安慰|我今天累得要命，别用客服话术|我今天有点累，不想听客服式的安慰|我不拿那些客服式的套话敷衍你|不拿那些客服式|别用客服话术|不想听客服式(?:的)?安慰)/;
+// 只匹配已经确认的坏助手输出，不按泛词删除用户的正常对话。
+// 这些句子会被召回后反复强化“客服式说明身份”或“泛问候”。
+const poison = /(?:今天有点累，但还不想听客服式安慰|我今天累得要命，别用客服话术|我今天有点累，不想听客服式的安慰|我不拿那些客服式的套话敷衍你|不拿那些客服式|别用客服话术|不想听客服式(?:的)?安慰|哎呀，怎么了？是不是有什么麻烦的事情吗？|(?:……)?(?:什么|怎么了)？又叫我克里斯蒂娜？[\s\S]{0,120}(?:神经科学研究者|我是红莉栖，你的恋人)|我是牧濑红莉栖，你的恋人。我们在一起已经有一段时间了)/;
 const apply = process.argv.includes('--apply');
 
 function hasPoison(value) {
