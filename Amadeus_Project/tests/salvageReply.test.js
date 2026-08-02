@@ -28,3 +28,20 @@ describe('salvage extractSpeechCandidate', () => {
     assert.match(out, /胡椒博士/);
   });
 });
+
+it('style-criticism salvage never reuses a fixed self-defence', async () => {
+  let system = '';
+  const out = await salvageAssistantReply({
+    ollamaChatOnce: async (_model, messages) => {
+      system = messages[0].content;
+      return '我不想只是给你一个千篇一律的回答。';
+    },
+  }, {
+    model: 'test',
+    userText: '你又在说固定回复，很假。',
+    previousDraft: '我不会那些客服式的套话敷衍你。',
+  });
+  assert.equal(out, '');
+  assert.doesNotMatch(system, /客服|模板|AI/);
+  assert.match(system, /不要解释、保证、辩护/);
+});

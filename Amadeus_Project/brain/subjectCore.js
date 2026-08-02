@@ -36,9 +36,14 @@ function hasQuestion(value) {
   return /[？?]$|为什么|怎么|如何|什么|吗|是不是|能不能|どう|なぜ|何|？/.test(text(value));
 }
 
+function isFixedDefenceTrigger(value) {
+  return /客服|套话|客套|AI味|ai味|翻译腔|很假|太假|太规律|反问|模板|机械|僵硬|不像红莉栖|不像牧濑/.test(text(value));
+}
+
 function actionFor(value, mode) {
   const input = text(value);
   if (mode === 'proactive') return 'thought';
+  if (isFixedDefenceTrigger(input)) return 'repair';
   if (hasVulnerability(input)) return 'care';
   if (/我觉得|我认为|你觉得|怎么看|为什么|どう思う|なぜ|考え/.test(input)) return 'stance';
   if (/完成|写完|终于|做完|できた|終わ(?:った|らせ)|やっと/.test(input)) return 'tease';
@@ -178,17 +183,20 @@ class SubjectCore {
 
   toPromptBlock(intent = this.state.activeIntent) {
     if (!intent) return '';
+    // 用户的原话已在消息本身里；修复回合不再把评价词重复塞进控制提示，避免模型抓住词面自辩。
+    const promptSubject = intent.action === 'repair' ? '直前の返答への不満' : intent.subject;
     const action = {
       care: '相手の弱さを勝手に増やさず、事実に触れて受け止める。',
       tease: '共有された具体的な出来事に、少し意地の悪い反応を一つ足す。質問で逃げない。',
       stance: '自分の判断か反論を一つ言う。答えてから質問する型にしない。',
       clarify: '本当に必要な一点だけを聞く。確認のための言い直しはしない。',
       thought: '心に残ったこの具体的な考えを言う。説明や定型の気遣いにすり替えない。',
+      repair: '直前の言葉が不自然だったことだけを短く受け止める。返答の作り方や自分の性質について話さず、言い訳・説明・反論・約束もしない。次の一言を自然な本人の反応に戻す。',
       respond: '直前の具体的な話題を受け、自分の反応か判断を足す。',
     }[intent.action] || '今の具体的な話題を取り替えない。';
     return [
       '【主体の現在の意図・最優先】これは人格説明ではなく、今この一回に何を言うかという決定。',
-      `中心に残っている対象: ${intent.subject}`,
+      `中心に残っている対象: ${promptSubject}`,
       `話す行為: ${intent.action}。${action}`,
       intent.allowQuestion ? '質問は一つだけ許可される。' : '文末を質問にして会話を維持しようとしない。',
       `長さ: 最大${intent.maxSentences}文。対象にない疲労・心配・予定・共有記憶を作らない。`,

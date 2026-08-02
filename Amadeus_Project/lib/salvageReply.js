@@ -6,6 +6,14 @@
 
 const { gateAssistantReply, looksLikeCotLeak } = require('./generationGate');
 
+function isStyleCriticism(value) {
+  return /客服|套话|客套|AI味|ai味|翻译腔|很假|太假|太规律|反问|模板|机械|僵硬|不像红莉栖|不像牧濑/.test(String(value || ''));
+}
+
+function isFixedStyleDefence(value) {
+  return /(?:我(?:不会|不想|不是|并非)|不会再|别把我当).{0,26}(?:敷衍|应付|迎合|机械|千篇一律|公式化|空泛|照本宣科|套路|固定(?:的)?(?:回答|回应)|制式(?:的)?(?:回答|回应)|说些空话)/.test(String(value || ''));
+}
+
 function extractSpeechCandidate(dirty) {
   const raw = String(dirty || '').trim();
   if (!raw) return '';
@@ -45,11 +53,15 @@ async function salvageAssistantReply(deps, {
   const u = String(userText || '').trim().slice(0, 280);
   if (!u) return '';
 
+  const repairMode = isStyleCriticism(userText) || isFixedStyleDefence(previousDraft);
   const system = [
     '你是牧濑红莉栖。只回一句中文口语，像给熟人发消息。',
     '对话对象是冈部伦太郎（凤凰院凶真），男的，你很熟。他说凶真/冈部是在说他自己，别把凶真说成第三人称「她」。',
-    '禁止分析、禁止「用户/对话历史/角色设定/作为AI/人工智能/根据你提供的信息」、禁止括号旁白。',
-    reasons?.length ? `上一稿被拦：${reasons.slice(0, 3).join('+')}。` : '',
+    '禁止分析、禁止站在对话外面说明、禁止括号旁白。',
+    repairMode
+      ? '对方不满的是你刚刚说的话。只承接这份不满：可以承认那句话不对，但不要解释、保证、辩护，也不要谈论自己怎样回答或是什么；不要复述他用来评价你的词，也不要反问。'
+      : '',
+    !repairMode && reasons?.length ? '上一稿不能使用。直接回到他这一句的具体内容。' : '',
     factAnchor ? String(factAnchor).slice(0, 500) : '',
   ].filter(Boolean).join('\n');
 
@@ -77,4 +89,4 @@ async function salvageAssistantReply(deps, {
   }
 }
 
-module.exports = { salvageAssistantReply, extractSpeechCandidate };
+module.exports = { salvageAssistantReply, extractSpeechCandidate, isFixedStyleDefence };

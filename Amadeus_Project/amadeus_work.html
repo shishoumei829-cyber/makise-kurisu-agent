@@ -1342,7 +1342,7 @@ class AmadeusConsciousness {
   _pushDialogue(role, text, meta = {}) {
     const r = role === 'user' ? 'user' : 'kurisu';
     const t = String(text || '').trim();
-    if (!t || this._isInternalControlLeak(t)) return;
+    if (!t || this._isInternalControlLeak(t) || (r === 'kurisu' && this._isFixedStyleDefence(t))) return;
     this.working.push({ role: r, text: t, proactive: meta.proactive });
     if (this.working.length > 24) this.working.shift();
   }
@@ -1730,6 +1730,15 @@ class AmadeusConsciousness {
       || /刚才那句不算|我重新说|变态的是你的脑子|你到底想说什么|有话正常说|别来这套|我又不是助手热线|又是[这那]个话题吗|停止指定话题/.test(t);
   }
 
+  // 这类句子不是人物回应，而是模型对“自己怎么说话”的固定辩解；前端也必须拒收，
+  // 防止流式草稿在服务端定稿前短暂显示或写回本地上下文。
+  _isFixedStyleDefence(s) {
+    const t = String(s || '').trim().replace(/\s+/g, '');
+    return /(?:客服(?:式|腔|话术)?|客套话|套话|模板(?:化)?|AI味|人工智能式|翻译腔|像(?:个)?(?:客服|AI)|不会(?:再)?(?:用|说|讲).{0,18}(?:客服|套话|模板|客套)|不(?:会|想).{0,14}(?:客服|套话|模板).{0,16}(?:敷衍|回答)|定型文)/i.test(t)
+      || /(?:我(?:不会|不想|不是|并非)|不会再|别把我当).{0,26}(?:敷衍|应付|迎合|机械|千篇一律|公式化|空泛|照本宣科|套路|固定(?:的)?(?:回答|回应)|制式(?:的)?(?:回答|回应)|说些空话)/.test(t)
+      || /(?:我知道|我明白).{0,18}(?:你(?:不想要|讨厌|受够了)).{0,22}(?:那种|这样的)?.{0,10}(?:回答|回应|话)/.test(t);
+  }
+
   /**
    * 定稿中文：流式内容通常更贴模型原意；兜底若改成冷淡短句则回退流式。
    * @param {string} streamedCn 流式清洗后的正文
@@ -1739,6 +1748,8 @@ class AmadeusConsciousness {
   _coalesceDisplayCn(streamedCn, guardedCn, userText = '') {
     const stream = String(streamedCn || '').trim();
     const guard = String(guardedCn || '').trim();
+    if (this._isFixedStyleDefence(guard)) return '';
+    if (this._isFixedStyleDefence(stream)) return guard || '';
     if (!stream && guard) return guard;
     if (!guard) return stream || this._shortReplyFallback();
     if (this._isGenericKurisuFiller(guard) && stream.length >= 4 && !this._isGenericKurisuFiller(stream)) {
@@ -1875,6 +1886,7 @@ class AmadeusConsciousness {
       return '';
     }
     if (this._isGenericKurisuFiller(cleaned)) return '';
+    if (this._isFixedStyleDefence(cleaned)) return '';
     return cleaned;
   }
 
@@ -3537,6 +3549,14 @@ class AmadeusConsciousness {
               }
               serverCleared = false;
               const rep = this._cleanForDisplay(obj.replaceText);
+              if (this._isFixedStyleDefence(rep)) {
+                serverCleared = true;
+                serverDisplayCn = '';
+                rawFull = '';
+                sentenceBuffer = '';
+                onToken('');
+                continue;
+              }
               if (rep && rep.length >= 2) {
                 serverDisplayCn = rep;
                 // 允许覆盖流式草稿，避免界面停在脏原文、实录却是另一条
@@ -3556,6 +3576,12 @@ class AmadeusConsciousness {
               if (clean) {
                 rawFull += clean;
                 sentenceBuffer += clean;
+                if (this._isFixedStyleDefence(rawFull)) {
+                  rawFull = '';
+                  sentenceBuffer = '';
+                  onToken('');
+                  continue;
+                }
                 onToken(this._cleanForDisplay(rawFull));
 
                 // 首句低延迟：完整句立即送 TTS；较长分句在逗号/分号处提前送出。

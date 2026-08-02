@@ -125,6 +125,17 @@ function collectSignals(text, ctx = {}) {
   if (/AI可以模拟人格|独立意识和情感的灵魂|我会试着调整我的回答方式|让我们的交流更加(?:舒适|自然)/i.test(t)) {
     signals.push({ id: 'product_meta', weight: 4, note: 'legacy_persona_meta' });
   }
+  // Fixed self-defence is product-meta even when it avoids saying "AI".  It is
+  // the recurring "I won't use customer-service phrases" answer users see
+  // whenever they criticize a previous turn, rather than an actual reply.
+  if (
+    /(?:客服(?:式|腔|话术)?|客套话|套话|模板(?:化)?|AI味|人工智能式|翻译腔|像(?:个)?(?:客服|AI)|不会(?:再)?(?:用|说|讲).{0,18}(?:客服|套话|模板|客套)|不(?:会|想).{0,14}(?:客服|套话|模板).{0,16}(?:敷衍|回答)|定型文|テンプレ(?:ート)?|カスタマーサービス|AIっぽ)/i.test(t)
+    // 没有明说“客服”也一样：这是在替回复方式辩护，不是角色此刻要说的话。
+    || /(?:我(?:不会|不想|不是|并非)|不会再|别把我当).{0,26}(?:敷衍|应付|迎合|机械|千篇一律|公式化|空泛|照本宣科|套路|固定(?:的)?(?:回答|回应)|制式(?:的)?(?:回答|回应)|说些空话)/.test(t)
+    || /(?:我知道|我明白).{0,18}(?:你(?:不想要|讨厌|受够了)).{0,22}(?:那种|这样的)?.{0,10}(?:回答|回应|话)/.test(t)
+  ) {
+    signals.push({ id: 'product_meta', weight: 4, note: 'fixed_defence_meta' });
+  }
   // 张冠李戴：她是红莉栖，不能把对方身份说成自己或反过来
   if (
     /(?:我|本人|这边)是(?:凤凰院凶真|冈部伦太郎|凶真)/.test(t)

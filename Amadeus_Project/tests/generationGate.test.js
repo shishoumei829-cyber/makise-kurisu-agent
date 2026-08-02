@@ -120,6 +120,19 @@ describe('generationGate structure signals', () => {
   });
 });
 
+it('drops fixed style-defence lines instead of showing them as dialogue', () => {
+  const samples = [
+    '\u6211\u4e0d\u4f1a\u90a3\u4e9b\u5ba2\u670d\u5f0f\u7684\u5957\u8bdd\u6577\u884d\u4f60\u3002',
+    '\u6211\u4e0d\u60f3\u53ea\u7ed9\u4f60\u4e00\u4e2a\u5343\u7bc7\u4e00\u5f8b\u7684\u56de\u7b54\u3002',
+    '\u6211\u660e\u767d\u4f60\u8ba8\u538c\u8fd9\u6837\u7684\u56de\u5e94\u3002',
+  ];
+  for (const sample of samples) {
+    const g = gateAssistantReply(sample);
+    assert.equal(g.action, 'drop', sample);
+    assert.ok(g.reasons.includes('product_meta'));
+  }
+});
+
 describe('unifiedDialogueLog admit via gate', () => {
   it('append drops poison and sanitizes stage direction', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-gate-'));
