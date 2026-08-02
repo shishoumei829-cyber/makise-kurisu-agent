@@ -41,7 +41,7 @@ async function salvageAssistantReply(deps, {
   // 必须丢掉整稿并在原话范围内重生，否则同一个臆测会循环回来。
   const factUnsafe = reasons.some((reason) => /^invented_/.test(String(reason)));
   const userStateUnsafe = reasons.includes('invented_user_state');
-  const coherenceUnsafe = reasons.some((reason) => /^(?:unresolved_context|unresolved_confusion|missing_reason|dodged_opinion|off_topic)$/.test(String(reason)));
+  const coherenceUnsafe = reasons.some((reason) => /^(?:unresolved_context|unresolved_confusion|missing_reason|dodged_opinion|off_topic|recent_duplicate)$/.test(String(reason)));
   const fromDirty = (factUnsafe || coherenceUnsafe) ? '' : extractSpeechCandidate(previousDraft);
   if (fromDirty) return fromDirty;
 
@@ -61,7 +61,7 @@ async function salvageAssistantReply(deps, {
       ? '不要描述他的脸色、表情、坐姿、疲惫或任何看见的画面。'
       : '',
     coherenceUnsafe
-      ? '上一稿没有直接接住他的问题，不能沿用。先弄清他当前一句要你说明、回答还是表态，再直接回答；不要谈论上一稿或你的回答方式。'
+      ? '上一稿没有直接接住他的问题，或重复了刚才已经说过的话，不能沿用。先弄清他当前一句要你说明、回答还是表态，再直接回答；不要谈论上一稿或你的回答方式。'
       : '',
     reasons?.length ? '上一稿不能使用。直接回到他这一句的具体内容。' : '',
     factAnchor ? String(factAnchor).slice(0, 500) : '',

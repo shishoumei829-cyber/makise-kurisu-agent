@@ -112,6 +112,7 @@ const LITERAL_JP_TO_CN_SYSTEM = [
   '2. 可读：译文必须像她直接发来的中文消息；禁止逐词死译、谜语、断句乱码，也不要把短促口语统一改成完整客服句。',
   '3. 人格：完整保留锋利、亲密、嘴硬、羞恼、停顿和口语节奏。中文要像熟人聊天，不要改写成客服关怀、礼貌建议或通用助手语气。',
   '4. 不要凭空添加“哎呀、原来如此、所以、我们可以、有什么需要”等中文套话；原文没有的问句、建议和情绪词不要补。',
+  '4.1 原文很短时，译文也必须同样短。绝不补人物身份、关系、职业、背景或上一轮没有出现的信息。',
   '5. 原文里已经是中文的片段原样保留。',
   '6. 去掉动作旁白括号（如（歪头）（推眼镜）），只留对白。',
   '7. 只输出译文正文，不要解释、不要 JP:/CN: 前缀、不要用引号包整句。',
@@ -153,7 +154,23 @@ function alignLiteralCnToJapanese(jp, cn) {
       out = out.replace(/担心/, '还在担心');
     }
   }
-  return out.replace(/\s{2,}/g, ' ').trim();
+  out = out.replace(/\s{2,}/g, ' ').trim();
+
+  // 翻译模型不能把「……は？」扩写成一段人物说明。日文是唯一的
+  // 人格原文；中文界面只能是同一句话的字幕，宁可留空重试也不能补设定。
+  const jpUnits = (src.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+  const cnUnits = (out.match(/[\u3400-\u9fff]/g) || []).length;
+  const jpStops = (src.match(/[。！？!?]/g) || []).length;
+  const cnStops = (out.match(/[。！？!?]/g) || []).length;
+  const sourceHasIdentity = /(?:クリス|紅莉栖|牧瀬|恋人|研究者|科学者)/.test(src);
+  const addedIdentity = /(?:牧濑|红莉栖|恋人|男朋友|神经科学|研究者|科学家)/.test(out);
+  const farTooLong = (jpUnits <= 8 && cnUnits > Math.max(8, jpUnits * 2))
+    || (jpUnits > 8 && cnUnits > Math.max(18, Math.ceil(jpUnits * 2.4)));
+  const splitIntoAParagraph = cnStops > Math.max(2, jpStops + 1);
+  if (farTooLong || splitIntoAParagraph || (!sourceHasIdentity && addedIdentity)) {
+    return '';
+  }
+  return out;
 }
 
 module.exports = {

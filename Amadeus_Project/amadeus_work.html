@@ -2361,7 +2361,18 @@ class AmadeusConsciousness {
     if (/まだ/.test(src) && /心配|心配して/.test(src) && !/还/.test(out) && /担心/.test(out)) {
       out = out.replace(/担心/, '还在担心');
     }
-    return out.replace(/\s{2,}/g, ' ').trim();
+    out = out.replace(/\s{2,}/g, ' ').trim();
+    // 与服务端同一条声画约束：前端兜底翻译也不能把短日文扩写成人设说明。
+    const jpUnits = (src.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+    const cnUnits = (out.match(/[\u3400-\u9fff]/g) || []).length;
+    const jpStops = (src.match(/[。！？!?]/g) || []).length;
+    const cnStops = (out.match(/[。！？!?]/g) || []).length;
+    const sourceHasIdentity = /(?:クリス|紅莉栖|牧瀬|恋人|研究者|科学者)/.test(src);
+    const addedIdentity = /(?:牧濑|红莉栖|恋人|男朋友|神经科学|研究者|科学家)/.test(out);
+    const farTooLong = (jpUnits <= 8 && cnUnits > Math.max(8, jpUnits * 2))
+      || (jpUnits > 8 && cnUnits > Math.max(18, Math.ceil(jpUnits * 2.4)));
+    if (farTooLong || cnStops > Math.max(2, jpStops + 1) || (!sourceHasIdentity && addedIdentity)) return '';
+    return out;
   }
 
   async _translateJapaneseLineForDisplay(jpLine) {

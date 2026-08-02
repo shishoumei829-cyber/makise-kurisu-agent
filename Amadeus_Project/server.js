@@ -66,6 +66,7 @@ const {
   buildLiteralJpToCnMessages,
   alignLiteralCnToJapanese,
 } = require('./lib/replyLanguage');
+const { isRecentAssistantDuplicate } = require('./lib/replyContinuity');
 
 /** 加载项目根目录 .env（不覆盖已有系统/进程环境变量） */
 function loadDotEnv() {
@@ -3308,6 +3309,13 @@ async function _postReplyPadUpdate(reply, userContent = '', extra = {}) {
       modelJp = contextSafe.japanese;
       extra._coherenceRepaired = true;
     }
+  }
+
+  // 同一句不能因为模型走神、翻译回退或客户端重试而再次进入下一轮上下文。
+  // 丢弃后由上层按当前用户这一句重新生成，不把旧句改写成另一条固定兜底。
+  if (!extra.autonomy && finalReply && isRecentAssistantDuplicate(finalReply, unifiedDialogueLog.getRecent(12))) {
+    console.warn('[dialogue] drop recent duplicate:', finalReply.slice(0, 48));
+    return _polishResult('', modelJp, { dropped: true, dropReasons: ['recent_duplicate'] });
   }
 
   // 身份/结构毒句：生成阀门（可 sanitize / drop）

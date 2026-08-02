@@ -58,6 +58,16 @@ test('alignLiteralCnToJapanese fixes もう→再三 mistranslation', () => {
   );
 });
 
+test('alignLiteralCnToJapanese rejects a Chinese identity lecture for a short Japanese line', () => {
+  assert.equal(
+    alignLiteralCnToJapanese(
+      '……は？',
+      '……怎么了？又叫我克里斯蒂娜？哼，无所谓，我是红莉栖，你的恋人。还有，我可是神经科学研究者呢。',
+    ),
+    '',
+  );
+});
+
 test('stripConsciousnessEcho removes leaked intention tags', () => {
   const { stripConsciousnessEcho } = require('../lib/replyLanguage');
   assert.equal(
