@@ -99,9 +99,13 @@ function createBrainPipeline(deps) {
       const subject = subjectCore?.deliberate?.({
         perceived: legacyCtx.perceived,
         userText: legacyCtx.perceived?.cognitiveInput || legacyCtx.perceived?.userContent,
+        expressionText: legacyCtx.perceived?.modelUserLine || legacyCtx.perceived?.cognitiveInput,
         pad: legacyCtx.pad,
         motivationState: deps.motivationState || {},
         openThoughts: deps.soulRuntime?.snapshot?.().thoughts || [],
+        worldSnapshot,
+        selfSnapshot,
+        consciousness: consciousnessCycle,
       }) || null;
       if (subject?.intent) {
         delib.intent = `subject:${subject.intent.action}`;
@@ -158,8 +162,97 @@ function createBrainPipeline(deps) {
         }
       };
 
+      const enforceSubject = async (raw) => {
+        if (process.env.AMADEUS_DEBUG_SUBJECT === '1') {
+          console.warn('[subject-core] draft raw:', String(raw || '').replace(/\s+/g, ' ').slice(0, 300));
+        }
+        let output = applyGate(raw);
+        let check = subjectCore?.evaluateReply?.(output, _turnCtx?.subject?.intent) || { ok: true };
+        if (!check.ok) {
+          console.warn('[subject-core] renderer rejected:', check.reason);
+          const mind = _turnCtx?.subject?.mind;
+          const intent = _turnCtx?.subject?.intent;
+          if (mind && intent && typeof deps.ollamaChatOnce === 'function') {
+            try {
+              const rendered = await deps.ollamaChatOnce(
+                opts.model || process.env.AMADEUS_CHAT_MODEL || 'amadeus-kurisu-swallow:8b',
+                [
+                  {
+                    role: 'system',
+                    content: [
+                      '牧瀬紅莉栖として、下の発話決定を日本語の台詞にする。内面や項目を説明しない。台詞だけを出す。言いたい核を省略したり、別の話題へ置き換えたりしない。',
+                      intent.allowQuestion
+                        ? '決定が許した一点だけは質問にしてよい。'
+                        : 'この決定は質問を選んでいない。疑問文、疑問符、相手への問いかけは禁止。反応か判断を言い切って句点で終える。',
+                      subjectCore.toPromptBlock(intent, mind),
+                    ].join('\n\n'),
+                  },
+                  { role: 'user', content: mind.expressionObject || mind.perception },
+                ],
+                { temperature: 0.42, num_predict: 120, num_ctx: 1536 },
+              );
+              if (process.env.AMADEUS_DEBUG_SUBJECT === '1') {
+                console.warn('[subject-core] renderer raw:', String(rendered || '').replace(/\s+/g, ' ').slice(0, 300));
+              }
+              output = applyGate(rendered);
+              check = subjectCore.evaluateReply(output, intent);
+              if (!check.ok) {
+                const corrected = await deps.ollamaChatOnce(
+                  opts.model || process.env.AMADEUS_CHAT_MODEL || 'amadeus-kurisu-swallow:8b',
+                  [
+                    {
+                      role: 'system',
+                      content: [
+                        '牧瀬紅莉栖として、発話決定を日本語の台詞にする。台詞だけを書く。',
+                        `直前の案は「${check.reason}」で意味がずれた。直前の案を言い換えるのではなく、言いたい核へ戻る。`,
+                        '原因を捏造せず、自分の仕組みや改善を説明しない。相手が実際に言った対象へ直接反応する。',
+                        subjectCore.toPromptBlock(intent, mind),
+                      ].join('\n\n'),
+                    },
+                    { role: 'user', content: mind.expressionObject || mind.perception },
+                  ],
+                  { temperature: 0.28, num_predict: 120, num_ctx: 1536 },
+                );
+                if (process.env.AMADEUS_DEBUG_SUBJECT === '1') {
+                  console.warn('[subject-core] renderer correction raw:', String(corrected || '').replace(/\s+/g, ' ').slice(0, 300));
+                }
+                output = applyGate(corrected);
+                check = subjectCore.evaluateReply(output, intent);
+              }
+            } catch (error) {
+              console.warn('[subject-core] renderer retry failed:', error.message);
+              output = '';
+            }
+          }
+          if (!check.ok) {
+            console.warn('[subject-core] renderer held:', check.reason);
+            output = '';
+          }
+        }
+        return { output, check, held: !output && check.ok === false };
+      };
+
       if (!isMonitorEnabled()) {
-        return applyGate(applyLegacyOocRepair('', text, opts.userText || '', opts.oocOpts || {}));
+        const original = applyLegacyOocRepair('', text, opts.userText || '', opts.oocOpts || {});
+        const enforced = await enforceSubject(original);
+        subjectCore?.integrateOutcome?.({
+          mode: _turnCtx?.subject?.intent?.mode || 'responsive',
+          intent: _turnCtx?.subject?.intent,
+          reply: enforced.output,
+          accepted: !!enforced.output && enforced.check.ok,
+        });
+        _lastTrace = {
+          pass: !!enforced.output && enforced.check.ok,
+          confidence: enforced.output ? 1 : 0,
+          violations: [],
+          rewrites: enforced.output !== original ? 1 : 0,
+          delibLlmUsed: false,
+          intent: _turnCtx?.deliberation?.intent || '',
+          subject: _turnCtx?.subject?.intent || null,
+          subjectCheck: enforced.check,
+          subjectHeld: enforced.held,
+        };
+        return enforced.output;
       }
 
       const ctx = {
@@ -225,14 +318,14 @@ function createBrainPipeline(deps) {
       const oocRepaired = applyLegacyOocRepair(opts.streamedRaw || '', current, ctx.userText, ctx.oocOpts);
 
       // 生成硬闸：与是否开启 monitor rewrite 无关；脏稿不得出脑管道
-      const gatedOut = applyGate(oocRepaired);
-      const subjectCheck = subjectCore?.evaluateReply?.(gatedOut, _turnCtx?.subject?.intent) || { ok: true };
-      if (!subjectCheck.ok) console.warn('[subject-core] reply advisory:', subjectCheck.reason);
+      const enforced = await enforceSubject(oocRepaired);
+      const gatedOut = enforced.output;
+      const subjectCheck = enforced.check;
       subjectCore?.integrateOutcome?.({
         mode: _turnCtx?.subject?.intent?.mode || 'responsive',
         intent: _turnCtx?.subject?.intent,
         reply: gatedOut,
-        accepted: !!gatedOut,
+        accepted: !!gatedOut && subjectCheck.ok,
       });
 
       learner?.observe?.({
@@ -252,6 +345,7 @@ function createBrainPipeline(deps) {
         intent: delib.intent,
         subject: _turnCtx?.subject?.intent || null,
         subjectCheck,
+        subjectHeld: enforced.held,
         consciousness: {
           narrative: ws?.narrative || '',
           broadcastKinds: (ws?.broadcast || []).map((b) => b.kind),

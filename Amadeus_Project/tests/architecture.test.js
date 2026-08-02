@@ -174,7 +174,7 @@ test('buildPrompt: fine-tuned subject model gets a focused soul prompt', () => {
     conversationRecall: false,
   });
   assert.match(p, /主体关系与真实记忆/);
-  assert.match(p, /客服的な慰め/);
+  assert.match(p, /内面決定をそのまま説明せず/);
   assert.doesNotMatch(p, /大量对话实录/);
   assert.ok(p.length < 1800);
 });

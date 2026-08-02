@@ -283,10 +283,12 @@ async function runChatTurn(req, res) {
     const userLine = cognitiveInput || userContent;
     const isRealUserTurn = !autonomyInitiative;
     let modelUserLine = userLine;
+    const shouldTranslateJapaneseInput = replyLanguage === 'ja'
+      && process.env.AMADEUS_JP_INPUT_TRANSLATE !== '0'
+      && (japaneseNativeModel || process.env.AMADEUS_JP_INPUT_TRANSLATE === '1');
     if (
       isRealUserTurn
-      && replyLanguage === 'ja'
-      && process.env.AMADEUS_JP_INPUT_TRANSLATE === '1'
+      && shouldTranslateJapaneseInput
       && typeof d.translateUserToJapanese === 'function'
     ) {
       try {
@@ -298,6 +300,21 @@ async function runChatTurn(req, res) {
           message: error.message,
         });
       }
+    }
+    if (isRealUserTurn && shouldTranslateJapaneseInput && !String(modelUserLine || '').trim()) {
+      console.warn('[chat] hold turn: Japanese input translation changed the speech act or failed');
+      if (useStream) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.write(`data: ${JSON.stringify({ dropped: true, dropReasons: ['input_translation_failed'] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      return res.json({
+        response: '',
+        dropped: true,
+        dropReasons: ['input_translation_failed'],
+        choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '' } }],
+      });
     }
     const memoryAdmission = d.memoryAdmission.assessUserText(userLine, {
       source: isRealUserTurn ? 'user' : 'synthetic',
@@ -920,6 +937,7 @@ async function runChatTurn(req, res) {
           useLongTermMemory,
           useRagForTurn,
           cognitiveInput,
+          modelUserLine,
         },
         reqBody: req.body,
         digitalLifeTurn: s.lastDigitalLifeTurn,
@@ -1146,8 +1164,10 @@ async function runChatTurn(req, res) {
         ? { autonomy: true, userAnchor: lastRealUserLine }
         : {};
       const draftBeforeGate = content;
+      let subjectHeld = false;
       if (d.brainPipeline?.processReply) {
-        content = await d.brainPipeline.processReply(content, { userText: userContent, oocOpts });
+        content = await d.brainPipeline.processReply(content, { userText: userContent, oocOpts, model });
+        subjectHeld = d.brainPipeline.getLastTrace?.()?.subjectHeld === true;
       } else {
         content = d.applyOocRepair(content, userContent, '', oocOpts);
         try {
@@ -1167,7 +1187,7 @@ async function runChatTurn(req, res) {
        });
        // 阀门 drop 后禁止回退脏原文；空白则约束重生一轮
        let out = polished.dropped ? '' : (polished.chinese || '');
-       if (!out) {
+       if (!out && !subjectHeld) {
          const salvaged = await salvageAssistantReply(d, {
            model,
            userText: userContent,
@@ -1194,8 +1214,8 @@ async function runChatTurn(req, res) {
        }
        const sent = res.json({
          response: out,
-         dropped: !out && polished.dropped === true,
-         dropReasons: polished.dropReasons || [],
+         dropped: !out && (polished.dropped === true || subjectHeld),
+         dropReasons: subjectHeld ? ['subject_renderer_rejected'] : (polished.dropReasons || []),
          salvaged: !!(out && polished.dropped),
          affectBand: behaviorContext._affectBand || null,
          choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content: out}}],
@@ -1315,12 +1335,15 @@ async function runChatTurn(req, res) {
           return;
         }
         const draftBeforeGate = trimmed;
+        let subjectHeld = false;
         if (d.brainPipeline?.processReply) {
           trimmed = await d.brainPipeline.processReply(trimmed, {
             userText: userContent,
             oocOpts,
             streamedRaw: cleaned,
+            model,
           });
+          subjectHeld = d.brainPipeline.getLastTrace?.()?.subjectHeld === true;
         } else {
           trimmed = stripRoleplayActions(d.applyOocRepair(trimmed, userContent, cleaned, oocOpts));
           try {
@@ -1334,9 +1357,9 @@ async function runChatTurn(req, res) {
         try {
           if (!lease.isCurrent()) return;
           let draft = oocFixed;
-          let dropReasons = !draft ? ['pipeline_gate'] : [];
+          let dropReasons = !draft ? [subjectHeld ? 'subject_renderer_rejected' : 'pipeline_gate'] : [];
           // 管道已空：先从流式脏稿抠口语 / 约束重生
-          if (!draft) {
+          if (!draft && !subjectHeld) {
             draft = await salvageAssistantReply(d, {
               model,
               userText: userContent,
@@ -1363,7 +1386,7 @@ async function runChatTurn(req, res) {
               turnId: lease.turnId,
             });
             let finalCn = polished.dropped ? '' : (polished.chinese || '');
-            if (!finalCn) {
+            if (!finalCn && !subjectHeld) {
               const salvaged = await salvageAssistantReply(d, {
                 model,
                 userText: userContent,

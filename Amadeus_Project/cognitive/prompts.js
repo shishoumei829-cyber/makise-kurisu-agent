@@ -33,25 +33,44 @@ function _compactSoulForPrompt(raw, max = 2800) {
 
 /** 超长 prompt 时优先保留用户句与人格锚点 */
 function _fitPromptToBudget(systemPrompt, userContent, maxChars) {
-  const sys  = String(systemPrompt || '').trim();
+  let sys  = String(systemPrompt || '').trim();
   const user = String(userContent  || '').trim();
   const userBlock = user ? `\n\n${user}` : '';
   const budget    = Math.max(1200, Number(maxChars) || 8000);
   if (sys.length + userBlock.length <= budget) return sys + userBlock;
 
+  // The current subject decision is the reason for this particular reply.
+  // Generic head/tail compaction used to cut it out of Swallow's fast prompt,
+  // leaving a persona biography but no current mind. Extract and reserve it.
+  const subjectAt = Math.max(
+    sys.lastIndexOf('【発話直前の決定】'),
+    sys.lastIndexOf('【今この瞬間の内面決定】'),
+  );
+  let subject = '';
+  if (subjectAt >= 0) {
+    const subjectEnd = sys.indexOf('\n\n', subjectAt);
+    const end = subjectEnd >= 0 ? subjectEnd : sys.length;
+    subject = sys.slice(subjectAt, end).trim();
+    sys = `${sys.slice(0, subjectAt)}\n${sys.slice(end)}`.trim();
+  }
+
   const userReserve  = Math.min(userBlock.length, Math.max(320, Math.floor(budget * 0.2)));
-  const anchorKey    = '【最高人格指令';
-  const anchorIdx    = sys.lastIndexOf(anchorKey);
+  const anchorIdx    = Math.max(sys.lastIndexOf('【最高人格指令'), sys.lastIndexOf('【あなたは誰か】'));
   let anchor = '';
   let body   = sys;
   if (anchorIdx >= 0) {
     anchor = sys.slice(anchorIdx).trim();
     body   = sys.slice(0, anchorIdx).trim();
   }
-  const anchorReserve = Math.min(anchor.length, Math.max(900, Math.floor(budget * 0.24)));
-  const bodyBudget    = Math.max(400, budget - userReserve - anchorReserve);
+  const subjectReserve = Math.min(subject.length, Math.max(680, Math.floor(budget * 0.42)));
+  const anchorReserve = Math.min(anchor.length, Math.max(620, Math.floor(budget * 0.22)));
+  const bodyBudget    = Math.max(320, budget - userReserve - anchorReserve - subjectReserve);
   if (body.length > bodyBudget) body = _compactSoulForPrompt(body, bodyBudget);
-  let merged = [body, anchor.slice(0, anchorReserve)].filter(Boolean).join('\n\n').trim();
+  let merged = [
+    body,
+    anchor.slice(0, anchorReserve),
+    subject ? _compactSoulForPrompt(subject, subjectReserve) : '',
+  ].filter(Boolean).join('\n\n').trim();
   const room = budget - userReserve;
   if (merged.length > room) merged = merged.slice(0, room);
   return merged + userBlock.slice(0, userReserve);
@@ -261,14 +280,10 @@ function buildPrompt(context, symbolicRules = []) {
       context.autonomyInitiative ? _clipInnerPrompt(context.proactiveContinuity || context.autonomyContinuity, 260) : '',
       _clipInnerPrompt(context.emotionalBandwidthBlock, 180),
       context.conversationRecall ? _clipInnerPrompt(context.conversationCtx, 700) : '',
+      _clipInnerPrompt(context.brainSubjectBlock, 1700),
       ANCHOR_JA,
-      '7. 客服的な慰め、無関係な話題転換、「最近どんなゲーム」のような寒暄調査はしない。',
-      '8. 日常の弱音には対等な恋人として具体的に反応する。「お疲れさま、休んで」だけの母親・客服口調で終わらない。',
-      '9. 「何か手伝える？」「話してくれる？」「できることがあれば」のような客服定型句は禁止。相手の言葉に自分の判断で返し、質問で終える必要はない。',
-      '10. 「答える→最後に質問する」を毎回の型にしない。質問は本当に知りたい時だけ。断定、吐き捨て、照れ隠し、短い相槌で終わってもいい。',
-      '11. 「あら」「そうなの」「どうしよう」「具体的には？」を連発する客服模板は禁止。先に自分の判断や情绪を一拍出してから、必要なら一つだけ聞く。',
       moodLine,
-      '相手の直前の発言に、日本語の会話として返して。短く済む時は一言、議論・感情・説明が続く時は数文に広げていい。',
+      '上の内面決定をそのまま説明せず、そこから自然に出る日本語の台詞だけを話す。関係性は自己紹介ではなく距離と温度に表れる。短く済む時は一言、考えが続く時は数文でいい。',
     ].filter(Boolean).join('\n\n');
   }
 
@@ -278,6 +293,7 @@ function buildPrompt(context, symbolicRules = []) {
       context.autonomyInitiative ? _clipInnerPrompt(context.proactiveContinuity || context.autonomyContinuity, 260) : '',
       _clipInnerPrompt(context.emotionalBandwidthBlock, 180),
       context.conversationRecall ? _clipInnerPrompt(context.conversationCtx, 700) : '',
+      _clipInnerPrompt(context.brainSubjectBlock, 1700),
       ANCHOR_ZH,
       context.modernDialogueModel
         ? KURISU_DIALOGUE_KERNEL_ZH_NO_EXAMPLES
@@ -320,7 +336,7 @@ function buildPrompt(context, symbolicRules = []) {
   if (context.brainWorkspaceBlock) {
     innerLines.push(_clipInnerPrompt(context.brainWorkspaceBlock, 560));
   }
-  if (context.brainSubjectBlock) innerLines.push(_clipInnerPrompt(context.brainSubjectBlock, 920));
+  if (context.brainSubjectBlock) innerLines.push(_clipInnerPrompt(context.brainSubjectBlock, 1700));
   if (brainSlim && context.brainDeliberationBlock) innerLines.push(_clipInnerPrompt(context.brainDeliberationBlock, 480));
 
   const symbolicBlock = !context.skipSymbolicInPrompt && Array.isArray(symbolicRules) && symbolicRules.length
@@ -375,7 +391,7 @@ function buildPrompt(context, symbolicRules = []) {
     ...(jaMode ? [] : [innerLines.join('\n')]),
     // Japanese-native main model does not receive the generic Chinese inner
     // workspace.  It still must receive the subject's Japanese current intent.
-    jaMode && context.brainSubjectBlock ? _clipInnerPrompt(context.brainSubjectBlock, 920) : '',
+    jaMode && context.brainSubjectBlock ? _clipInnerPrompt(context.brainSubjectBlock, 1700) : '',
     context.userModelCtx    ? _clipInnerPrompt(context.userModelCtx, brainSlim ? 140 : 200)    : '',
     !brainSlim && !jaMode && context.goalInjection   ? _clipInnerPrompt(context.goalInjection, 140)   : '',
     !brainSlim && !jaMode && context.strategyContext ? _clipInnerPrompt(context.strategyContext, 180)  : '',

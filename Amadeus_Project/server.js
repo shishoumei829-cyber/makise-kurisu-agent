@@ -2512,26 +2512,37 @@ async function _translateChineseToJapaneseForTts(cn) {
 async function _translateUserChineseToJapanese(text) {
   const body = String(text || '').trim().slice(0, 700);
   if (!body || !/[\u3400-\u9fff]/.test(body)) return body;
-  const raw = await _ollamaChatOnce(
+  const sourceQuestion = /[？?]\s*$/.test(body)
+    || /^(?:为什么|怎么会|怎么才能|如何|你觉得|你认为|你怎么看|能不能|是不是|要不要)/.test(body)
+    || /(?:吗|呢)[？?]?$/.test(body);
+  const systems = [
+    '你只是中日翻译器。把当前这一句中文翻成自然日语。不回答，不增删意思，陈述与疑问形式必须保持。只输出日语正文。',
+    `中国語の発話を返事せず日本語へ直訳する。${sourceQuestion ? '原文は質問のまま。' : '原文は陳述のまま。疑問文にしない。'}本文だけを出す。`,
+  ];
+  const models = [
+    String(process.env.AMADEUS_INPUT_TRANSLATE_MODEL || 'qwen3-kurisu:8b').trim(),
     resolveTranslateModel(),
-    [
-      {
-        role: 'system',
-        content: [
-          '把冈部伦太郎对牧濑红莉栖说的当前一句中文翻成自然日语口语，只传递原意，不替任何一方作答。',
-          '说话者永远是冈部：中文“我”必须是冈部的「俺/僕」，中文“你”必须是他眼前的红莉栖。不得交换主语、动作执行者、感情对象。',
-          '“我坚持练完了，夸一下”应译为「俺、今日は最後までやり切った。少しくらい褒めてくれない？」；绝不能译成询问红莉栖是否练完。',
-          '中文夸张说法按真实语义翻译：“累死了”是“疲れ切った”，绝不是死亡或自杀。',
-          '试探性问句仍是问句，不能改写成已经发生的共同经历。',
-          '只输出日语正文，不解释，不加引号，必须包含假名。',
-        ].join('\n'),
-      },
-      { role: 'user', content: body },
-    ],
-    { temperature: 0.05, num_predict: 120, num_ctx: 1024 },
-  );
-  const japanese = String(raw || '').replace(/^["「『]|["」』]$/g, '').trim();
-  return validateJapaneseOutput(japanese).ok ? japanese : body;
+  ].filter((model, index, all) => model && all.indexOf(model) === index);
+  for (let attempt = 0; attempt < systems.length; attempt += 1) {
+    const raw = await _ollamaChatOnce(
+      models[Math.min(attempt, models.length - 1)],
+      [{ role: 'system', content: systems[attempt] }, { role: 'user', content: body }],
+      { temperature: 0.0, num_predict: 120, num_ctx: 1024 },
+    );
+    const japanese = String(raw || '').replace(/^["「『]|["」』]$/g, '').trim();
+    const targetQuestion = /[？?]\s*$/.test(japanese);
+    const hasForeignResidue = /[A-Za-z]|(?:什么|怎么|不知道|为什么|吗[。！？?]?|你[在是的]?)/.test(japanese);
+    const kanaCount = (japanese.match(/[\u3040-\u30ff]/g) || []).length;
+    if (
+      validateJapaneseOutput(japanese).ok
+      && kanaCount >= 3
+      && !hasForeignResidue
+      && sourceQuestion === targetQuestion
+    ) return japanese;
+  }
+  // Japanese-native dialogue must never receive a Chinese fallback that it can
+  // reinterpret as a different speech act. Empty means the turn is held/retried.
+  return '';
 }
 
 /** DeepSeek 2026-07-24 起 deepseek-chat / deepseek-reasoner 已下线，映射到 v4 + thinking。 */

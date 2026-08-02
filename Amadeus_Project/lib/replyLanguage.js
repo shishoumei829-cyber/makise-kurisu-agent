@@ -146,6 +146,10 @@ function alignLiteralCnToJapanese(jp, cn) {
   if (/もう一度/.test(src) && /再三/.test(out)) {
     out = out.replace(/再三/g, '再一次');
   }
+  // 「別にいいけど」是嘴硬的“倒也行/我倒无所谓”，不是拒绝交流。
+  if (/別にいいけど/.test(src)) {
+    out = out.replace(/没什么好说(?:的)?(?=[，,。.!！]|$)/g, '我倒无所谓');
+  }
   // 「まだ」在担心/害怕类句里应对「还/还在」
   if (/まだ/.test(src) && /心配|心配して/.test(src)) {
     if (/^(不再|不在)担心/.test(out.replace(/\s/g, ''))) {

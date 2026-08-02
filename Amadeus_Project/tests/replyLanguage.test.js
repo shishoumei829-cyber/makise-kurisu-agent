@@ -12,7 +12,7 @@ const {
   alignLiteralCnToJapanese,
   LITERAL_JP_TO_CN_SYSTEM,
 } = require('../lib/replyLanguage');
-const { buildPrompt } = require('../cognitive/prompts');
+const { buildPrompt, _fitPromptToBudget } = require('../cognitive/prompts');
 
 test('Japanese validation accepts natural Japanese', () => {
   assert.equal(validateJapaneseOutput('いるわよ。何か用？').ok, true);
@@ -58,6 +58,16 @@ test('alignLiteralCnToJapanese fixes もう→再三 mistranslation', () => {
   );
 });
 
+test('alignLiteralCnToJapanese preserves the tsundere acceptance in 別にいいけど', () => {
+  assert.equal(
+    alignLiteralCnToJapanese(
+      'ふーん、そうなんだ。別にいいけど、もし暇なら私と話さない？',
+      '哼，是啊。没什么好说的，不过如果你有空的话，就和我聊聊吧。',
+    ),
+    '哼，是啊。我倒无所谓，不过如果你有空的话，就和我聊聊吧。',
+  );
+});
+
 test('alignLiteralCnToJapanese rejects a Chinese identity lecture for a short Japanese line', () => {
   assert.equal(
     alignLiteralCnToJapanese(
@@ -94,18 +104,35 @@ test('Kurisu version models default to Japanese mode', () => {
 
 test('Swallow Japanese prompt carries the soul instead of the mixed Chinese bypass', () => {
   const soul = fs.readFileSync(require('node:path').join(__dirname, '..', 'kurisu_soul_ja.txt'), 'utf8');
+  const subjectDecision = '【発話直前の決定】\n紅莉栖の立場: この件には反対する。';
   const prompt = buildPrompt({
     focusedFineTune: true,
     replyLanguage: 'ja',
     subjectCtx: soul,
+    brainSubjectBlock: subjectDecision,
     emotion: { P: 0, A: 0, S: 0 },
   });
   assert.equal(prompt.startsWith(soul.slice(0, 80)), true);
   assert.equal(prompt.includes(soul.slice(-80)), true);
   assert.match(prompt, /AIでも/);
   assert.match(prompt, /恋人同士/);
-  assert.match(prompt, /毎回の型にしない/);
+  assert.match(prompt, /内面決定をそのまま説明せず/);
+  assert.match(prompt, /紅莉栖の立場: この件には反対する/);
   assert.doesNotMatch(prompt, /真是太好了/);
+});
+
+test('prompt compaction preserves the current mind instead of only persona biography', () => {
+  const subject = [
+    '【発話直前の決定】',
+    '現在の対象: 岡部は今、退屈だと言った。',
+    '紅莉栖の立場: 問題扱いせず、同じ時間を少し動かしたい。',
+    '今回選んだ行為: accompany。',
+  ].join('\n');
+  const oversized = `${'人格の背景。'.repeat(500)}\n\n${subject}\n\n【あなたは誰か】\n牧瀬紅莉栖。`;
+  const fitted = _fitPromptToBudget(oversized, '', 1500);
+  assert.match(fitted, /現在の対象: 岡部は今、退屈だと言った/);
+  assert.match(fitted, /今回選んだ行為: accompany/);
+  assert.match(fitted, /牧瀬紅莉栖/);
 });
 
 test('kurisu-stable defaults to Chinese mode', () => {
