@@ -95,7 +95,7 @@ function signalsFor(value) {
     disagreement: /不对|不合理|不同意|不可能|错了|问题在|但是|可是|反而|違う|おかしい/.test(input),
     opinion: /我觉得|我认为|你觉得|你认为|怎么看|本质|意义|到底|どう思う|考え/.test(input),
     science: /科学|实验|时间机器|世界线|量子|记忆|意识|神经|物理|因果|模型|算法|仮説|実験|科学|脳/.test(input),
-    bored: /无聊|没事干|不知道干什么|不知道做什么|陪我|说点什么|暇|退屈/.test(input),
+    bored: /无聊|没事干|不知道干什么|不知道做什么|陪我|陪(?:玩|聊)|陪.*聊天|一起聊|聊聊天|说点什么|暇|退屈/.test(input),
     withdrawal: /随便|都行|无所谓|算了|不想说|不聊了|嗯$|哦$|行吧|どうでも|別に/.test(compact),
     boundary: /别问|别分析|别说了|不用回|让我静静|不要.*(?:建议|安慰|分析)/.test(input),
     unfinished: /但是$|可是$|不过$|其实$|只是$|[，、……]$/.test(input),
@@ -479,7 +479,11 @@ class SubjectCore {
       `行為: ${intent.action} — ${mind.desire}`,
       mind.conflict ? `残る葛藤: ${mind.conflict}` : '',
       `言いたい核: ${mind.spokenNucleus || mind.contentGround.join(' / ')}`,
-      intent.allowQuestion ? '必要な一点だけは尋ねてよい。' : '質問で繋がず、反応や判断で止めてよい。',
+      intent.allowQuestion
+        ? '発話行為: 必要な一点だけを尋ねてよい。'
+        : (intent.semanticTags || []).includes('copresence')
+          ? '発話行為: 情報を求める質問ではなく、同じ時間を過ごす誘い。自然な誘いなら一度だけ尋ねてもよい。'
+          : '発話行為: 質問で繋がず、反応や判断で言い切って止める。',
       `最大${intent.maxSentences}文。プロフィールや関係を説明せず、この決定から出る日本語の台詞だけを返す。`,
     ].filter(Boolean).join('\n').slice(0, 820);
   }

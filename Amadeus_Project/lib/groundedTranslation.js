@@ -91,8 +91,8 @@ function detectUnsupportedAdditions(input = {}) {
     },
     {
       id: 'invented_shared_activity',
-      claim: /一起(?:玩|去|做|聊)|一緒に(?:遊|行|や)|また一緒/,
-      supported: /一起(?:玩|去|做|聊)|一緒に(?:遊|行|や)|また一緒/,
+      claim: /一起(?:玩|去|做|聊)|一緒に(?:遊|行|や|話)|また一緒/,
+      supported: /一起(?:玩|去|做|聊)|一緒に(?:遊|行|や|話)|また一緒/,
       draftCanSupport: true,
     },
     {

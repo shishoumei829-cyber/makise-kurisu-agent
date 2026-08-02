@@ -75,6 +75,14 @@ test('relationship changes the choice but never removes the subject freedom to r
   assert.equal(core.evaluateReply('私は退屈してないし、今は付き合う気分じゃない。', result.intent).ok, true);
 });
 
+test('口语省略的陪聊邀请仍然进入共处主体，而不是泛闲聊', () => {
+  const { core } = createCore();
+  const result = core.deliberate({ userText: '助手，陪玩吗聊天', expressionText: 'アシスタント、一緒に話す' });
+  assert.equal(result.intent.action, 'accompany');
+  assert.ok(result.intent.semanticTags.includes('copresence'));
+  assert.match(result.intent.spokenNucleus, /同じ時間|話す/);
+});
+
 test('a harsh autonomous reply leaves a relationship consequence', () => {
   const { core } = createCore();
   const result = core.deliberate({ userText: '克里斯蒂娜' });

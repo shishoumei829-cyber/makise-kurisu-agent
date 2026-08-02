@@ -59,6 +59,19 @@ test('grounding cannot invent a new shared activity while rewriting', () => {
   assert.deepEqual(issues, ['invented_shared_activity']);
 });
 
+test('a current invitation supports the corresponding 一緒に話す line', () => {
+  const { detectUnsupportedAdditions } = require('../lib/groundedTranslation');
+  assert.deepEqual(
+    detectUnsupportedAdditions({
+      draftJapanese: '一緒に話そう。',
+      result: { japanese: '一緒に話そう。', chinese: '一起聊聊吧。' },
+      currentUser: '助手，陪玩吗聊天',
+      evidence: '',
+    }),
+    [],
+  );
+});
+
 test('grounding rejects unsupported self activity claims', () => {
   const issues = detectUnsupportedAdditions({
     draftJapanese: '\u4eca\u65e5\u306f\u305a\u3063\u3068\u5b9f\u9a13\u306e\u6e96\u5099\u3092\u3057\u3066\u3044\u305f',

@@ -2515,9 +2515,19 @@ async function _translateUserChineseToJapanese(text) {
   const sourceQuestion = /[？?]\s*$/.test(body)
     || /^(?:为什么|怎么会|怎么才能|如何|你觉得|你认为|你怎么看|能不能|是不是|要不要)/.test(body)
     || /(?:吗|呢)[？?]?$/.test(body);
+  // 中文聊天经常省略“我/要不要”，例如“助手，陪玩吗聊天”。
+  // 这类话是邀请或请求，不是把决定权抛回给对方的疑问句。
+  const companionshipInvite = !sourceQuestion
+    && /(?:陪(?:我|玩)?|一起|聊(?:聊天)?|说说话|待一会|陪着)/.test(body);
+  const speechActHint = sourceQuestion
+    ? '言语行为：信息提问。日语必须保留为真正的问题。'
+    : companionshipInvite
+      ? '言语行为：亲密邀请/请求。不要改成问题，不要使用「？」「ない？」「ませんか」。例如“助手，陪玩吗聊天”应保持“陪我聊天”的邀请含义。'
+      : '言语行为：陈述或感叹。原文没有问句，不得擅自添加问题。';
   const systems = [
-    '你只是中日翻译器。把当前这一句中文翻成自然日语。不回答，不增删意思，陈述与疑问形式必须保持。只输出日语正文。',
-    `中国語の発話を返事せず日本語へ直訳する。${sourceQuestion ? '原文は質問のまま。' : '原文は陳述のまま。疑問文にしない。'}本文だけを出す。`,
+    `你只是中日翻译器。把当前这一句中文翻成自然日语。不回答，不增删意思。${speechActHint}只输出日语正文。`,
+    `中国語の発話を返事せず日本語へ直訳する。${speechActHint}${sourceQuestion ? '原文は質問のまま。' : '原文は陳述または招待のまま。疑問文にしない。'}本文だけを出す。`,
+    `前の翻訳は言语行为を改变した。原文「${body}」只需要翻译，不要替用户回应。${speechActHint}日语只输出一句正文。${companionshipInvite ? '「一緒に話す」「少し話す」这类陈述可以，禁止「話さない？」「話しませんか」。' : ''}`,
   ];
   const models = [
     String(process.env.AMADEUS_INPUT_TRANSLATE_MODEL || 'qwen3-kurisu:8b').trim(),
@@ -2530,7 +2540,8 @@ async function _translateUserChineseToJapanese(text) {
       { temperature: 0.0, num_predict: 120, num_ctx: 1024 },
     );
     const japanese = String(raw || '').replace(/^["「『]|["」』]$/g, '').trim();
-    const targetQuestion = /[？?]\s*$/.test(japanese);
+    const targetQuestion = /[？?]\s*$/.test(japanese)
+      || /(?:ませんか|ないの[？?]?|かな[？?]?|どう[？?]?|か[？?])\s*$/.test(japanese);
     const hasForeignResidue = /[A-Za-z]|(?:什么|怎么|不知道|为什么|吗[。！？?]?|你[在是的]?)/.test(japanese);
     const kanaCount = (japanese.match(/[\u3040-\u30ff]/g) || []).length;
     if (
