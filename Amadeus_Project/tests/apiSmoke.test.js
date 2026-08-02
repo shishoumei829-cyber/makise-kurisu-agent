@@ -156,6 +156,7 @@ test('API smoke: /health, dialogue-log, behavior-report', { timeout: 120000 }, a
     assert.equal(visionEvent.res.status, 200);
     assert.equal(visionEvent.data.activeChat, false);
     assert.equal(visionEvent.data.injectedToChat, false);
+    assert.equal(visionEvent.data.persisted, false);
   } finally {
     child.kill('SIGTERM');
     await new Promise((r) => setTimeout(r, 400));

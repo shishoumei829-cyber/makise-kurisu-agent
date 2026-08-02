@@ -166,30 +166,51 @@ class AutonomySubsystem {
    */
   onIdle(ctx = {}) {
     const openQuestions = this.curiosity.getOpenQuestions(5);
-    this.drives.tick(ctx.idleMs || 60000, {
+    // dt 是真实流逝时间；idleMs 是「多久没说话」情境，二者不能混用
+    const dtMs = Number.isFinite(Number(ctx.dtMs))
+      ? Math.max(200, Math.min(20000, Number(ctx.dtMs)))
+      : Math.min(15000, Math.max(1000, Number(ctx.idleMs) || 8000));
+    const tickCtx = {
       pad: ctx.pad,
       memory: ctx.memory || ctx.memorySystem,
       motivationState: ctx.motivationState,
       relScore: ctx.relScore,
       idleMs: ctx.idleMs,
+      quietMs: ctx.quietMs,
+      facePresent: ctx.facePresent === true,
+      faceMs: ctx.faceMs || 0,
+      social: ctx.social,
       openQuestions,
-    });
+    };
+    this.drives.tick(dtMs, tickCtx);
     this.drives.generateUrges({
       pad: ctx.pad,
       relScore: ctx.relScore,
       idleMs: ctx.idleMs,
+      quietMs: ctx.quietMs,
+      facePresent: ctx.facePresent === true,
       openQuestions,
     });
 
     const behavior = this.behaviorLoop.execute({
       isAutonomyTick: true,
       idleMs: ctx.idleMs || 0,
+      quietMs: ctx.quietMs,
       pad: ctx.pad,
       relScore: ctx.relScore ?? 0,
       userPresenceActive: ctx.userPresenceActive,
       dnd: ctx.dnd,
       proactiveQuotaOk: ctx.proactiveQuotaOk !== false,
       sheSpokeRecently: ctx.sheSpokeRecently,
+      facePresent: ctx.facePresent === true,
+      faceMs: ctx.faceMs || 0,
+      social: ctx.social,
+      lastUserText: ctx.lastUserText,
+      lastReplyText: ctx.lastReplyText,
+      alreadyTalking: ctx.alreadyTalking === true,
+      awaitingProactiveReply: ctx.awaitingProactiveReply === true,
+      isThinking: ctx.isThinking === true,
+      ttsPlaying: ctx.ttsPlaying === true,
     });
 
     this._save();
@@ -237,6 +258,11 @@ class AutonomySubsystem {
 
   toPromptLine() {
     return this.drives.toPromptBlock();
+  }
+
+  satisfyUrge(urgeId, reason = 'expressed') {
+    this.drives.satisfyUrge(urgeId, reason);
+    this._save();
   }
 
   snapshot() {

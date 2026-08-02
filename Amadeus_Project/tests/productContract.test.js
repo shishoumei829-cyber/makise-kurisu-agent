@@ -10,16 +10,22 @@ const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 
 test('desktop launch has one Electron shell and no browser-only fork', () => {
   const bat = read('一键启动.bat');
+  const pureBat = read('一键启动-纯窗口.bat');
   const auto = read(path.join('scripts', 'autostart-amadeus.ps1'));
   const main = read('main.js');
   assert.match(bat, /node_modules\\electron\\dist\\electron\.exe/);
   assert.match(bat, /start "Amadeus"/);
   assert.doesNotMatch(bat, /open_browser|start "" "http:\/\/localhost/);
+  assert.match(pureBat, /AMADEUS_UI_MODE=pure/);
+  assert.match(pureBat, /--ui=pure/);
+  assert.match(pureBat, /node_modules\\electron\\dist\\electron\.exe/);
   assert.match(auto, /electron\.exe/);
   assert.doesNotMatch(auto, /Start-Process \$ui/);
   assert.match(main, /requestSingleInstanceLock/);
+  assert.match(main, /resolveUiMode/);
   assert.match(main, /width: 1280/);
-  assert.match(main, /backgroundColor: '#000000'/);
+  assert.match(main, /const overlayColor = uiMode === 'pure' \? '#1a1814' : '#050508'/);
+  assert.match(main, /backgroundColor: overlayColor/);
   assert.doesNotMatch(main, /disableHardwareAcceleration/);
 });
 

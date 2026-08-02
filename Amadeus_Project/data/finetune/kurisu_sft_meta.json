@@ -1,11 +1,16 @@
 {
-  "builtAt": "2026-06-29T14:24:37.663Z",
-  "total": 62,
-  "train": 54,
-  "eval": 8,
-  "systemChars": 143,
+  "builtAt": "2026-07-30T18:58:31.468Z",
+  "total": 107,
+  "train": 97,
+  "eval": 10,
   "bySource": {
-    "amadeus": 50,
-    "dialogue_pairs": 12
+    "amadeus": 47,
+    "relationship": 40,
+    "multiturn": 20
+  },
+  "quality": {
+    "assistantMessages": 113,
+    "questionEndings": 1,
+    "questionEndingRatio": 0.008849557522123894
   }
 }

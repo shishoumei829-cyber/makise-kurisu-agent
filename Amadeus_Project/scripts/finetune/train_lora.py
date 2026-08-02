@@ -19,7 +19,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
+CONFIG_PATH = Path(
+    os.environ.get("AMADEUS_FINETUNE_CONFIG")
+    or (Path(__file__).resolve().parent / "config.json")
+)
 _DEFAULT_HF = Path("E:/amadeus_finetune/hf-cache")
 if not os.environ.get("HF_HOME") and _DEFAULT_HF.parent.exists():
     os.environ.setdefault("HF_HOME", str(_DEFAULT_HF))
@@ -40,6 +43,27 @@ def load_jsonl(path: Path):
                 continue
             rows.append(json.loads(line))
     return rows
+
+
+def prepare_messages(messages: list[dict], inline_system: bool = False) -> list[dict]:
+    clean = [dict(message) for message in messages]
+    if not inline_system:
+        return clean
+    system = "\n".join(
+        str(message.get("content") or "").strip()
+        for message in clean
+        if message.get("role") == "system"
+    ).strip()
+    clean = [message for message in clean if message.get("role") != "system"]
+    if system:
+        for message in clean:
+            if message.get("role") == "user":
+                message["content"] = (
+                    f"【恒常的な人格と会話規則】\n{system}\n\n"
+                    f"【相手の今回の発言】\n{message.get('content', '')}"
+                )
+                break
+    return clean
 
 
 def main() -> int:
@@ -84,8 +108,9 @@ def main() -> int:
         tokenizer.pad_token = tokenizer.eos_token
 
     train_items = []
+    inline_system = bool(cfg.get("inline_system_prompt", False))
     for row in rows:
-        messages = row["messages"]
+        messages = prepare_messages(row["messages"], inline_system)
         train_items.append({
             "prompt": messages[:-1],
             "completion": [messages[-1]],
@@ -97,7 +122,7 @@ def main() -> int:
     if eval_path.is_file():
         eval_items = []
         for row in load_jsonl(eval_path):
-            messages = row["messages"]
+            messages = prepare_messages(row["messages"], inline_system)
             eval_items.append({
                 "prompt": messages[:-1],
                 "completion": [messages[-1]],
@@ -120,7 +145,14 @@ def main() -> int:
         device_map="auto",
         trust_remote_code=True,
     )
-    model = prepare_model_for_kbit_training(model)
+    use_gradient_checkpointing = bool(cfg.get("gradient_checkpointing", False))
+    model = prepare_model_for_kbit_training(
+        model,
+        use_gradient_checkpointing=use_gradient_checkpointing,
+    )
+    if use_gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+        model.config.use_cache = False
 
     lora_cfg = LoraConfig(
         r=int(cfg["lora_r"]),
@@ -152,6 +184,7 @@ def main() -> int:
         bf16=False,
         max_length=int(cfg["max_seq_length"]),
         completion_only_loss=True,
+        gradient_checkpointing=use_gradient_checkpointing,
         packing=False,
         report_to=[],
         seed=int(cfg.get("seed", 42)),

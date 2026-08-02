@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const {
   getReplyLanguageMode,
   validateJapaneseOutput,
@@ -11,6 +12,7 @@ const {
   alignLiteralCnToJapanese,
   LITERAL_JP_TO_CN_SYSTEM,
 } = require('../lib/replyLanguage');
+const { buildPrompt, _fitPromptToBudget } = require('../cognitive/prompts');
 
 test('Japanese validation accepts natural Japanese', () => {
   assert.equal(validateJapaneseOutput('いるわよ。何か用？').ok, true);
@@ -33,14 +35,14 @@ test('stripModelDecorations keeps mixed JP+CN body for literal display source', 
   assert.equal(stripModelDecorations(raw), raw);
 });
 
-test('literal JP→CN messages forbid fluent paraphrase', () => {
+test('display JP→CN messages require faithful readable Chinese', () => {
   const msgs = buildLiteralJpToCnMessages('えと、今何してるの？… 分心啊');
   assert.equal(msgs.length, 2);
   assert.equal(msgs[0].role, 'system');
   assert.equal(msgs[0].content, LITERAL_JP_TO_CN_SYSTEM);
-  assert.match(msgs[0].content, /硬翻|直译/);
-  assert.match(msgs[0].content, /不要改写成通顺对白|不要补全/);
-  assert.match(msgs[0].content, /中文的片段原样保留/);
+  assert.match(msgs[0].content, /忠实|可读/);
+  assert.match(msgs[0].content, /不要脑补|不增删事实/);
+  assert.match(msgs[0].content, /谜语|断句乱码/);
   assert.match(msgs[0].content, /もう≠再三/);
   assert.equal(msgs[1].content, 'えと、今何してるの？… 分心啊');
 });
@@ -53,6 +55,26 @@ test('alignLiteralCnToJapanese fixes もう→再三 mistranslation', () => {
   assert.equal(
     alignLiteralCnToJapanese('もう？まだ心配してるの', '又？还在担心吗？'),
     '又？还在担心吗？',
+  );
+});
+
+test('alignLiteralCnToJapanese preserves the tsundere acceptance in 別にいいけど', () => {
+  assert.equal(
+    alignLiteralCnToJapanese(
+      'ふーん、そうなんだ。別にいいけど、もし暇なら私と話さない？',
+      '哼，是啊。没什么好说的，不过如果你有空的话，就和我聊聊吧。',
+    ),
+    '哼，是啊。我倒无所谓，不过如果你有空的话，就和我聊聊吧。',
+  );
+});
+
+test('alignLiteralCnToJapanese rejects a Chinese identity lecture for a short Japanese line', () => {
+  assert.equal(
+    alignLiteralCnToJapanese(
+      '……は？',
+      '……怎么了？又叫我克里斯蒂娜？哼，无所谓，我是红莉栖，你的恋人。还有，我可是神经科学研究者呢。',
+    ),
+    '',
   );
 });
 
@@ -73,6 +95,53 @@ test('Kurisu version models default to Japanese mode', () => {
   const oldModel = process.env.AMADEUS_CHAT_MODEL;
   delete process.env.AMADEUS_REPLY_LANGUAGE;
   process.env.AMADEUS_CHAT_MODEL = 'kurisu-v4-candidate';
+  assert.equal(getReplyLanguageMode(), 'ja');
+  if (oldLanguage == null) delete process.env.AMADEUS_REPLY_LANGUAGE;
+  else process.env.AMADEUS_REPLY_LANGUAGE = oldLanguage;
+  if (oldModel == null) delete process.env.AMADEUS_CHAT_MODEL;
+  else process.env.AMADEUS_CHAT_MODEL = oldModel;
+});
+
+test('Swallow Japanese prompt carries the soul instead of the mixed Chinese bypass', () => {
+  const soul = fs.readFileSync(require('node:path').join(__dirname, '..', 'kurisu_soul_ja.txt'), 'utf8');
+  const subjectDecision = '【発話直前の決定】\n紅莉栖の立場: この件には反対する。';
+  const prompt = buildPrompt({
+    focusedFineTune: true,
+    replyLanguage: 'ja',
+    subjectCtx: soul,
+    brainSubjectBlock: subjectDecision,
+    emotion: { P: 0, A: 0, S: 0 },
+  });
+  assert.equal(prompt.startsWith(soul.slice(0, 80)), true);
+  assert.equal(prompt.includes(soul.slice(-80)), true);
+  assert.match(prompt, /AIでも/);
+  assert.match(prompt, /恋人同士/);
+  assert.match(prompt, /内面決定をそのまま説明せず/);
+  assert.match(prompt, /紅莉栖の立場: この件には反対する/);
+  assert.doesNotMatch(prompt, /真是太好了/);
+});
+
+test('prompt compaction preserves the current mind instead of only persona biography', () => {
+  const subject = [
+    '【発話直前の決定】',
+    '現在の対象: 岡部は今、退屈だと言った。',
+    '紅莉栖の立場: 問題扱いせず、同じ時間を少し動かしたい。',
+    '今回選んだ行為: accompany。',
+  ].join('\n');
+  const oversized = `${'人格の背景。'.repeat(500)}\n\n${subject}\n\n【あなたは誰か】\n牧瀬紅莉栖。`;
+  const fitted = _fitPromptToBudget(oversized, '', 1500);
+  assert.match(fitted, /現在の対象: 岡部は今、退屈だと言った/);
+  assert.match(fitted, /今回選んだ行為: accompany/);
+  assert.match(fitted, /牧瀬紅莉栖/);
+});
+
+test('kurisu-stable defaults to Chinese mode', () => {
+  const oldLanguage = process.env.AMADEUS_REPLY_LANGUAGE;
+  const oldModel = process.env.AMADEUS_CHAT_MODEL;
+  delete process.env.AMADEUS_REPLY_LANGUAGE;
+  process.env.AMADEUS_CHAT_MODEL = 'kurisu-stable';
+  assert.equal(getReplyLanguageMode(), 'zh');
+  process.env.AMADEUS_CHAT_MODEL = 'kurisu:latest';
   assert.equal(getReplyLanguageMode(), 'ja');
   if (oldLanguage == null) delete process.env.AMADEUS_REPLY_LANGUAGE;
   else process.env.AMADEUS_REPLY_LANGUAGE = oldLanguage;

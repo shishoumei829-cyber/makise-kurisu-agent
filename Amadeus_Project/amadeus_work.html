@@ -3,8 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <title>AMADEUS — Makise Kurisu</title>
+<script>
+/* 首屏前锁定 UI，避免先闪实验室再切纯窗口 */
+(function () {
+  try {
+    var q = new URLSearchParams(location.search || '');
+    var u = String(q.get('ui') || '').toLowerCase();
+    var mode = 'lab';
+    if (u === 'pure' || u === 'window') mode = 'pure';
+    else if (u === 'lab') mode = 'lab';
+    else mode = localStorage.getItem('amadeus_ui_mode') || 'lab';
+    document.documentElement.classList.add(mode === 'pure' ? 'ui-mode-pure' : 'ui-mode-lab');
+    document.documentElement.dataset.uiMode = mode;
+  } catch (e) { /* ignore */ }
+})();
+</script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&family=Noto+Sans+JP:wght@300;400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&family=Noto+Sans+JP:wght@300;400&family=Noto+Serif+JP:wght@400;500;600&display=swap');
 :root{
   --primary:#ff8c00;--pd:rgba(255,140,0,0.12);--green:#00FF9F;
   --red:#FF3B3B;--blue:#00BFFF;--bg:#000000;--bg-panel:#050709;
@@ -188,10 +203,638 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
 .ti{display:flex;align-items:center;gap:5px}.td2{width:4px;height:4px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
 #clk{margin-left:auto;font-family:var(--fm);color:rgba(255,140,0,.5);font-size:10px}
 ::-webkit-scrollbar{width:2px;height:2px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border)}
+
+/* 界面切换改走启动参数 / bat，不再显示右上角图标 */
+#ui-mode-toggle{display:none !important}
+
+/* Electron 自定义标题拖动区（配合 titleBarOverlay 系统三键） */
+#desktop-drag{
+  display:none;
+  position:fixed;top:0;left:0;right:138px;height:36px;z-index:55;
+  -webkit-app-region:drag;
+  pointer-events:auto;
+  background:transparent;
+}
+body.is-electron #desktop-drag{display:block}
+html.ui-mode-pure #desktop-drag{
+  background:linear-gradient(180deg, rgba(26,24,20,.55) 0%, rgba(26,24,20,0) 100%);
+}
+html.ui-mode-lab #desktop-drag{
+  background:linear-gradient(180deg, rgba(5,5,8,.72) 0%, rgba(5,5,8,0) 100%);
+}
+
+/* ═══ PURE WINDOW UI（第二套：无侧栏/无情绪/无聊天列表）═══ */
+html.ui-mode-pure,
+html.ui-mode-pure body{
+  cursor:default;
+  background:#1a1814 !important;
+}
+html.ui-mode-pure body::after{display:none !important}
+html.ui-mode-pure #grid-bg,
+html.ui-mode-pure #cvs,
+html.ui-mode-pure #PL,
+html.ui-mode-pure #PR,
+html.ui-mode-pure #tb,
+html.ui-mode-pure #startup-banner{display:none !important}
+
+html.ui-mode-pure #pure-bg{
+  display:block;
+  position:fixed;inset:0;z-index:0;
+  background:#1a1814 center/cover no-repeat;
+  background-image:url('assets/ui/pure_window/bg_room.png');
+  filter:saturate(.92) brightness(1.02);
+}
+#pure-bg{display:none}
+
+html.ui-mode-pure #stage{
+  left:50%;
+  right:auto;
+  transform:translateX(-50%);
+  top:auto;
+  bottom:0;
+  height:auto;
+  max-height:100dvh;
+  width:100vw;
+  max-width:none;
+  z-index:4;
+  justify-content:center;
+  align-items:flex-end;
+  padding:0;
+}
+html.ui-mode-pure #figure-aura,
+html.ui-mode-pure #figure-signal{display:none}
+html.ui-mode-pure #ki{
+  display:block;
+  width:auto;
+  height:min(92vh, calc(100vh - 120px));
+  height:min(92dvh, calc(100dvh - 120px));
+  max-width:96vw;
+  max-height:none;
+  margin:0;
+  object-fit:contain;
+  object-position:center bottom;
+  filter:none;
+  mix-blend-mode:screen;
+  transform-origin:50% 100%;
+  animation:pure-sway 5.6s ease-in-out infinite;
+  will-change:transform;
+}
+html.ui-mode-pure #stage.talking #ki,
+html.ui-mode-pure #ki.talking{
+  filter:none;
+  animation:pure-sway-talk 4s ease-in-out infinite;
+}
+@keyframes pure-sway{
+  0%,100%{transform:rotate(-0.4deg) translate3d(-1px,0,0)}
+  50%{transform:rotate(0.45deg) translate3d(1px,-1px,0)}
+}
+@keyframes pure-sway-talk{
+  0%,100%{transform:rotate(-0.5deg) translate3d(-1px,0,0)}
+  50%{transform:rotate(0.55deg) translate3d(1px,-1.5px,0)}
+}
+
+/* 纯窗口：左侧 3 条气泡（垂直错位：她左、你右，不并排） */
+html.ui-mode-pure #sb{display:none !important}
+
+#pure-dialogue-lane{
+  display:none;
+}
+html.ui-mode-pure #pure-dialogue-lane,
+body.ui-mode-pure #pure-dialogue-lane{
+  display:block;
+  position:fixed;
+  top:64px;
+  bottom:108px;
+  left:max(22px, 2.2vw);
+  width:min(400px, 38vw);
+  z-index:55;
+  pointer-events:none;
+}
+html.ui-mode-pure #pure-bubble-stack,
+body.ui-mode-pure #pure-bubble-stack{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:flex-start;
+  gap:14px;
+  width:100%;
+  height:100%;
+  pointer-events:auto;
+  overflow:visible;
+  padding:12px 8px;
+  box-sizing:border-box;
+  visibility:visible;
+  opacity:1;
+  transition:opacity .3s ease;
+  touch-action:pan-y;
+  user-select:none;
+  -webkit-user-select:none;
+}
+html.ui-mode-pure #pure-bubble-stack:not(.visible),
+body.ui-mode-pure #pure-bubble-stack:not(.visible){
+  opacity:0;
+  pointer-events:none;
+}
+html.ui-mode-pure #pure-bubble-stack.visible,
+body.ui-mode-pure #pure-bubble-stack.visible{
+  opacity:1;
+  pointer-events:auto;
+}
+html.ui-mode-pure .pure-bubble{
+  position:relative;
+  flex:0 0 auto;
+  width:78%;
+  max-width:100%;
+  align-self:flex-start;
+  box-sizing:border-box;
+  border-radius:24px 24px 24px 8px;
+  background:rgba(255,255,255,.18);
+  border:1px solid rgba(255,255,255,.42);
+  box-shadow:0 8px 24px rgba(20,16,12,.10), inset 0 1px 0 rgba(255,255,255,.4);
+  backdrop-filter:blur(20px) saturate(155%);
+  -webkit-backdrop-filter:blur(20px) saturate(155%);
+  padding:11px 14px;
+  transform:scale(.86);
+  opacity:0;
+  transform-origin:center left;
+  transition:
+    opacity .38s cubic-bezier(.22,.61,.36,1),
+    transform .42s cubic-bezier(.22,.61,.36,1),
+    width .42s cubic-bezier(.22,.61,.36,1),
+    background .35s ease,
+    box-shadow .35s ease,
+    padding .35s ease,
+    filter .35s ease;
+  filter:saturate(.85);
+  overflow:hidden;
+  cursor:pointer;
+  will-change:transform, opacity;
+}
+html.ui-mode-pure .pure-bubble.is-user{
+  align-self:flex-end;
+  margin-left:auto;
+  width:72%;
+  border-radius:24px 24px 8px 24px;
+  transform-origin:center right;
+  background:rgba(255,255,255,.16);
+  border-color:rgba(255,255,255,.38);
+}
+html.ui-mode-pure .pure-bubble.is-on{opacity:1}
+html.ui-mode-pure .pure-bubble.is-primary{
+  width:100%;
+  transform:scale(1);
+  opacity:1;
+  background:rgba(255,255,255,.42);
+  border-color:rgba(255,255,255,.68);
+  box-shadow:0 14px 40px rgba(20,16,12,.18), inset 0 1px 0 rgba(255,255,255,.62);
+  padding:14px 16px 15px;
+  filter:none;
+  z-index:3;
+}
+html.ui-mode-pure .pure-bubble.is-user.is-primary{width:88%}
+html.ui-mode-pure .pure-bubble.is-near{
+  width:88%;
+  transform:scale(.92);
+  opacity:.58;
+  background:rgba(255,255,255,.22);
+  z-index:2;
+}
+html.ui-mode-pure .pure-bubble.is-user.is-near{width:80%}
+html.ui-mode-pure .pure-bubble.is-far{
+  width:78%;
+  transform:scale(.84);
+  opacity:.32;
+  background:rgba(255,255,255,.14);
+  z-index:1;
+}
+html.ui-mode-pure .pure-bubble.is-user.is-far{width:72%}
+html.ui-mode-pure .pure-bubble.is-hidden{
+  display:none !important;
+  pointer-events:none;
+}
+html.ui-mode-pure .pure-bubble.leaving{
+  opacity:0 !important;
+  transform:scale(.78) !important;
+  pointer-events:none;
+}
+html.ui-mode-pure .pure-bubble::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  background:linear-gradient(
+    160deg,
+    rgba(255,255,255,.38) 0%,
+    rgba(255,255,255,.08) 42%,
+    transparent 70%
+  );
+  pointer-events:none;
+}
+html.ui-mode-pure .pure-bubble::after{display:none}
+html.ui-mode-pure .pure-bubble-text{
+  position:relative;
+  z-index:1;
+  color:rgba(28,24,20,.86);
+  font-family:'Noto Sans JP','Hiragino Sans','PingFang SC',sans-serif;
+  font-size:13.5px;
+  line-height:1.55;
+  letter-spacing:.02em;
+  text-align:left;
+  white-space:pre-wrap;
+  word-break:break-word;
+  text-shadow:0 0.5px 0 rgba(255,255,255,.3);
+}
+html.ui-mode-pure .pure-bubble.is-primary .pure-bubble-text{
+  font-size:15px;
+  color:rgba(22,18,14,.92);
+}
+html.ui-mode-pure .pure-bubble-text.is-draft{opacity:.82}
+html.ui-mode-pure .pure-bubble.is-near .pure-bubble-text,
+html.ui-mode-pure .pure-bubble.is-far .pure-bubble-text{
+  display:-webkit-box;
+  -webkit-line-clamp:3;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+
+/* 通话/识别中的临时条（贴右，不进轮播栈） */
+#pure-user-echo{
+  display:none;
+}
+html.ui-mode-pure #pure-user-echo{
+  display:block;
+  position:fixed;
+  left:auto;
+  right:max(22px, 2.2vw);
+  bottom:auto;
+  top:auto;
+  transform:translateY(8px) scale(.98);
+  z-index:57;
+  max-width:min(280px, 28vw);
+  pointer-events:none;
+  opacity:0;
+  visibility:hidden;
+  transition:
+    opacity .28s ease,
+    transform .32s cubic-bezier(.22,.61,.36,1),
+    visibility 0s linear .32s;
+}
+html.ui-mode-pure #pure-user-echo.visible{
+  opacity:1;
+  visibility:visible;
+  transform:translateY(0) scale(1);
+  transition:opacity .28s ease, transform .32s cubic-bezier(.22,.61,.36,1), visibility 0s;
+}
+html.ui-mode-pure #pure-user-echo .pure-user-echo-card{
+  border-radius:18px 18px 18px 5px;
+  background:rgba(255,255,255,.28);
+  border:1px solid rgba(255,255,255,.55);
+  box-shadow:
+    0 10px 28px rgba(40,50,90,.12),
+    inset 0 1px 0 rgba(255,255,255,.6);
+  backdrop-filter:blur(20px) saturate(155%);
+  -webkit-backdrop-filter:blur(20px) saturate(155%);
+  padding:10px 14px;
+  color:rgba(28,32,40,.82);
+  font-family:'Noto Sans JP','Hiragino Sans','PingFang SC',sans-serif;
+  font-size:13px;
+  line-height:1.45;
+  letter-spacing:.02em;
+  text-align:left;
+  white-space:pre-wrap;
+  word-break:break-word;
+  max-width:100%;
+}
+html.ui-mode-pure #pure-user-echo.is-call .pure-user-echo-card{
+  border-radius:18px 18px 18px 5px;
+  max-width:min(280px, 28vw);
+  padding:10px 14px;
+}
+html.ui-mode-pure #pure-user-echo .pure-user-echo-label{
+  display:block;
+  font-size:11px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:rgba(36,92,72,.72);
+  margin-bottom:6px;
+  font-weight:600;
+}
+html.ui-mode-pure #pure-user-echo.is-transcribing .pure-user-echo-label{
+  color:rgba(46,79,120,.72);
+}
+html.ui-mode-pure #pure-user-echo.is-listening .pure-user-echo-label{
+  color:rgba(120,86,36,.78);
+}
+html.ui-mode-pure #pure-user-echo .pure-user-echo-body{
+  display:block;
+  word-break:break-word;
+}
+html.ui-mode-pure #pure-user-echo.is-sent .pure-user-echo-card{
+  border-color:rgba(120,210,170,.55);
+  box-shadow:
+    0 12px 30px rgba(36,120,88,.14),
+    inset 0 1px 0 rgba(255,255,255,.65);
+}
+
+#pure-call-chip{
+  display:none;
+}
+html.ui-mode-pure #pure-call-chip{
+  display:block;
+  position:fixed;
+  left:50%;
+  bottom:156px;
+  transform:translateX(-50%) translateY(6px);
+  z-index:57;
+  pointer-events:none;
+  opacity:0;
+  visibility:hidden;
+  transition:
+    opacity .24s ease,
+    transform .28s cubic-bezier(.22,.61,.36,1),
+    visibility 0s linear .28s;
+}
+html.ui-mode-pure #pure-call-chip.visible{
+  opacity:1;
+  visibility:visible;
+  transform:translateX(-50%) translateY(0);
+  transition:opacity .24s ease, transform .28s cubic-bezier(.22,.61,.36,1), visibility 0s;
+}
+html.ui-mode-pure #pure-call-chip .pure-call-chip-inner{
+  border-radius:999px;
+  padding:8px 14px;
+  background:rgba(255,255,255,.34);
+  border:1px solid rgba(255,255,255,.58);
+  box-shadow:0 8px 24px rgba(40,50,90,.1);
+  backdrop-filter:blur(18px) saturate(150%);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  color:rgba(34,40,52,.76);
+  font-size:12px;
+  letter-spacing:.06em;
+  white-space:nowrap;
+}
+html.ui-mode-pure #pure-call-chip.is-listening .pure-call-chip-inner{
+  color:rgba(120,86,36,.88);
+}
+html.ui-mode-pure #pure-call-chip.is-transcribing .pure-call-chip-inner{
+  color:rgba(46,79,120,.88);
+}
+html.ui-mode-pure #pure-call-chip.is-sent .pure-call-chip-inner{
+  color:rgba(36,92,72,.88);
+}
+html.ui-mode-pure #pure-call-chip.is-thinking .pure-call-chip-inner{
+  color:rgba(88,56,120,.84);
+}
+html.ui-mode-pure #callbtn.active{
+  box-shadow:
+    0 0 0 2px rgba(120,210,170,.35),
+    0 10px 28px rgba(40,50,90,.12),
+    inset 0 1px 0 rgba(255,255,255,.7) !important;
+}
+html.ui-mode-pure #callbtn.active.is-hearing{
+  animation:pure-call-pulse 1.1s ease-in-out infinite;
+}
+@keyframes pure-call-pulse{
+  0%,100%{box-shadow:0 0 0 2px rgba(120,210,170,.28),0 10px 28px rgba(40,50,90,.12),inset 0 1px 0 rgba(255,255,255,.7)}
+  50%{box-shadow:0 0 0 5px rgba(120,210,170,.42),0 12px 32px rgba(36,120,88,.16),inset 0 1px 0 rgba(255,255,255,.75)}
+}
+
+/* 底部：毛玻璃输入（参考图 glassmorphism）+ 右侧大按钮 */
+html.ui-mode-pure #cp{
+  left:0;right:0;height:auto;
+  background:transparent;border:none;
+  z-index:40;pointer-events:none;
+  bottom:0;
+}
+html.ui-mode-pure .chdr,
+html.ui-mode-pure #ch{display:none !important}
+html.ui-mode-pure #ia{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center;
+  pointer-events:auto;
+  margin:0 auto 30px;
+  width:min(720px, calc(100vw - 48px));
+  height:auto;
+  min-height:56px;
+  background:transparent;
+  border:none;
+  border-radius:0;
+  box-shadow:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+  padding:0;
+  gap:12px;
+  box-sizing:border-box;
+}
+html.ui-mode-pure #ip{display:none !important}
+html.ui-mode-pure #ci{
+  flex:1 1 auto;
+  min-width:0;
+  height:56px;
+  color:rgba(28,32,40,.88);
+  caret-color:rgba(28,32,40,.9);
+  font-size:15px;
+  padding:0 22px;
+  line-height:56px;
+  font-family:'Noto Sans JP',var(--fj),sans-serif;
+  border:1px solid rgba(255,255,255,.55);
+  border-radius:28px;
+  background:rgba(255,255,255,.28);
+  outline:none;
+  box-shadow:
+    0 10px 32px rgba(40,50,90,.12),
+    inset 0 1px 0 rgba(255,255,255,.65);
+  backdrop-filter:blur(22px) saturate(160%);
+  -webkit-backdrop-filter:blur(22px) saturate(160%);
+}
+html.ui-mode-pure #ci::placeholder{color:rgba(50,56,70,.38)}
+html.ui-mode-pure .ib,
+html.ui-mode-pure #skipbtn,
+html.ui-mode-pure #callbtn,
+html.ui-mode-pure #sendbtn{
+  flex:0 0 56px !important;
+  width:56px !important;
+  height:56px !important;
+  min-width:56px !important;
+  max-width:56px !important;
+  margin:0 !important;
+  padding:0 !important;
+  border-radius:22px !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  font-size:0 !important;
+  line-height:0 !important;
+  letter-spacing:0 !important;
+  box-shadow:
+    0 10px 28px rgba(40,50,90,.12),
+    inset 0 1px 0 rgba(255,255,255,.7) !important;
+  border:1px solid rgba(255,255,255,.55) !important;
+  background:rgba(255,255,255,.26) !important;
+  color:rgba(36,42,54,.78) !important;
+  position:relative;
+  overflow:hidden;
+  backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+}
+html.ui-mode-pure .ib:hover,
+html.ui-mode-pure #skipbtn:hover,
+html.ui-mode-pure #callbtn:hover{
+  color:rgba(28,32,40,.95) !important;
+  background:rgba(255,255,255,.42) !important;
+  border-color:rgba(255,255,255,.75) !important;
+}
+html.ui-mode-pure #skipbtn::before,
+html.ui-mode-pure #callbtn::before,
+html.ui-mode-pure #sendbtn::before{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  height:100%;
+  font-size:20px;
+  line-height:1;
+}
+html.ui-mode-pure #skipbtn::before{content:'⏭';font-size:18px}
+html.ui-mode-pure #callbtn::before{content:'🎙';font-size:20px}
+html.ui-mode-pure #callbtn.active{
+  background:rgba(255,255,255,.48) !important;
+  color:rgba(28,32,40,.95) !important;
+  border-color:rgba(255,255,255,.8) !important;
+  box-shadow:
+    0 10px 28px rgba(40,50,90,.16),
+    inset 0 0 0 1px rgba(255,255,255,.5) !important;
+}
+html.ui-mode-pure #callbtn.active::before{filter:none}
+html.ui-mode-pure #sendbtn{
+  background:rgba(255,255,255,.38) !important;
+  color:rgba(28,32,40,.92) !important;
+  border-color:rgba(255,255,255,.7) !important;
+}
+html.ui-mode-pure #sendbtn::before{content:'↑';font-size:22px;font-weight:700;color:rgba(28,32,40,.9)}
+html.ui-mode-pure #sendbtn:hover{
+  background:rgba(255,255,255,.52) !important;
+}
+
+/* 提示 / 首次引导：同款毛玻璃 */
+html.ui-mode-pure #nots{
+  display:flex !important;
+  top:18px;
+  right:24px;
+  left:auto;
+}
+html.ui-mode-pure #nots .nt{
+  background:rgba(255,255,255,.28);
+  border:1px solid rgba(255,255,255,.5);
+  color:rgba(32,38,50,.88);
+  font-family:'Noto Sans JP',var(--fj),sans-serif;
+  font-size:12.5px;
+  letter-spacing:.03em;
+  border-radius:16px;
+  box-shadow:
+    0 10px 28px rgba(40,50,90,.12),
+    inset 0 1px 0 rgba(255,255,255,.55);
+  backdrop-filter:blur(18px) saturate(150%);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+}
+html.ui-mode-pure #nots .nt.green{color:#1f5a48}
+html.ui-mode-pure #nots .nt.red,
+html.ui-mode-pure #nots .nt.warn{color:#7a3a32}
+html.ui-mode-pure #nots .nt.blue{color:#2e4f78}
+html.ui-mode-pure #first-run{
+  background:rgba(20,24,36,.28);
+  backdrop-filter:blur(14px) saturate(120%);
+}
+html.ui-mode-pure #first-run .fr-card{
+  border:1px solid rgba(255,255,255,.45);
+  background:rgba(255,255,255,.28);
+  box-shadow:
+    0 18px 48px rgba(40,50,90,.16),
+    inset 0 1px 0 rgba(255,255,255,.55);
+  border-radius:32px;
+  color:rgba(28,32,40,.9);
+  backdrop-filter:blur(28px) saturate(160%);
+  -webkit-backdrop-filter:blur(28px) saturate(160%);
+}
+html.ui-mode-pure #first-run .fr-kicker{
+  color:rgba(50,56,70,.45);
+  letter-spacing:.22em;
+}
+html.ui-mode-pure #first-run .fr-title{
+  color:rgba(28,32,40,.92);
+  font-family:'Noto Sans JP',sans-serif;
+  font-weight:500;
+  letter-spacing:.16em;
+}
+html.ui-mode-pure #first-run .fr-copy{
+  color:rgba(40,46,58,.68);
+}
+html.ui-mode-pure #first-run .fr-cap{
+  border:1px solid rgba(255,255,255,.4);
+  background:rgba(255,255,255,.22);
+  border-radius:16px;
+}
+html.ui-mode-pure #first-run .fr-cap strong{color:rgba(28,32,40,.88)}
+html.ui-mode-pure #first-run .fr-cap span{color:rgba(50,56,70,.5)}
+html.ui-mode-pure #first-run .fr-actions{
+  border-top:1px solid rgba(255,255,255,.28);
+}
+html.ui-mode-pure #first-run .fr-note{color:rgba(50,56,70,.4)}
+html.ui-mode-pure #first-run .fr-enter{
+  border:1px solid rgba(255,255,255,.55);
+  background:rgba(255,255,255,.35);
+  color:rgba(28,32,40,.9);
+  border-radius:16px;
+  letter-spacing:.14em;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55);
+}
+html.ui-mode-pure #first-run .fr-enter:hover{
+  background:rgba(255,255,255,.5);
+  box-shadow:0 8px 24px rgba(40,50,90,.14);
+}
+
+@media (max-width:900px){
+  html.ui-mode-pure #pure-dialogue-lane{
+    top:52px;
+    left:12px;
+    width:min(360px, 72vw);
+    bottom:100px;
+  }
+  html.ui-mode-pure .pure-bubble-text{font-size:13px}
+  html.ui-mode-pure .pure-bubble.is-primary .pure-bubble-text{font-size:14.5px}
+  html.ui-mode-pure #ia{
+    margin:0 16px 20px;
+    width:calc(100vw - 32px);
+    gap:8px;
+  }
+  html.ui-mode-pure #ci{height:52px;line-height:52px;padding:0 18px;border-radius:24px}
+  html.ui-mode-pure #skipbtn,
+  html.ui-mode-pure #callbtn,
+  html.ui-mode-pure #sendbtn{
+    flex:0 0 52px !important;
+    width:52px !important;
+    height:52px !important;
+    min-width:52px !important;
+    max-width:52px !important;
+    border-radius:20px !important;
+  }
+}
 </style>
 </head>
 <body>
+<script>
+(function () {
+  var mode = document.documentElement.dataset.uiMode || 'lab';
+  document.body.classList.add(mode === 'pure' ? 'ui-mode-pure' : 'ui-mode-lab');
+})();
+</script>
+<div id="desktop-drag" aria-hidden="true"></div>
 <div id="grid-bg"></div><canvas id="cvs"></canvas>
+<div id="pure-bg" aria-hidden="true"></div>
+<button type="button" id="ui-mode-toggle" title="切换界面：实验室 / 纯窗口" onclick="amadeus.toggleUiMode()" aria-label="切换界面">
+  <span class="ico" id="ui-mode-ico">◇</span>
+</button>
 <div id="tb">
   <div class="ti"><div class="td2"></div>AMADEUS v6.0</div>
   <div class="ti">PALACE MEMORY</div>
@@ -283,6 +926,11 @@ body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradie
   <div id="scn"></div>
   <div id="sjp"></div>
 </div></div>
+<div id="pure-dialogue-lane">
+  <div id="pure-bubble-stack" aria-live="polite"></div>
+</div>
+<div id="pure-call-chip" aria-live="polite"><div class="pure-call-chip-inner"></div></div>
+<div id="pure-user-echo" aria-live="polite"></div>
 <div id="stage"><div id="figure-aura"></div><div id="figure-signal"></div><img id="ki" src="assets/Live2d/kurisu/kurisu_stand.png" alt="Kurisu" onerror="this.src='assets/Live2d/kurisu/kurisu_stand.png'"></div>
 <div id="cp">
   <div class="chdr">
@@ -404,7 +1052,10 @@ class AmadeusConsciousness {
       mode:'INIT', isThinking:false,
       isCameraReady:false, lastUserActive:Date.now(),
       p: 0, a: 0, d: 0, s: 0.1,
+      uiMode: 'lab', // lab | pure
     };
+    this._labPortraitSrc = 'assets/Live2d/kurisu/kurisu_stand.png';
+    this._purePortraitSrc = 'assets/ui/pure_window/kurisu_figure.png';
     this.autonomy = {
       lastVision: '',
       lastSpokeAt: 0,
@@ -441,6 +1092,8 @@ class AmadeusConsciousness {
     this._conversationId = localStorage.getItem('amadeus_conversation_id') || `window_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     localStorage.setItem('amadeus_conversation_id', this._conversationId);
     this._chatTurnSeq = 0;
+    /** 用户已发 chat 但尚未收到非主动定稿回复时置位，禁止 proactive/ASR 抢跑 */
+    this._pendingChatTurnId = null;
     this._relScore = 0.5;
     this.isMicOn = false;
     this._ambientMicWanted = false;
@@ -457,6 +1110,10 @@ class AmadeusConsciousness {
     this._callSourceNode = null;
     this._callRestartTimer = null;
     this._callSubmitTimer = null;
+    this._pureUserEchoHoldUntilReply = false;
+    this._pureKurisuStreamDraft = null;
+    this._pureBubbleFocus = null;
+    this._callHeardSpeech = false;
     this.isAmbientHearing = false;
     this.ambientRecognition = null;
     this._streamTts = { turnId: 0, sourceSegments: [], chain: Promise.resolve() };
@@ -466,6 +1123,22 @@ class AmadeusConsciousness {
     this._lastVisionEventAt = 0;
     this._cameraFacePresent = null;
     this._faceDetector = null;
+    /** 持续感知在场：摄像头每帧更新；开口由感知状态触发，不靠定时挂起 */
+    this._presenceSense = {
+      facePresent: false,
+      faceSince: 0,
+      lastFaceChangeAt: 0,
+      lastImpulseAt: 0,
+      lastSampleAt: 0,
+      lastInnerAt: 0,
+      nextInnerAt: 0,
+      pending: null,
+      firstSeen: false,
+      motionPresentUntil: 0,
+      presentStreak: 0,
+      absentStreak: 0,
+    };
+    this._presenceImpulseBusy = false;
     this._reminderTimer = null;
     this._reminderPolling = false;
     this._butlerUpdateTimer = null;
@@ -483,20 +1156,21 @@ class AmadeusConsciousness {
       ollamaKeepAlive: '2m',
       // 直连 Ollama 译日（CPU 或首次加载模型可能较慢，默认 90s）
       // 译日走直连 Ollama，过大会拖慢「有声」感知；可改大换质量/慢 CPU
-      translateTimeoutMs: 12000,
+      translateTimeoutMs: 45000,
       /** 主对话流式 max_tokens，降低可明显缩短长段生成时间 */
       streamMaxTokens: 192,
       replyFallbackEnabled: false,
       // 8GB 显存下不要为译日切换第二个 Ollama 模型；复用已加载的红莉栖主模型，避免每轮冷加载。
-      translateModel: '',
+      /** TTS/显示翻译专用小模型；空则默认 qwen2.5:3b，绝不回退 kurisu */
+      translateModel: 'qwen2.5:3b',
       // 须与 ollama list 名称一致；没有安装的模型不要写进 fallback
-      // 默认回退未微调的 kurisu:latest；v4 候选可手动改回 kurisu-v4-candidate
-      mainModel:   'kurisu:latest',
-      /** ja = 模型日语正文 + 界面日译中；与 AMADEUS_REPLY_LANGUAGE 一致 */
-      replyLanguage: 'ja',
+      // 默认回退到当前已验收的日语主模型；启动健康检查成功后仍以服务端配置为准
+      mainModel:   'amadeus-kurisu-swallow:8b',
+      /** zh = 模型直接中文；ja = 模型日语 + 界面日译中。与 AMADEUS_REPLY_LANGUAGE 一致 */
+      replyLanguage: 'zh',
       /** false = 不用固定句替换模型回复（对应后端 AMADEUS_OOC_REPAIR=0） */
       oocRepair: false,
-      fallbackModels: ['deepseek-r1:8b'],
+      fallbackModels: ['kurisu-soul-v6-moderate:latest'],
       visionModel: null,              // 禁用视觉，避免显存爆炸
       sovitsBase:  location.origin.startsWith('http') ? location.origin : 'http://localhost:3002',  // ★ 走后端代理，避免 CORS OPTIONS 405
       /** 与 SoVITS api_v2 对齐；语速≠1 时会自动关闭 parallel_infer 避免 400 */
@@ -514,8 +1188,8 @@ class AmadeusConsciousness {
       autonomyMinGapAfterKurisuMs: 45000,
       /** 用户多久没说话后，才允许考虑主动开口（分钟） */
       autonomyMinIdleMin: 0.35,
-      /** 每小时最多主动开口几次（真人不会一直发） */
-      autonomyMaxPerHour: 8,
+      /** 每小时主动上限；0=不按配额挡（冲动与读场决定） */
+      autonomyMaxPerHour: 0,
       /** 主动连发最多几条气泡（空行分隔或自动切句） */
       autonomyMaxBubbles: 3,
       /** 高亲密度：更主动的关心与口吻（与后端 AMADEUS_HIGH_INTIMACY 对齐，默认开） */
@@ -529,6 +1203,10 @@ class AmadeusConsciousness {
     };
 
     this._bindUI();
+    this._restoreUiMode();
+    if (typeof window.amadeusDesktop !== 'undefined') {
+      document.body.classList.add('is-electron');
+    }
     this._startClock();
     this._startParticles();
     this._startWaveform();
@@ -572,9 +1250,10 @@ class AmadeusConsciousness {
     this.config.sovitsBase = apiBase;
     const health = await this._checkStartupHealth();
     this._startupReady = !!health.ready;
-    const proactiveReady = health.capabilities?.proactiveDialogue === true;
+    this.config.proactiveEnabled = health.capabilities?.proactiveDialogue === true;
+    const proactiveReady = this.config.proactiveEnabled;
     const proactiveStatus = document.getElementById('autst');
-    if (proactiveStatus) proactiveStatus.textContent = proactiveReady ? 'PRESENCE AWAKE' : 'PRESENCE QUIET';
+    if (proactiveStatus) proactiveStatus.textContent = proactiveReady ? 'SENSING' : 'PRESENCE QUIET';
     if (health.visionModel) {
       this.config.visionModel = health.visionModel;
       this._log(`Vision model ready: ${health.visionModel}`, 'green');
@@ -582,6 +1261,19 @@ class AmadeusConsciousness {
       this.config.visionModel = null;
       this._log('Camera preview ready; visual understanding model unavailable.', 'sys');
     }
+    if (health.translateModel) {
+      this.config.translateModel = String(health.translateModel).trim();
+    }
+    if (health.chatModel) {
+      this.config.mainModel = String(health.chatModel).trim();
+    }
+    if (health.replyLanguage === 'ja' || health.replyLanguage === 'zh') {
+      this.config.replyLanguage = health.replyLanguage;
+    }
+    if (!this.config.translateModel || this.config.translateModel === this.config.mainModel) {
+      this.config.translateModel = 'qwen2.5:3b';
+    }
+    this._log(`Translate model: ${this.config.translateModel}`, 'sys');
     if (!health.ready) {
       this._showStartupBanner(health);
       this._notify('系统尚未就绪，请查看顶部提示', 'red');
@@ -593,6 +1285,7 @@ class AmadeusConsciousness {
     await this._sleep(150);
     await this._loadWhoami();   // ★ 加载用户身份档案
     await this._loadDialogueFromServer();
+    await this._loadPalaceFromServer(); // 记忆宫殿权威源在后端
     this._showFirstRun(health);
     await this._sleep(150);
     // ★ 摄像头初始化不再阻塞启动链：权限弹窗/设备异常时，界面其余部分照常上线
@@ -614,6 +1307,7 @@ class AmadeusConsciousness {
       this._notify('高亲密度模式已开启', 'blue');
     }
     this._log('All systems nominal. Silent start.', 'green');
+    if (this._isPureUi()) this._hydratePureDialogue();
     // ★ 不调用 _generateGreeting()，静默上线
     this._startAutonomyLoop();
     this._startReminderLoop();
@@ -639,6 +1333,7 @@ class AmadeusConsciousness {
         text: e.text,
         proactive: e.proactive,
       }));
+      if (this._isPureUi()) this._hydratePureDialogue();
     } catch (e) {
       this._log(`Dialogue sync: ${e.message}`, 'warn');
     }
@@ -647,7 +1342,7 @@ class AmadeusConsciousness {
   _pushDialogue(role, text, meta = {}) {
     const r = role === 'user' ? 'user' : 'kurisu';
     const t = String(text || '').trim();
-    if (!t || this._isInternalControlLeak(t)) return;
+    if (!t || this._isInternalControlLeak(t) || (r === 'kurisu' && this._isFixedStyleDefence(t))) return;
     this.working.push({ role: r, text: t, proactive: meta.proactive });
     if (this.working.length > 24) this.working.shift();
   }
@@ -741,7 +1436,7 @@ class AmadeusConsciousness {
     if (this._butlerUpdatePolling || !this.config.apiBase) return;
     this._butlerUpdatePolling = true;
     try {
-      const res = await fetch(`${this.config.apiBase}/butler/updates?since=${encodeURIComponent(this._butlerUpdateCursor)}&limit=10`, {
+      const res = await fetch(`${this.config.apiBase}/butler/updates?since=${encodeURIComponent(this._butlerUpdateCursor)}&limit=10&conversationId=${encodeURIComponent(this._conversationId)}`, {
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return;
@@ -759,15 +1454,21 @@ class AmadeusConsciousness {
   }
 
   async _deliverButlerUpdate(update) {
+    if (String(update?.conversationId || '') !== this._conversationId) return;
     const text = String(update?.text || '').trim();
     if (!text) return;
-    this._appendChatMsg('kurisu', text);
-    await this._appendDialogueToServer('kurisu', text, { proactive: true, source: 'butler_followup' });
+    // 声画锁定：先定要念的日文，字幕只能是它的硬翻；禁止中文原文配另一套自然译日
+    const locked = await this._finalizeReplyPairFromRaw(text, '', '');
+    const display = String(locked.cn || '').trim() || text;
+    const jp = String(locked.modelJp || '').trim();
+    await this._appendDialogueToServer('kurisu', display, { proactive: true, source: 'butler_followup' });
+    this._appendChatMsg('kurisu', display);
     this._markKurisuSpoke();
-    this.autonomy.lastProactiveKurisuText = text;
+    this.autonomy.lastProactiveKurisuText = display;
     this.autonomy.awaitingProactiveReply = true;
     this._notify(update.status === 'completed' ? '任务已完成' : update.status === 'waiting_confirmation' ? '任务等待确认' : '任务需要处理', update.status === 'blocked' ? 'warn' : 'blue');
-    void this._startBackgroundJapaneseTTS(text);
+    if (jp) void this._startBackgroundJapaneseTTS(display, jp);
+    else void this._startBackgroundJapaneseTTS(text);
   }
 
   async _pollDueReminders() {
@@ -791,17 +1492,55 @@ class AmadeusConsciousness {
 
   async _deliverReminder(reminder) {
     if (!reminder?.id || !reminder.content) return;
-    const line = `时间到了。${String(reminder.content).replace(/[。！？!?]+$/, '')}。`;
-    this._appendChatMsg('kurisu', line);
-    await this._appendDialogueToServer('kurisu', line, { proactive: true, source: 'reminder' });
-    this._markKurisuSpoke();
-    this.autonomy.lastProactiveKurisuText = line;
-    this.autonomy.awaitingProactiveReply = true;
-    this._notify(`提醒：${reminder.content}`, 'blue');
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      try { new Notification('Amadeus', { body: reminder.content }); } catch (_) { /* ignore */ }
+    const content = String(reminder.content || '').trim();
+    let display = '';
+    let jp = '';
+    try {
+      // 到点开口：走她的嘴，不是系统播报「时间到了」
+      const liteRes = await fetch(`${this.config.apiBase}/chat/lite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userText: `（到点开口）你先前答应过这个时刻要主动说话，事由：${content}。现在时间到了，用你自己的口吻开口；禁止自称AI/程序，禁止说办不到。`,
+          isAutonomyInitiative: true,
+          initiativeAction: 'remind',
+          initiativeReason: `到点开口：${content}`,
+          initiativePhase: 'deferred_speak',
+          lastUserAnchor: content,
+          contextFresh: true,
+          clientOwnsLog: true,
+          temperature: 0.85,
+          max_tokens: 220,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const liteData = await liteRes.json();
+      const raw = String(liteData.response || '').trim();
+      if (liteRes.ok && raw && !/^\[?SILENCE\]?$/i.test(raw)) {
+        const locked = await this._finalizeReplyPairFromRaw(raw, content, '');
+        display = String(locked.cn || '').trim();
+        jp = String(locked.modelJp || '').trim();
+      }
+    } catch (e) {
+      this._log(`deferred speak lite: ${e.message}`, 'warn');
     }
-    void this._startBackgroundJapaneseTTS(line);
+    if (!display) {
+      const line = content.endsWith('。') || content.endsWith('！') ? content : `${content}。`;
+      const locked = await this._finalizeReplyPairFromRaw(line, '', '');
+      display = String(locked.cn || '').trim() || line;
+      jp = String(locked.modelJp || '').trim();
+    }
+
+    await this._appendDialogueToServer('kurisu', display, { proactive: true, source: 'deferred_speak' });
+    this._appendChatMsg('kurisu', display);
+    this._markKurisuSpoke();
+    this.autonomy.lastProactiveKurisuText = display;
+    this.autonomy.awaitingProactiveReply = true;
+    this._notify(`到点：${content}`, 'blue');
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try { new Notification('Amadeus', { body: content }); } catch (_) { /* ignore */ }
+    }
+    void this._startBackgroundJapaneseTTS(display, jp);
     const delivered = await fetch(`${this.config.apiBase}/butler/reminders/${encodeURIComponent(reminder.id)}/delivered`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -846,6 +1585,8 @@ class AmadeusConsciousness {
         warnings: data.warnings || [],
         checks: data.checks || [],
         visionModel: data.visionModel || null,
+        translateModel: data.translateModel || null,
+        chatModel: data.chatModel || null,
         capabilities: data.capabilities || {},
       };
     } catch (_) {
@@ -880,7 +1621,9 @@ class AmadeusConsciousness {
       || /【意识广播/.test(t)
       || /\[打算\]/.test(t)
       || /我会先找话题/.test(t)
-      || /本轮由内驱进入意识而开口/.test(t);
+      || /本轮由内驱进入意识而开口/.test(t)
+      || /刚才那句不算/.test(t)
+      || /我重新说/.test(t);
   }
 
   _showFirstRun(health) {
@@ -897,6 +1640,10 @@ class AmadeusConsciousness {
       ['tts', 'VOICE', byId('tts')?.ok ? 'READY' : 'OPTIONAL'],
     ];
     host.innerHTML = capabilities.map(([, label, state]) => `<div class="fr-cap"><strong>${label}</strong><span>${state}</span></div>`).join('');
+    const enterBtn = modal.querySelector('.fr-enter');
+    if (enterBtn) {
+      enterBtn.textContent = this.state.uiMode === 'pure' ? '开始' : 'ENTER THE LAB';
+    }
     modal.classList.add('visible');
     setTimeout(() => document.querySelector('.fr-enter')?.focus(), 0);
   }
@@ -905,7 +1652,7 @@ class AmadeusConsciousness {
     localStorage.setItem('amadeus_v6_first_run', '1');
     document.getElementById('first-run')?.classList.remove('visible');
     this._log('First-run contract acknowledged.', 'green');
-    this._notify('实验室已准备好', 'green');
+    this._notify(this.state.uiMode === 'pure' ? '准备好了' : '实验室已准备好', 'green');
   }
 
   /** 启动时只探测 9880 是否可达，不跑合成（避免每次打开页面白做一次「テスト」推理） */
@@ -968,21 +1715,28 @@ class AmadeusConsciousness {
   //  ★★ 文本清洗 ★★
   // ══════════════════════════════════════════════
 
-  /** 模型废稿/空回复时用固定语气词池（与 _cleanForDisplay 一致） */
+  /** 禁止固定语气词池；空回复就空着，不塞模板句 */
   _getFillerPool() {
-    return ['说重点。', '怎么了。', '有事？', '听着呢。', '讲。'];
+    return [];
   }
 
   _shortReplyFallback() {
-    if (!this.config.replyFallbackEnabled) return '';
-    const pool = this._getFillerPool();
-    return pool[Math.floor(Math.random() * pool.length)];
+    return '';
   }
 
   _isGenericKurisuFiller(s) {
     const t = String(s || '').trim().replace(/\s+/g, '');
     return /^(?:说重点|怎么了|有事|听着呢|讲)[。.!！?？]?$/.test(t)
-      || /变态的是你的脑子|你到底想说什么|有话正常说|别来这套|我又不是助手热线/.test(t);
+      || /刚才那句不算|我重新说|变态的是你的脑子|你到底想说什么|有话正常说|别来这套|我又不是助手热线|又是[这那]个话题吗|停止指定话题/.test(t);
+  }
+
+  // 这类句子不是人物回应，而是模型对“自己怎么说话”的固定辩解；前端也必须拒收，
+  // 防止流式草稿在服务端定稿前短暂显示或写回本地上下文。
+  _isFixedStyleDefence(s) {
+    const t = String(s || '').trim().replace(/\s+/g, '');
+    return /(?:客服(?:式|腔|话术)?|客套话|套话|模板(?:化)?|AI味|人工智能式|翻译腔|像(?:个)?(?:客服|AI)|不会(?:再)?(?:用|说|讲).{0,18}(?:客服|套话|模板|客套)|不(?:会|想).{0,14}(?:客服|套话|模板).{0,16}(?:敷衍|回答)|定型文)/i.test(t)
+      || /(?:我(?:不会|不想|不是|并非)|不会再|别把我当).{0,26}(?:敷衍|应付|迎合|机械|千篇一律|公式化|空泛|照本宣科|套路|固定(?:的)?(?:回答|回应)|制式(?:的)?(?:回答|回应)|说些空话)/.test(t)
+      || /(?:我知道|我明白).{0,18}(?:你(?:不想要|讨厌|受够了)).{0,22}(?:那种|这样的)?.{0,10}(?:回答|回应|话)/.test(t);
   }
 
   /**
@@ -994,6 +1748,8 @@ class AmadeusConsciousness {
   _coalesceDisplayCn(streamedCn, guardedCn, userText = '') {
     const stream = String(streamedCn || '').trim();
     const guard = String(guardedCn || '').trim();
+    if (this._isFixedStyleDefence(guard)) return '';
+    if (this._isFixedStyleDefence(stream)) return guard || '';
     if (!stream && guard) return guard;
     if (!guard) return stream || this._shortReplyFallback();
     if (this._isGenericKurisuFiller(guard) && stream.length >= 4 && !this._isGenericKurisuFiller(stream)) {
@@ -1017,87 +1773,120 @@ class AmadeusConsciousness {
   }
 
   /**
-   * 定稿：有合格日文时，TTS 读这句日文，界面中文必须是这句日文的硬翻。
-   * 禁止再用流式草稿/OOC 兜底把中文换成另一句（那是声画不一致的根因）。
+   * 声画单一事实源：先定「要念的日文」，显示中文只能是它的硬翻。
+   * 禁止：流式中文草稿 + 另一段日文 TTS 拼在一起（那会打出没念的字）。
    * @returns {Promise<{ cn: string, modelJp: string }>}
    */
   async _finalizeReplyPairFromRaw(rawFull, userText, recentCtx = '', opts = {}) {
-    const preferJp = String(opts.preferModelJp || '').trim();
+    const preferJp = this._cleanTTSJapanese(String(opts.preferModelJp || '').trim());
     const resolved = this._resolveReplyCnJp(rawFull);
-    let modelJp = resolved.jp;
-    let streamedCn = this._stripEmbeddedJapaneseLines(this._cleanForDisplay(rawFull));
-    let lockedToJp = false;
+    let spokenJp = preferJp || this._cleanTTSJapanese(resolved.jp || '');
+    if (!spokenJp && this._looksJapaneseForCnRepair(rawFull)) {
+      spokenJp = this._cleanTTSJapanese(String(rawFull || '').trim())
+        || this._cleanTTSJapanese(this._inferJapaneseLineForTTS(rawFull));
+    }
 
-    // 服务端已给 JP，且正文像硬翻中文：仍要以 JP 为准再硬翻一次，避免服务端中文与语音漂移
-    const jpFromServer = preferJp && this._cleanTTSJapanese(preferJp);
-    if (jpFromServer && /[\u3040-\u30ff\uff65-\uff9f]/i.test(jpFromServer)) {
-      modelJp = jpFromServer;
-      const fromJp = await this._translateJapaneseLineForDisplay(jpFromServer);
-      const cn = this._alignLiteralCnToJapanese(jpFromServer, this._cleanForDisplay(fromJp || ''));
-      if (cn && !this._looksJapaneseForCnRepair(cn)) {
-        this._log('定稿：显示=语音日文硬翻（锁定）', 'sys');
-        return { cn, modelJp };
+    // 路径 A：有可朗读日文
+    if (spokenJp && /[\u3040-\u30ff\uff65-\uff9f]/i.test(spokenJp)) {
+      if (this.config.replyLanguage === 'zh') {
+        let cn = this._stripEmbeddedJapaneseLines(this._cleanForDisplay(rawFull));
+        cn = this._finalizeKurisuReplyCn(cn);
+        if (cn && !this._looksJapaneseForCnRepair(cn) && !this._isGenericKurisuFiller(cn)) {
+          this._log('定稿：中文直出 + 模型/提取 JP 作 TTS', 'sys');
+          return { cn, modelJp: spokenJp };
+        }
       }
-    }
-
-    let { cn } = await this._repairCnJpIfNeeded(rawFull);
-    if (!modelJp && streamedCn && !this._looksJapaneseForCnRepair(streamedCn)) {
-      cn = streamedCn;
-    } else if (resolved.cn && !this._looksJapaneseForCnRepair(resolved.cn)) {
-      cn = resolved.cn;
-    }
-
-    const jpClean = this._cleanTTSJapanese(modelJp);
-    if (jpClean && /[\u3040-\u30ff\uff65-\uff9f]/i.test(jpClean)) {
-      modelJp = jpClean;
-      const literalSource = this._looksJapaneseForCnRepair(rawFull)
-        ? String(rawFull || '').trim()
-        : jpClean;
-      const fromJp = await this._translateJapaneseLineForDisplay(literalSource);
-      const aligned = this._alignLiteralCnToJapanese(jpClean, this._cleanForDisplay(fromJp || ''));
-      if (aligned && !this._looksJapaneseForCnRepair(aligned)) {
-        cn = aligned;
-        lockedToJp = true;
-        this._log('定稿：显示锁定为 TTS 日文硬翻', 'sys');
-      } else {
-        this._log('定稿：日译中失败，暂显中文（语音仍用模型日文时可能不一致）', 'warn');
+      // 服务端硬翻优先（单翻译路径）：replaceText 已与 modelJp 对齐（声画锁定），
+      // 且经过事实校验入库。只有它缺失/不可用时才退回前端二次翻译，避免翻译腔与风格漂移。
+      const serverCn = this._stripEmbeddedJapaneseLines(this._cleanForDisplay(rawFull));
+      const cnFromServer = this._finalizeKurisuReplyCn(serverCn);
+      if (cnFromServer && !this._looksJapaneseForCnRepair(cnFromServer) && !this._isGenericKurisuFiller(cnFromServer)) {
+        const cnAligned = this._alignLiteralCnToJapanese(spokenJp, cnFromServer);
+        const cnClipped = this._clipCnToSpokenJapanese(spokenJp, cnAligned);
+        if (cnClipped) {
+          this._log('定稿：字幕=服务端硬翻（单翻译路径）', 'sys');
+          return { cn: cnClipped, modelJp: spokenJp };
+        }
       }
-    } else {
-      modelJp = '';
+      const fromJp = await this._translateJapaneseLineForDisplay(spokenJp);
+      let cn = this._alignLiteralCnToJapanese(spokenJp, this._cleanForDisplay(fromJp || ''));
+      cn = this._clipCnToSpokenJapanese(spokenJp, this._finalizeKurisuReplyCn(cn));
+      if (cn && !this._looksJapaneseForCnRepair(cn) && !this._isGenericKurisuFiller(cn)) {
+        this._log('定稿：字幕=朗读日文硬翻（声画锁定）', 'sys');
+        return { cn, modelJp: spokenJp };
+      }
+      this._log('定稿：日译中失败，本轮只播日文不显示错位中文', 'warn');
+      return { cn: '', modelJp: spokenJp };
     }
 
-    // 已锁定到日文：禁止 coalesce/OOC 把中文换成另一句
-    if (lockedToJp) {
-      const cleaned = this._cleanForDisplay(this._finalizeKurisuReplyCn(cn));
-      return { cn: cleaned || cn, modelJp };
+    // 路径 B：只有中文
+    let cnDraft = this._stripEmbeddedJapaneseLines(this._cleanForDisplay(rawFull));
+    cnDraft = this._finalizeKurisuReplyCn(cnDraft);
+    if (!cnDraft || this._isGenericKurisuFiller(cnDraft) || this._isInternalControlLeak(cnDraft)) {
+      return { cn: '', modelJp: '' };
+    }
+    cnDraft = this._guardKurisuReply(cnDraft, userText, recentCtx, {
+      preserveMultiBubble: opts.preserveMultiBubble === true,
+    }) || cnDraft;
+
+    const jpFromCn = this._cleanTTSJapanese(await this._ensureJapaneseForTTS(cnDraft, ''));
+    if (!jpFromCn) {
+      this._log('定稿：中文无法译日，本轮无声且不展示错位稿', 'warn');
+      return { cn: '', modelJp: '' };
     }
 
-    let guarded = this._guardKurisuReply(
-      this._finalizeKurisuReplyCn(cn),
-      userText,
-      recentCtx,
-      { preserveMultiBubble: opts.preserveMultiBubble === true },
-    );
-    if (this.config.oocRepair !== false && typeof AmadeusOocGuard !== 'undefined' && AmadeusOocGuard.reconcileFinalReply) {
-      guarded = AmadeusOocGuard.reconcileFinalReply(streamedCn, guarded, userText);
+    // 中文主模型：界面只显示模型原文；TTS 后台译日，不做「中→日→中」往返（否则会换一版字）
+    if (this.config.replyLanguage === 'zh') {
+      this._log('定稿：中文直出（TTS 后台译日）', 'sys');
+      return { cn: cnDraft, modelJp: jpFromCn };
     }
-    const finalCn = this.config.oocRepair === false
-      ? (guarded || streamedCn || cn)
-      : this._coalesceDisplayCn(streamedCn, guarded, userText);
-    return { cn: finalCn, modelJp };
+
+    const locked = await this._translateJapaneseLineForDisplay(jpFromCn);
+    let cnLocked = this._alignLiteralCnToJapanese(jpFromCn, this._cleanForDisplay(locked || ''));
+    cnLocked = this._clipCnToSpokenJapanese(jpFromCn, this._finalizeKurisuReplyCn(cnLocked));
+    if (cnLocked && !this._looksJapaneseForCnRepair(cnLocked)) {
+      this._log('定稿：中→日→中 往返锁定', 'sys');
+      return { cn: cnLocked, modelJp: jpFromCn };
+    }
+    // 译回失败时：字幕用原稿，语音用刚译出的全日文（同源，避免多出半句）
+    return { cn: cnDraft, modelJp: jpFromCn };
+  }
+
+  /** 丢掉硬翻里多出来的短句（如字幕多了「因为无聊」但日文没念） */
+  _clipCnToSpokenJapanese(jp, cn) {
+    const j = String(jp || '').trim();
+    let c = String(cn || '').trim();
+    if (!j || !c) return c;
+    const jpParts = j.split(/[。！？!?\n]+/).map((s) => s.trim()).filter((s) => /[\u3040-\u30ff\u4e00-\u9fff]/i.test(s));
+    const cnParts = c.split(/[。！？!?\n]+/).map((s) => s.trim()).filter(Boolean);
+    if (jpParts.length > 0 && cnParts.length > jpParts.length) {
+      const kept = cnParts.slice(0, jpParts.length);
+      c = kept.join(kept.length > 1 ? '。' : '');
+      this._log(`定稿：裁掉 ${cnParts.length - kept.length} 句无日文对应的字幕`, 'warn');
+    }
+    // 再剥产品元话语
+    c = c
+      .replace(/[…\.．]*\s*刚才那句不算[，,]?\s*(?:我)?重新说[。.!！]?/g, '')
+      .replace(/刚才那句不算[，,]?/g, '')
+      .replace(/又是[这那]个话题吗[。.!！?？]?/g, '')
+      .replace(/停止指定话题吧[，,]?[^\n]*/g, '')
+      .trim();
+    return c;
   }
 
   /**
-   * 主对话定稿：空串或清洗后无可显示内容 → 用语词替代裸「……」，避免界面与记忆里都只剩省略号。
+   * 主对话定稿：空串保持空，禁止语气词池顶替。
    */
   _finalizeKurisuReplyCn(cn) {
     const raw = String(cn ?? '').trim();
-    if (!raw) return this._shortReplyFallback();
+    if (!raw) return '';
     const cleaned = this._cleanForDisplay(raw);
     const han = (cleaned.match(/[\u4e00-\u9fff]/g) || []).length;
     if (!cleaned || (han < 1 && /^[…\.．。\s]+$/.test(cleaned.trim()))) {
-      return this._shortReplyFallback();
+      return '';
     }
+    if (this._isGenericKurisuFiller(cleaned)) return '';
+    if (this._isFixedStyleDefence(cleaned)) return '';
     return cleaned;
   }
 
@@ -1340,6 +2129,23 @@ class AmadeusConsciousness {
     t = t.replace(/\[(?:打算|注意到|感受|想要|自我|关系|想起|自检)\]\s*/g, '');
     t = t.replace(/我会先找话题[—\-~～]*然后就闲聊。?/g, '');
     t = t.replace(/本轮由内驱进入意识而开口。?/g, '');
+    t = t.replace(/[…\.．]*\s*刚才那句不算[，,]?\s*(?:我)?重新说[。.!！]?/g, '');
+    t = t.replace(/刚才那句不算[，,]?/g, '');
+    t = t.replace(/(?:那句)?不算[，,]?\s*我重新说[。.!！]?/g, '');
+    t = t.replace(/又是[这那]个话题吗[。.!！?？]?/g, '');
+    t = t.replace(/停止指定话题吧[，,]?[^\n]*/g, '');
+
+    // 思考过程泄漏：整段不当台词（流式中途也清）
+    if (
+      /用户(?:突然|现在|提到|让我|的当前查询|提供当前)/.test(t)
+      || /需要(?:处理|分析)用户|回顾对话历史|根据之前的对话历史|首先需要分析/.test(t)
+      || /作为AI|我的数据库|角色设定|测试我的(?:边界|记忆|反应)/.test(t)
+      || /这家伙又在(?:测试|故作|转移|绕着)/.test(t)
+      || /根据设定|她需要坚持|这说明他|需要检查上下文|我作为助手/.test(t)
+      || /^\s*[\{\[]/.test(t) && /messages|role|content/.test(t)
+    ) {
+      return '';
+    }
     
     // 旧版「先日文再 CN:」：界面只展示中文译文
     if (/CN\s*[:：]/i.test(t)) {
@@ -1555,7 +2361,18 @@ class AmadeusConsciousness {
     if (/まだ/.test(src) && /心配|心配して/.test(src) && !/还/.test(out) && /担心/.test(out)) {
       out = out.replace(/担心/, '还在担心');
     }
-    return out.replace(/\s{2,}/g, ' ').trim();
+    out = out.replace(/\s{2,}/g, ' ').trim();
+    // 与服务端同一条声画约束：前端兜底翻译也不能把短日文扩写成人设说明。
+    const jpUnits = (src.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+    const cnUnits = (out.match(/[\u3400-\u9fff]/g) || []).length;
+    const jpStops = (src.match(/[。！？!?]/g) || []).length;
+    const cnStops = (out.match(/[。！？!?]/g) || []).length;
+    const sourceHasIdentity = /(?:クリス|紅莉栖|牧瀬|恋人|研究者|科学者)/.test(src);
+    const addedIdentity = /(?:牧濑|红莉栖|恋人|男朋友|神经科学|研究者|科学家)/.test(out);
+    const farTooLong = (jpUnits <= 8 && cnUnits > Math.max(8, jpUnits * 2))
+      || (jpUnits > 8 && cnUnits > Math.max(18, Math.ceil(jpUnits * 2.4)));
+    if (farTooLong || cnStops > Math.max(2, jpStops + 1) || (!sourceHasIdentity && addedIdentity)) return '';
+    return out;
   }
 
   async _translateJapaneseLineForDisplay(jpLine) {
@@ -1564,10 +2381,10 @@ class AmadeusConsciousness {
     const tmo = Number(this.config.translateTimeoutMs) > 0 ? Number(this.config.translateTimeoutMs) : 90000;
     const tm = this._translateOllamaModel();
     const maxTok = Math.min(520, Math.max(96, Math.ceil(jp.length * 1.8)));
-    // 硬翻：不要通顺化；原文多乱译文多直；中文碎片原样保留；もう≠再三
+    // 忠实可读：不脑补剧情，但必须是人能看懂的中文；もう≠再三
     const prompts = [
-      '你是逐字翻译器不是润色器。把下面角色说的话从日语翻成简体中文。只做直译硬翻，不要改写成通顺对白，不要补全或推断未说的意思。もう≠再三；もう？→又？/已经？；まだ→还/还在。原文里已是中文的片段原样保留。只输出译文正文。',
-      '逐字硬翻成简体中文。不要通顺化，不要脑补。もう不要译成再三。只输出译文。',
+      '把下面日语角色台词翻成简体中文。忠实原意，不要脑补；但必须写成正常人能看懂的完整中文句子，不要逐词死译成谜语。去掉（推眼镜）这类动作旁白。もう≠再三。只输出译文。',
+      '忠实译成可读中文。不要脑补，不要断句乱码。只输出译文。',
     ];
     for (let attempt = 0; attempt < prompts.length; attempt++) {
       try {
@@ -1575,7 +2392,7 @@ class AmadeusConsciousness {
         const cn = await this._callOllamaDirect(
           prompts[attempt],
           jp.slice(0, 800),
-          0.0,
+          0.15,
           maxTok,
           attemptTmo,
           tm
@@ -1594,23 +2411,46 @@ class AmadeusConsciousness {
     if (!cn) return '';
     const tmo = Number(this.config.translateTimeoutMs) > 0 ? Number(this.config.translateTimeoutMs) : 90000;
     const tm = this._translateOllamaModel();
+
+    // 优先走后端专用翻译（AMADEUS_TRANSLATE_MODEL），与主对话解耦
+    try {
+      const res = await fetch(`${this.config.apiBase}/translate/cn-jp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cn.slice(0, 600) }),
+        signal: AbortSignal.timeout(Math.min(tmo, 45000)),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.model) this.config.translateModel = String(data.model).trim() || this.config.translateModel;
+      let j = this._stripThinkForTts(String(data.japanese || data.text || ''));
+      j = j.replace(/^(?:JP|日语|日文)\s*[:：]\s*/i, '').trim();
+      if (j && this._ttsLineOkForSoVits(j, cn)) {
+        this._log(`TTS: 后端译日 (${data.model || tm})`, 'sys');
+        return j;
+      }
+      if (j && this._ttsLastResortOk(j, cn)) return j.trim();
+      if (!res.ok) {
+        this._log(`TTS: 后端译日失败 HTTP ${res.status} ${data.error || ''}`, 'warn');
+      }
+    } catch (e) {
+      this._log(`TTS: 后端译日不可用，直连小模型: ${e.message}`, 'warn');
+    }
+
+    // 回退：仍只用小翻译模型，绝不调用 kurisu
     const maxTok = Math.min(180, Math.max(48, Math.ceil(cn.length * 1.6)));
     const prompts = [
-      '将下面这句中文角色台词翻成自然日语口语对白。保留语气与句末。只输出日语正文，必须含平假名或片假名。不要中文、不要写 JP: 前缀、不要解释、不要引号包整句。',
-      '只输出日语口语对白，须含ひらがな。不要解释。',
-      '把这句中文翻成一句自然日语对白，必须含ひらがな。只输出日语。',
+      '你是逐字翻译器不是润色器。把下面角色台词从简体中文翻成日语。只做直译硬翻，不要改写成通顺对白，不要补全或推断未说的意思。必须含平假名或片假名。只输出日语正文，不要中文、不要 JP: 前缀、不要解释。',
+      '逐字硬翻成日语。不要通顺化，不要脑补。须含ひらがな。只输出日语正文。',
     ];
     let lastOut = '';
-    const maxAttempts = 2;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    for (let attempt = 0; attempt < prompts.length; attempt++) {
       try {
-        const attemptTmo = Math.min(tmo, attempt === 0 ? 12000 : 18000);
         const ja = await this._callOllamaDirect(
           prompts[attempt],
           cn.slice(0, 600),
-          attempt === 0 ? 0.12 : 0.25,
+          0.0,
           maxTok,
-          attemptTmo,
+          Math.min(tmo, attempt === 0 ? 25000 : 40000),
           tm
         );
         let j = this._stripThinkForTts(ja);
@@ -1618,10 +2458,7 @@ class AmadeusConsciousness {
         lastOut = j;
         if (this._ttsLineOkForSoVits(j, cn)) return j;
       } catch (e) {
-        const hint = /timed out|abort/i.test(String(e.message))
-          ? '（Ollama 未在时限内返回：CPU 推理慢或与主对话抢 GPU，可加大 translateTimeoutMs 或换专用译日小模型）'
-          : '';
-        this._log(`JP TTS 补全失败 (${attempt + 1}/${maxAttempts}): ${e.message}${hint}`, 'warn');
+        this._log(`JP TTS 补全失败 (${attempt + 1}/${prompts.length}): ${e.message}`, 'warn');
       }
     }
     if (lastOut && this._ttsLastResortOk(lastOut, cn)) return lastOut.trim();
@@ -1657,7 +2494,8 @@ class AmadeusConsciousness {
       return existingClean;
     }
     if (!cn || /^[…\.．。\s]+$/.test(cn)) {
-      cn = this._shortReplyFallback();
+      this._log('TTS: 无有效中文，跳过译日', 'warn');
+      return '';
     }
 
     const tm = this._translateOllamaModel();
@@ -1849,10 +2687,13 @@ class AmadeusConsciousness {
 
   _autonomySituationLine(idleMin, relScore = 0, phase = '') {
     if (phase === 'presence') {
-      return '你们刚见面或你刚察觉到他在。像牧濑红莉栖本人先开口：可以搞笑、吐槽、轻微骚扰——但必须是她的嘴，不要通用陪伴腔或卖萌戳一戳。';
+      return '你察觉到他在文字窗口里。想先开口就开口——你是独立的灵魂，不是电话客服。';
+    }
+    if (phase === 'copresence') {
+      return '你们已经在同一窗口。想再插一句就插；不是第一次发现他，也不是打电话。';
     }
     if (phase === 'coldness') {
-      return '气氛有点冷或敷衍。用红莉栖式挖苦/玩笑/半句正经把场子拉回来，别粘人追问，别讨好。';
+      return '气氛有点冷。顺着他上一句给一点具体动静；禁止「又是这个话题吗/好无聊」这种判死刑收束。';
     }
     const api = typeof AmadeusUserPresence !== 'undefined' ? AmadeusUserPresence : null;
     const dnd = this.autonomy.presenceDnd;
@@ -1860,26 +2701,7 @@ class AmadeusConsciousness {
       const line = api.buildAutonomySituationForPresence(dnd, idleMin, relScore);
       if (line) return line;
     }
-    const rel = Math.max(0, Number(relScore) || 0);
-    const hour = new Date().getHours();
-    const late = hour >= 23 || hour < 5;
-    const base = '这不是提醒或任务。像熟人聊天，节奏不规则，也允许只戳一下。';
-    if (idleMin < 6) {
-      return `${base}沉默还不久：优先用语气词、玩笑、颜文字或一两句短骚扰，不要突然开启宏大话题。`;
-    }
-    if (idleMin >= 40 && rel > 0.32) {
-      return `${base}很久没聊：可以嘴硬地冒个泡，也可以发两三条很短的碎句；禁止查岗和说教。`;
-    }
-    if (idleMin >= 22 && rel > 0.3) {
-      return `${base}有一阵没回：随手发一点存在感，不要抱怨已读不回。`;
-    }
-    if (late && rel > 0.38 && idleMin >= 15) {
-      return `${base}夜深：语气放轻，可以只是哼一声或一句关心。`;
-    }
-    if (rel > 0.45 && idleMin >= 15) {
-      return `${base}可抛一句小事，也可以单纯逗一下；发不发都行。`;
-    }
-    return `${base}可发可不发，别像定时提醒。`;
+    return '你想说话才说。不是提醒、不是任务、不是按分钟表发消息。';
   }
 
   _autonomyMinIdleMin() {
@@ -1889,7 +2711,9 @@ class AmadeusConsciousness {
 
   _autonomyQuotaOk() {
     const max = Number(this.config.autonomyMaxPerHour);
-    const cap = Number.isFinite(max) && max > 0 ? Math.floor(max) : 5;
+    // 0 或未配置正向上限 = 不按小时配额挡
+    if (!Number.isFinite(max) || max <= 0) return true;
+    const cap = Math.floor(max);
     const hourAgo = Date.now() - 3600000;
     const list = (this.autonomy.proactiveTimestamps || []).filter((t) => t > hourAgo);
     this.autonomy.proactiveTimestamps = list;
@@ -1903,9 +2727,9 @@ class AmadeusConsciousness {
     this.autonomy.proactiveTimestamps.push(Date.now());
   }
 
-  _scheduleAutonomyPause(reasonMs = 70000) {
-    const extra = Math.random() * 65000;
-    this._scheduleNextTick(reasonMs + extra);
+  _scheduleAutonomyPause(_reasonMs = 70000) {
+    // 感知在场：暂停 = 放下冲动；摄像头仍继续看，条件够了再开口
+    this._clearPresencePending('pause');
   }
 
   _dedupeAutonomyBubbles(bubbles) {
@@ -1933,45 +2757,52 @@ class AmadeusConsciousness {
     if (!t) return [];
     let parts = t.split(/\n\s*\n+/).map((s) => s.replace(/\s*\n\s*/g, '').trim()).filter((s) => s.length >= 1);
     if (parts.length > 1) return parts.slice(0, max);
-    if (t.length <= 42) return [t];
     const sents = t.match(/[^。！？!?…]+[。！？!?…]?/g) || [t];
     if (sents.length <= 1) return [t];
-    const out = [];
-    let buf = '';
-    for (const s of sents) {
-      if (out.length >= max - 1 && buf) {
-        buf += s;
-        continue;
-      }
-      if (buf && (buf + s).length > 48) {
-        out.push(buf);
-        buf = s;
-      } else {
-        buf += s;
-      }
-    }
-    if (buf) out.push(buf);
-    return out.length ? out.slice(0, max) : [t];
+    // 聊天气泡按语义句拆，不再因为总字数较短就把多句话塞进同一泡。
+    // 超过上限时只合并尾部，避免为了“多泡”把一句完整的话从中间切断。
+    const out = sents.map((s) => s.trim()).filter(Boolean);
+    if (out.length <= max) return out;
+    return [...out.slice(0, max - 1), out.slice(max - 1).join('')];
   }
 
-  _guardAutonomyFabrication(cnText, userAnchor) {
-    let o = String(cnText || '');
-    const u = String(userAnchor || '');
-    if (this.config.oocRepair !== false && typeof AmadeusInteractionContext !== 'undefined' && AmadeusInteractionContext.replyNeedsNicknameRepair) {
-      if (AmadeusInteractionContext.replyNeedsNicknameRepair(u || '（主动）', o)) {
-        o = AmadeusInteractionContext.nicknameRepairFallback(u || '克里斯蒂娜');
+  async _renderFinalReplyBubbles(cnText, firstMsgDiv, opts = {}) {
+    const parts = this._dedupeAutonomyBubbles(this._splitAutonomyBubbles(cnText, opts.maxBubbles || 5));
+    if (!parts.length) return [];
+    const ts = () => new Date().toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    if (this._isPureUi()) {
+      this._pureKurisuStreamDraft = null;
+      for (let i = 0; i < parts.length; i++) {
+        if (i > 0) {
+          const min = Math.max(180, Number(opts.pauseMinMs) || 320);
+          const max = Math.max(min, Number(opts.pauseMaxMs) || 760);
+          await new Promise((resolve) => setTimeout(resolve, min + Math.random() * (max - min)));
+        }
+        this._pushDialogue('kurisu', parts[i]);
+        this._hydratePureDialogue();
       }
+      return parts;
     }
-    if (
-      this.config.oocRepair !== false
-      && /量子|睡眠剥夺|神经认知|实验室.{0,12}数据|研究.{0,8}影响/i.test(o)
-      && !/量子|睡眠|实验|研究|数据|论文|剥夺|实验室/.test(u)
-    ) {
-      if (/饿|想吃|好饿/.test(u)) return '你都喊饿了还不去吃？别光在这打字。';
-      if (/头疼|头痛|疼|难受|累|困/.test(u)) return '……不舒服就歇会儿，别硬撑。';
-      if (/无聊/.test(u)) return '无聊就说话，别装死。';
-      return '……所以呢？';
+
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0) {
+        const min = Math.max(180, Number(opts.pauseMinMs) || 320);
+        const max = Math.max(min, Number(opts.pauseMaxMs) || 760);
+        await new Promise((resolve) => setTimeout(resolve, min + Math.random() * (max - min)));
+      }
+      const msgDiv = i === 0 && firstMsgDiv
+        ? firstMsgDiv
+        : this._beginKurisuReplyStream(this._appendStreamMsg());
+      msgDiv.querySelector('.mt').textContent = parts[i];
+      msgDiv.querySelector('.mtime').textContent = ts();
+      this._showSpeechBubble(parts[i]);
     }
+    return parts;
+  }
+
+  _guardAutonomyFabrication(cnText, _userAnchor) {
+    // 独立灵魂：不把她的话改成固定句；出戏由后端丢弃，这里原样放行
     return cnText;
   }
 
@@ -1980,9 +2811,23 @@ class AmadeusConsciousness {
    * 每一泡 {cn, jp} 一一对应；禁止改中文却仍播旧日文。
    */
   async _buildAutonomySpeechPairs(rawFull, userText, recentCtx, delivery = {}) {
-    const bubbleCap = Math.max(1, Math.min(3, Number(delivery.bubbleCount) || this.config.autonomyMaxBubbles || 3));
+    const bubbleCap = Math.max(1, Math.min(5, Number(delivery.bubbleCount) || this.config.autonomyMaxBubbles || 4));
     const raw = String(rawFull || '').trim();
     if (!raw) return [];
+
+    // 中文主模型：先按泡拆中文，再逐泡译日作 TTS（避免整段译日后只剩一泡）
+    if (this.config.replyLanguage === 'zh') {
+      const cnBody = this._stripEmbeddedJapaneseLines(this._cleanForDisplay(raw));
+      const cnParts = this._dedupeAutonomyBubbles(this._splitAutonomyBubbles(cnBody, bubbleCap))
+        .map((s) => this._cleanForDisplay(s))
+        .filter((s) => s && !this._isInternalControlLeak(s) && !this._isGenericKurisuFiller(s));
+      const pairs = [];
+      for (const cn of cnParts) {
+        const jp = this._cleanTTSJapanese(await this._ensureJapaneseForTTS(cn, ''));
+        pairs.push({ cn, jp: jp || '' });
+      }
+      return pairs;
+    }
 
     let jpBody = '';
     if (this._looksJapaneseForCnRepair(raw)) {
@@ -1991,8 +2836,8 @@ class AmadeusConsciousness {
       // 模型吐中文：先译成要念的日文，再用这句日文硬翻回中文显示（保证一致）
       jpBody = this._cleanTTSJapanese(await this._translateChineseLineForTTS(raw));
       if (!jpBody) {
-        const cnOnly = this._cleanForDisplay(raw);
-        return cnOnly && !this._isInternalControlLeak(cnOnly) ? [{ cn: cnOnly, jp: '' }] : [];
+        // 没有可朗读日文就不发气泡——禁止「只打字不发声」的错位字幕
+        return [];
       }
     }
 
@@ -2003,8 +2848,8 @@ class AmadeusConsciousness {
     for (const jp of jpParts) {
       let cn = await this._translateJapaneseLineForDisplay(jp);
       cn = this._alignLiteralCnToJapanese(jp, this._cleanForDisplay(cn || ''));
-      // 只剥泄漏，不换成另一句台词（否则语音还是旧日文）
-      if (this._isInternalControlLeak(cn)) continue;
+      cn = this._clipCnToSpokenJapanese(jp, cn);
+      if (this._isInternalControlLeak(cn) || this._isGenericKurisuFiller(cn)) continue;
       cn = this._cleanForDisplay(cn);
       if (!cn) continue;
       pairs.push({ cn, jp });
@@ -2041,14 +2886,12 @@ class AmadeusConsciousness {
     const combinedProactive = pairs.map((p) => p.cn).join(' ');
     const ts = () => new Date().toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const showSub = (text) => {
-      document.getElementById('scn').textContent = text;
-      document.getElementById('sb').classList.add('visible');
-      document.getElementById('ki').classList.add('talking');
-      const delay = Math.min(Math.max(1800, text.length * 65), 10000);
-      setTimeout(() => {
-        document.getElementById('sb').classList.remove('visible');
-        document.getElementById('ki').classList.remove('talking');
-      }, delay);
+      if (this._isPureUi()) {
+        this._rebuildPureTurnCarousel({ pinLatest: true });
+        return;
+      }
+      this._showSpeechBubble(text);
+      this._scheduleHideSpeechBubble(text);
     };
 
     for (let i = 0; i < pairs.length; i++) {
@@ -2064,19 +2907,25 @@ class AmadeusConsciousness {
       }
       msgDiv.querySelector('.mt').textContent = text;
       msgDiv.querySelector('.mtime').textContent = ts();
-      void this._appendDialogueToServer('kurisu', text, { proactive: true, source });
+      await this._appendDialogueToServer('kurisu', text, { proactive: true, source });
       this._markKurisuSpoke();
       showSub(text);
       // 每泡只用对应日文；没有日文才允许按该泡中文译日
       this._startBackgroundJapaneseTTS(text, jp);
     }
+    if (this.state.uiMode === 'pure') void this._loadDialogueFromServer();
     if (combinedProactive) {
       this.autonomy.lastProactiveKurisuText = combinedProactive;
       this.autonomy.awaitingProactiveReply = true;
       fetch(`${this.config.apiBase}/initiative/sent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: combinedProactive, action: delivery.action || source }),
+        body: JSON.stringify({
+          text: combinedProactive,
+          action: delivery.action || source,
+          thoughtId: delivery.thoughtId || '',
+          urgeId: delivery.urgeId || '',
+        }),
       }).catch(() => {});
     }
   }
@@ -2219,13 +3068,18 @@ class AmadeusConsciousness {
     const display = this._stripEmbeddedJapaneseLines(this._cleanForDisplay(cleanedAccum));
 
     if (display) {
+      if (this._pureUserEchoHoldUntilReply) {
+        this._pureUserEchoHoldUntilReply = false;
+        this._dismissPureUserEcho(true);
+        this._setPureCallChip('idle');
+      }
       msgDiv.querySelector('.mt').innerHTML = display.replace(/\n/g, '<br>');
       const ch = document.getElementById('ch');
       if (ch) ch.scrollTop = 99999;
-      // 这里的预览可以只放第一行
-      document.getElementById('scn').innerHTML = display.split('\n')[0];
-      document.getElementById('sb').classList.add('visible');
-      document.getElementById('ki').classList.add('talking');
+      this._showSpeechBubble(display, { streaming: true });
+    } else if (msgDiv?.querySelector?.('.mt')) {
+      // 阀门/清洗清空：立刻抹掉流式脏字，避免定稿前一直挂着
+      msgDiv.querySelector('.mt').innerHTML = '';
     }
   }
 
@@ -2662,6 +3516,7 @@ class AmadeusConsciousness {
     let rawFull = '', modelJp = '', buf = '', done_ = false;
     let sentenceBuffer = '';
     let serverDisplayCn = '';
+    let serverCleared = false;
 
     const finish = () => {
       if (done_) return;
@@ -2670,8 +3525,9 @@ class AmadeusConsciousness {
         onSentence(sentenceBuffer.trim());
         sentenceBuffer = '';
       }
-      // 服务端硬翻定稿优先：界面与实录应对齐同一条中文
-      onDone(serverDisplayCn || rawFull);
+      // 服务端硬翻定稿优先；若阀门清空则不要回退流式脏稿
+      if (serverCleared) onDone('');
+      else onDone(serverDisplayCn || rawFull);
     };
 
     try {
@@ -2693,14 +3549,32 @@ class AmadeusConsciousness {
               streamError.name = 'ChatStreamError';
               throw streamError;
             }
-            if (typeof obj.replaceText === 'string' && obj.replaceText) {
+            if (typeof obj.replaceText === 'string') {
+              if (obj.cleared === true || obj.dropped === true || obj.replaceText === '') {
+                serverCleared = true;
+                serverDisplayCn = '';
+                rawFull = '';
+                sentenceBuffer = '';
+                onToken('');
+                continue;
+              }
+              serverCleared = false;
               const rep = this._cleanForDisplay(obj.replaceText);
+              if (this._isFixedStyleDefence(rep)) {
+                serverCleared = true;
+                serverDisplayCn = '';
+                rawFull = '';
+                sentenceBuffer = '';
+                onToken('');
+                continue;
+              }
               if (rep && rep.length >= 2) {
                 serverDisplayCn = rep;
                 // 允许覆盖流式草稿，避免界面停在脏原文、实录却是另一条
                 rawFull = rep;
                 sentenceBuffer = '';
-                onToken(rep);
+                // replaceText 是服务端整段定稿，不要在这里把完整长文重新塞回正在显示的单泡；
+                // 由 userSend 的最终拆泡阶段一次性落成多个气泡，避免“先长文、再刷新拆分”。
               }
               if (typeof obj.modelJp === 'string' && obj.modelJp.trim()) {
                 modelJp = obj.modelJp.trim();
@@ -2713,6 +3587,12 @@ class AmadeusConsciousness {
               if (clean) {
                 rawFull += clean;
                 sentenceBuffer += clean;
+                if (this._isFixedStyleDefence(rawFull)) {
+                  rawFull = '';
+                  sentenceBuffer = '';
+                  onToken('');
+                  continue;
+                }
                 onToken(this._cleanForDisplay(rawFull));
 
                 // 首句低延迟：完整句立即送 TTS；较长分句在逗号/分号处提前送出。
@@ -2762,10 +3642,11 @@ class AmadeusConsciousness {
     return { rawFull, modelJp };
   }
 
-  /** 译日/日→中直连 Ollama 使用的模型；translateModel 为空则退回 mainModel */
+  /** 译日专用模型：永不回退到 kurisu/mainModel，避免抢主对话 GPU */
   _translateOllamaModel() {
     const m = String(this.config.translateModel || '').trim();
-    return m || this.config.mainModel;
+    if (m && m !== this.config.mainModel && !/^kurisu/i.test(m)) return m;
+    return 'qwen2.5:3b';
   }
 
   /**
@@ -2801,15 +3682,23 @@ class AmadeusConsciousness {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(t),
     });
-    if (!res.ok && res.status === 404 && mid !== this.config.mainModel) {
-      console.warn(`[OllamaDirect] 模型不存在 ${mid}，回退 ${this.config.mainModel}`);
-      body.model = this.config.mainModel;
-      res = await fetch(`${this.config.apiBase}/ollama/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(t),
-      });
+    if (!res.ok && res.status === 404) {
+      const isTranslateModel = mid === this._translateOllamaModel()
+        || mid === 'qwen2.5:3b'
+        || mid === String(this.config.translateModel || '').trim();
+      if (isTranslateModel) {
+        throw new Error(`翻译模型不存在: ${mid}。请执行 ollama pull qwen2.5:3b`);
+      }
+      if (mid !== this.config.mainModel) {
+        console.warn(`[OllamaDirect] 模型不存在 ${mid}，回退 ${this.config.mainModel}`);
+        body.model = this.config.mainModel;
+        res = await fetch(`${this.config.apiBase}/ollama/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(t),
+        });
+      }
     }
     if (!res.ok) throw new Error(`Ollama HTTP ${res.status} (${body.model})`);
     const d = await res.json();
@@ -3050,6 +3939,7 @@ class AmadeusConsciousness {
     await this._ensureAudioUnlocked();
 
     this._cancelPendingTTS();
+    this._clearPresencePending('user-typing');
     const ttsTurnId = this._ttsTurnId;
     this._beginStreamingTTS(ttsTurnId);
     this.state.isThinking     = true;
@@ -3076,12 +3966,14 @@ class AmadeusConsciousness {
     this._setState('THINKING');
 
     const turnId = `${this._conversationId}_${Date.now()}_${++this._chatTurnSeq}`;
+    this._pendingChatTurnId = turnId;
     this.msgCount++;
     localStorage.setItem('amadeus_msgcount', this.msgCount);
     document.getElementById('mcnt').textContent = `${this.msgCount} MSG`;
 
-    this._appendChatMsg('user', text);
+    if (this.isLocalCallOn) this._setPureCallChip('thinking');
     await this._appendDialogueToServer('user', text, { source: 'chat', turnId });
+    this._appendChatMsg('user', text);
     const tid = 'typing-' + Date.now();
     this._appendTyping(tid);
 
@@ -3097,14 +3989,11 @@ class AmadeusConsciousness {
         const msgDiv = this._appendStreamMsg();
         msgDiv.querySelector('.mt').textContent = selfModResult.cn;
         msgDiv.querySelector('.mtime').textContent = new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-        document.getElementById('scn').textContent = selfModResult.cn;
-        try { document.getElementById('sjp').textContent = ''; } catch (_) {}
-        document.getElementById('sb').classList.add('visible');
-        document.getElementById('ki').classList.add('talking');
+        this._showSpeechBubble(selfModResult.cn);
         this._startBackgroundJapaneseTTS(selfModResult.cn, selfModResult.jp || '', ttsTurnId);
         this._markKurisuSpoke();
-        const delay = Math.min(Math.max(2400, selfModResult.cn.length * 70), 14000);
-        setTimeout(()=>{ document.getElementById('sb').classList.remove('visible'); document.getElementById('ki').classList.remove('talking'); }, delay);
+        this._scheduleHideSpeechBubble(selfModResult.cn);
+        this._pendingChatTurnId = null;
         return;
       }
 
@@ -3137,7 +4026,7 @@ class AmadeusConsciousness {
 
       if (vr?.confident && vr.text) this._showVisionText(vr.text);
       const wantMem = this.needsLongTermMemory(text);
-      const palaceCtx = wantMem ? this._navigatePalace(text) : '';
+      const palaceCtx = wantMem ? await this._navigatePalaceAsync(text) : '';
       const visionCtx = wantVisual && vr?.confident && vr.text
         ? `当前摄像头视觉观察：${vr.text}。这是你此刻真正能依据的画面。`
         : '';
@@ -3153,7 +4042,7 @@ class AmadeusConsciousness {
         impulse,
         vision: visionCtx,
         palace: palaceCtx,
-        wantLongMemory: wantMem,
+        wantLongMemory: wantMem && !!palaceCtx,
       });
 
       document.getElementById(tid)?.remove();
@@ -3193,15 +4082,29 @@ class AmadeusConsciousness {
         cnDupPrev: !!lastKBefore && cnText === lastKBefore,
       });
 
-      msgDiv.querySelector('.mt').innerHTML    = cnText;
-      msgDiv.querySelector('.mtime').textContent = new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      document.getElementById('scn').innerHTML = cnText;
-      try { document.getElementById('sjp').textContent = ''; } catch (_) {}
+      if (!String(cnText || '').trim()) {
+        try { msgDiv.remove(); } catch (_) {}
+        this._log('本轮定稿被阀门清空，不展示脏稿', 'sys');
+        if (this.isLocalCallOn) {
+          this._setPureCallChip('listening');
+          this._pureUserEchoHoldUntilReply = false;
+        }
+        await this._loadDialogueFromServer();
+        void this._syncPADFromServer();
+        return;
+      }
+
+      this._pendingChatTurnId = null;
+      const ttsReady = this._finishStreamingTTS(cnText, modelJp, ttsTurnId);
+      const replyBubbles = await this._renderFinalReplyBubbles(cnText, msgDiv, {
+        maxBubbles: 5,
+        pauseMinMs: 320,
+        pauseMaxMs: 760,
+      });
 
       await this._loadDialogueFromServer();
       this._markKurisuSpoke();
 
-      const ttsReady = this._finishStreamingTTS(cnText, modelJp, ttsTurnId);
       if (this.working.length > 24) this.working = this.working.slice(-24);
       void ttsReady.finally(() => { void this._archiveToPalace(text, cnText); });
 
@@ -3210,11 +4113,11 @@ class AmadeusConsciousness {
 
       void this._syncPADFromServer();
 
+      // 跟话/沉默接话：只走对话内 initiative（地板空出事件），不再另开轮询
       this._openConversationInitiativeWindow(text, cnText);
 
       // 气泡停留仅用于展示，不可 await，否则会拖到 delay 结束才 isThinking=false，界面一直像加载中
-      const delay = Math.min(Math.max(2400, cnText.length * 70), 14000);
-      setTimeout(()=>{ document.getElementById('sb').classList.remove('visible'); document.getElementById('ki').classList.remove('talking'); }, delay);
+      this._scheduleHideSpeechBubble(replyBubbles[replyBubbles.length - 1] || cnText);
 
     } catch (e) {
       document.getElementById(tid)?.remove();
@@ -3231,6 +4134,13 @@ class AmadeusConsciousness {
       this._setState(this.isLocalCallOn ? 'LISTENING' : 'STANDBY');
       document.getElementById('ci').focus();
       void this._loadDialogueFromServer();
+      if (this._pendingChatTurnId === turnId && !this._hasUnansweredChatTurn()) {
+        this._pendingChatTurnId = null;
+      }
+      if (this.isLocalCallOn) {
+        this._setPureCallChip('listening');
+        this._callHeardSpeech = false;
+      }
     }
   }
 
@@ -3252,11 +4162,11 @@ class AmadeusConsciousness {
     try {
       const lastUser = [...this.working].reverse().find((m) => m && m.role === 'user');
       const wantMem = this.needsLongTermMemory(lastUser ? lastUser.text : '');
-      const palaceCtx = wantMem ? this._navigatePalace(lastUser ? lastUser.text : '') : '';
+      const palaceCtx = wantMem ? await this._navigatePalaceAsync(lastUser ? lastUser.text : '') : '';
       const clientContext = this._buildClientContext({
         situation: '她觉得当前话题没意思，想换话题或收束。',
         palace: palaceCtx,
-        wantLongMemory: wantMem,
+        wantLongMemory: wantMem && !!palaceCtx,
         skipTopic: true,
       });
 
@@ -3288,18 +4198,19 @@ class AmadeusConsciousness {
         recentCtx,
         { preferModelJp: streamModelJp },
       );
-      msgDiv.querySelector('.mt').textContent    = cnText;
-      msgDiv.querySelector('.mtime').textContent = new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-      document.getElementById('scn').textContent = cnText;
-      try { document.getElementById('sjp').textContent = ''; } catch (_) {}
+      const ttsReady = this._finishStreamingTTS(cnText, modelJp, ttsTurnId);
+      const replyBubbles = await this._renderFinalReplyBubbles(cnText, msgDiv, {
+        maxBubbles: 5,
+        pauseMinMs: 320,
+        pauseMaxMs: 760,
+      });
 
       await this._loadDialogueFromServer();
       this._markKurisuSpoke();
 
-      await this._finishStreamingTTS(cnText, modelJp, ttsTurnId);
+      await ttsReady;
 
-      const delay = Math.min(Math.max(2400, cnText.length * 70), 14000);
-      setTimeout(()=>{ document.getElementById('sb').classList.remove('visible'); document.getElementById('ki').classList.remove('talking'); }, delay);
+      this._scheduleHideSpeechBubble(replyBubbles[replyBubbles.length - 1] || cnText);
       this.autonomy.lastSpokeAt = Date.now();
 
     } catch (e) {
@@ -3429,6 +4340,8 @@ class AmadeusConsciousness {
           elapsedMs: Date.now() - openedAt,
           pad: this.pad,
           relScore: this._relScore || 0,
+          facePresent: this._cameraFacePresent === true || this._presenceSense?.facePresent === true,
+          senseDriven: true,
         }),
         signal: AbortSignal.any([abortController.signal, AbortSignal.timeout(6000)]),
       });
@@ -3475,7 +4388,11 @@ class AmadeusConsciousness {
           conversationInitiative: true,
           initiativeAction: decision.action,
           initiativeReason: decision.reason,
-          delivery: decision.delivery || {},
+          delivery: {
+            ...(decision.delivery || {}),
+            thoughtId: decision.thoughtId || '',
+            urgeId: decision.urgeId || '',
+          },
           contextFresh: true,
           recentDialogue,
           recentProactive: this.working.filter((m) => m?.proactive).slice(-6).map((m) => m.text),
@@ -3485,7 +4402,7 @@ class AmadeusConsciousness {
           idleMsSinceUser: Date.now() - this.autonomy.lastUserMessageAt,
           model: this.config.mainModel,
           temperature: 0.86,
-          max_tokens: 72,
+          max_tokens: 320,
         }),
         signal: AbortSignal.any([abortController.signal, AbortSignal.timeout(45000)]),
       });
@@ -3495,7 +4412,10 @@ class AmadeusConsciousness {
       if (data.skipped || !raw || /^\[?SILENCE\]?$/i.test(raw)) return;
       if (token !== this.autonomy.initiativeToken) return;
       const recentCtx = this.working.slice(-6).map((m) => `${m.role === 'user' ? 'User' : 'Kurisu'}: ${m.text}`).join('\n');
-      const pairs = await this._buildAutonomySpeechPairs(raw, userText, recentCtx, decision.delivery || {});
+      const groundedCn = this._cleanForDisplay(String(data.groundedChinese || ''));
+      const pairs = groundedCn
+        ? [{ cn: groundedCn, jp: this._cleanTTSJapanese(raw) || raw }]
+        : await this._buildAutonomySpeechPairs(raw, userText, recentCtx, decision.delivery || {});
       if (!pairs.length) return;
       const cnJoined = pairs.map((p) => p.cn).join(' ');
       if (this._autonomyEchoesPrev(replyText, cnJoined) || this._autonomyEchoesPrev(userText, cnJoined)) return;
@@ -3508,7 +4428,11 @@ class AmadeusConsciousness {
         userText,
         '',
         `conversation_${decision.action}`,
-        decision.delivery || {},
+        {
+          ...(decision.delivery || {}),
+          thoughtId: decision.thoughtId || '',
+          urgeId: decision.urgeId || '',
+        },
       );
     } catch (e) {
       if (e?.name !== 'AbortError') this._log(`Initiative speech: ${e.message}`, 'warn');
@@ -3518,78 +4442,267 @@ class AmadeusConsciousness {
         this.autonomy.initiativeTimer = null;
         this.state.isThinking = false;
         this._setState(this.isLocalCallOn ? 'LISTENING' : 'STANDBY');
-        if (presenceStatus) presenceStatus.textContent = 'PRESENCE AWAKE';
+        if (presenceStatus) {
+          presenceStatus.textContent = this._presenceSense?.facePresent ? 'SEEING YOU' : 'SENSING';
+        }
       }
     }
   }
 
   _startAutonomyLoop() {
-    // 两个人相见：打开窗口后几秒内就应有概率先开口，而不是等半分钟空闲。
+    // 一直在场 = 摄像头持续看着；开口是看见之后的结果，不是挂 setTimeout。
     this.autonomy.sessionOpenedAt = Date.now();
+    this.autonomy.presenceMode = 'sense';
     void fetch(`${this.config.apiBase}/initiative/session-start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
       signal: AbortSignal.timeout(4000),
     }).catch(() => {});
-    this._scheduleNextTick(4000 + Math.random() * 8000, { phase: 'presence' });
+    this._log('Presence: 人在旁边——摄像头只确认还在；开口看她想不想说', 'sys');
+    if (this._presenceSense) this._presenceSense.nextInnerAt = Date.now() + 3500;
+    const st = document.getElementById('autst');
+    if (st) st.textContent = this.state.isCameraReady ? 'BESIDE YOU' : 'WAITING FOR CAM';
   }
 
-  _scheduleNextTick(delay, opts = {}) {
-    if (this._autonomyTimer) clearTimeout(this._autonomyTimer);
-    this._autonomyTimer = setTimeout(() => this._autonomyTick(false, opts), delay);
+  /** 清掉感知挂起的冲动（用户开口/暂停时） */
+  _clearPresencePending(reason = '') {
+    if (this._autonomyTimer) {
+      clearTimeout(this._autonomyTimer);
+      this._autonomyTimer = null;
+    }
+    this._autonomyArmed = null;
+    if (this._presenceSense?.pending) {
+      this._presenceSense.pending = null;
+      if (reason) this._log(`Presence: 放下冲动 (${reason})`, 'sys');
+    }
+  }
+
+  /** @deprecated 旧名兼容 */
+  _cancelArmedPresence(reason = '') {
+    this._clearPresencePending(reason);
+  }
+
+  /**
+   * 强制观察：手动戳一下才立刻开口；日常共在不走这条。
+   */
+  _queuePresenceImpulse(kind, opts = {}) {
+    if (opts.force !== true && kind !== 'force') return;
+    void this._autonomyTick(true, {
+      phase: opts.phase || (this._dialogueAlreadyStarted() ? 'copresence' : 'presence'),
+      facePresent: this._presenceSense?.facePresent === true,
+      eventKind: 'force',
+      senseDriven: true,
+      force: true,
+      noReschedule: true,
+    });
+  }
+
+  /**
+   * 摄像头只更新「他还在不在」。
+   * 要不要讲话交给内心心跳（内驱 × 读场），不在这里做脸沿触发。
+   */
+  _tickPresenceSense(rawPresent) {
+    const now = Date.now();
+    const sense = this._presenceSense;
+    if (!sense) return;
+    sense.lastSampleAt = now;
+    if (rawPresent) {
+      sense.presentStreak = (sense.presentStreak || 0) + 1;
+      sense.absentStreak = 0;
+    } else {
+      sense.absentStreak = (sense.absentStreak || 0) + 1;
+      sense.presentStreak = 0;
+    }
+    let present = sense.facePresent;
+    if (!present && sense.presentStreak >= 2) present = true;
+    if (present && sense.absentStreak >= 3) present = false;
+
+    if (present !== sense.facePresent) {
+      sense.facePresent = present;
+      sense.lastFaceChangeAt = now;
+      if (present) {
+        sense.faceSince = now;
+        sense.firstSeen = true;
+      } else {
+        sense.faceSince = 0;
+      }
+    }
+    this._cameraFacePresent = present;
+
+    const st = document.getElementById('autst');
+    if (st && !this.state.isThinking) {
+      st.textContent = present ? 'BESIDE YOU' : 'LOOKING';
+    }
+
+    const due = Number(sense.nextInnerAt) || 0;
+    if (now >= due) void this._presenceInnerTick();
+  }
+
+  /**
+   * 内心心跳：问她「现在想不想说」。多数时候答案是不想——安静坐着也行。
+   */
+  async _presenceInnerTick() {
+    const sense = this._presenceSense;
+    if (!sense || this._presenceImpulseBusy) return;
+    if (this._hasUnansweredChatTurn()) {
+      sense.nextInnerAt = Date.now() + 4000;
+      return;
+    }
+    if (this.state.isThinking || this._ttsPlaying) {
+      sense.nextInnerAt = Date.now() + 2500;
+      return;
+    }
+    this._presenceImpulseBusy = true;
+    const now = Date.now();
+    const sinceUser = now - (this.autonomy.lastUserMessageAt || this.state.lastUserActive || now);
+    const sinceKurisu = this.autonomy.lastKurisuTurnAt
+      ? now - this.autonomy.lastKurisuTurnAt
+      : 999999;
+    const quietMs = Math.min(sinceUser, sinceKurisu);
+    const lastUser = [...this.working].reverse().find((m) => m?.role === 'user');
+    const lastKurisu = [...this.working].reverse().find((m) => m?.role === 'assistant' || m?.role === 'kurisu');
+    const dtMs = sense.lastInnerAt ? Math.min(20000, now - sense.lastInnerAt) : 4000;
+    sense.lastInnerAt = now;
+    try {
+      const res = await fetch(`${this.config.apiBase}/initiative/presence-tick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          facePresent: sense.facePresent === true,
+          faceMs: sense.facePresent && sense.faceSince ? now - sense.faceSince : 0,
+          idleMs: sinceUser,
+          quietMs,
+          dtMs,
+          sinceKurisuMs: sinceKurisu,
+          alreadyTalking: this._dialogueAlreadyStarted(),
+          lastUserText: String(lastUser?.text || '').slice(0, 240),
+          lastReplyText: String(lastKurisu?.text || '').slice(0, 240),
+          isThinking: this.state.isThinking === true,
+          ttsPlaying: this._ttsPlaying === true,
+          awaitingProactiveReply: this.autonomy.awaitingProactiveReply === true,
+          dnd: Boolean(this.autonomy.presenceDnd),
+          userPresenceActive: false,
+          proactiveQuotaOk: this._autonomyQuotaOk(),
+          pad: this.pad,
+          relScore: this._relScore || 0,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+      const data = await res.json();
+      const next = Math.max(3000, Number(data.nextCheckMs) || 7000);
+      sense.nextInnerAt = Date.now() + next;
+      if (!data?.ok || !data.shouldSpeak) {
+        if (data?.social?.comfortableSilence > 0.55 && sense.facePresent) {
+          const quiet = document.getElementById('autst');
+          if (quiet && !this.state.isThinking) quiet.textContent = 'QUIET WITH YOU';
+        }
+        return;
+      }
+      await this._autonomyTick(false, {
+        phase: data.phase || 'copresence',
+        facePresent: sense.facePresent === true,
+        eventKind: 'beside',
+        senseDriven: true,
+        initiativePlan: data,
+        noReschedule: true,
+      });
+    } catch (e) {
+      sense.nextInnerAt = Date.now() + 10000;
+      this._log(`Presence inner: ${e.message}`, 'warn');
+    } finally {
+      this._presenceImpulseBusy = false;
+    }
+  }
+
+  /** @deprecated 定时续约已废除 */
+  _scheduleNextTick(_delay, _opts = {}) {
+    this._log('Presence: 忽略定时续约（在场=摄像头感知）', 'warn');
+  }
+
+  _dialogueAlreadyStarted() {
+    return this.working.some((m) => m && m.role === 'user' && String(m.text || '').trim());
+  }
+
+  _hasUnansweredChatTurn() {
+    if (this._pendingChatTurnId) return true;
+    const w = this.working || [];
+    for (let i = w.length - 1; i >= 0; i -= 1) {
+      const m = w[i];
+      if (!m || m.role !== 'user') continue;
+      const userText = String(m.text || '').trim();
+      if (!userText || userText === '（转移话题）') continue;
+      const hasDirectReply = w.slice(i + 1).some((x) => (
+        x
+        && (x.role === 'kurisu' || x.role === 'assistant')
+        && !x.proactive
+      ));
+      return !hasDirectReply;
+    }
+    return false;
   }
 
   _pickAutonomyPhase(opts = {}, lastUserText = '') {
-    if (opts.phase === 'presence' || opts.phase === 'coldness' || opts.phase === 'idle') return opts.phase;
+    const alreadyTalking = this._dialogueAlreadyStarted();
+    const cold = /^(嗯+|哦+|喔+|啊+|额+|行|好|随便|没事|在|哦|嗯|知道了|收到|ok|OK|嗯嗯|呵呵)[。！？.!]?$/i.test(String(lastUserText || '').trim())
+      || /不想聊|随便你|都行|无所谓|无聊/.test(String(lastUserText || ''));
+    // 已在聊仍可主动插话；用 copresence（共同在场），不用「初次察觉」戏路
+    if (alreadyTalking && (opts.phase === 'presence' || opts.phase === 'copresence')) {
+      return cold ? 'coldness' : 'copresence';
+    }
+    if (!alreadyTalking && opts.phase === 'presence') return 'presence';
+    if (opts.phase === 'copresence') return alreadyTalking ? 'copresence' : 'presence';
+    if (opts.phase === 'coldness' || opts.phase === 'idle') return opts.phase;
     const sessionAge = Date.now() - (this.autonomy.sessionOpenedAt || Date.now());
     const sincePresence = Date.now() - (this.autonomy.lastPresenceSpeakAt || 0);
-    if (sessionAge < 3 * 60000 && sincePresence > 45000) return 'presence';
-    if (opts.facePresent === true && sincePresence > 45000) return 'presence';
-    const cold = /^(嗯+|哦+|喔+|啊+|额+|行|好|随便|没事|在|哦|嗯|知道了|收到|ok|OK|嗯嗯|呵呵)[。！？.!]?$/i.test(String(lastUserText || '').trim())
-      || /不想聊|随便你|都行|无所谓/.test(String(lastUserText || ''));
+    if (alreadyTalking && opts.facePresent === true && sincePresence > 28000) return cold ? 'coldness' : 'copresence';
+    if (!alreadyTalking && sessionAge < 3 * 60000 && sincePresence > 45000) return 'presence';
+    if (!alreadyTalking && opts.facePresent === true && sincePresence > 45000) return 'presence';
     if (cold) return 'coldness';
-    return 'idle';
+    return alreadyTalking ? 'idle' : 'idle';
   }
 
   async _autonomyTick(force = false, opts = {}) {
+    if (!force && this.config.proactiveEnabled === false) return;
+    const senseDriven = opts.senseDriven === true || opts.eventDriven === true || force === true;
+    if (this._hasUnansweredChatTurn() && !force) {
+      return;
+    }
     if (this.state.isThinking) {
-      this._scheduleNextTick(10000, opts);
+      if (senseDriven && this._presenceSense) {
+        this._presenceSense.nextInnerAt = Date.now() + 2000;
+      }
       return;
     }
 
     const rel = Math.max(0, this._relScore || 0);
     const lastUserRaw = [...this.working].reverse().find((m) => m?.role === 'user')?.text || '';
-    const phase = force ? 'idle' : this._pickAutonomyPhase(opts, lastUserRaw);
-    const presenceLike = phase === 'presence' || phase === 'coldness';
+    const phase = force
+      ? (this._dialogueAlreadyStarted() ? 'copresence' : 'presence')
+      : this._pickAutonomyPhase(opts, lastUserRaw);
+    const presenceLike = phase === 'presence' || phase === 'copresence' || phase === 'coldness';
     const gapCfg = Number(this.config.autonomyMinGapAfterKurisuMs);
     const MIN_GAP = presenceLike
-      ? 14000
-      : (Number.isFinite(gapCfg) && gapCfg >= 0 ? gapCfg : 90000);
+      ? 12000
+      : (Number.isFinite(gapCfg) && gapCfg >= 0 ? gapCfg : 45000);
     const lastTurn = this.autonomy.lastKurisuTurnAt || 0;
     if (!force && MIN_GAP > 0 && lastTurn > 0) {
       const since = Date.now() - lastTurn;
-      if (since < MIN_GAP) {
-        this._scheduleNextTick(MIN_GAP - since + 2000 + Math.random() * 6000, opts);
-        return;
-      }
+      if (since < MIN_GAP) return;
     }
 
-    const { S, P } = this.pad;
     const idleMs = Date.now() - (this.autonomy.lastUserMessageAt || this.state.lastUserActive);
     const idleMin = idleMs / 60000;
     const presenceApi = typeof AmadeusUserPresence !== 'undefined' ? AmadeusUserPresence : null;
     const dnd = this.autonomy.presenceDnd;
 
     if (!force && presenceApi && presenceApi.shouldSuppressAutonomy(dnd, idleMin)) {
-      this._scheduleAutonomyPause(240000);
+      this._clearPresencePending('dnd');
       return;
     }
 
-    // 在场/冷感不受「用户空闲多久」门控——见面就该能先开口
     const minIdle = this._autonomyMinIdleMin();
-    if (!force && !presenceLike && idleMin < minIdle) {
-      this._scheduleAutonomyPause(25000);
+    if (!force && !senseDriven && !presenceLike && idleMin < minIdle) {
       return;
     }
     if (idleMin >= 25) {
@@ -3600,22 +4713,27 @@ class AmadeusConsciousness {
       }).catch(() => {});
     }
     if (!force && !this._autonomyQuotaOk()) {
-      this._scheduleAutonomyPause(180000);
+      this._clearPresencePending('quota');
       return;
     }
 
-    // 空闲主动只使用本地人脸/帧差事件；禁止周期性调用 VLM 抢占聊天与 TTS 资源。
-    const noticeChange = false;
+    const facePresent = opts.facePresent === true
+      || this._cameraFacePresent === true
+      || this._presenceSense?.facePresent === true;
 
     let initiativePlan = null;
-    if (force) {
+    if (opts.initiativePlan && opts.initiativePlan.shouldSpeak) {
+      // 共在心跳已经决定过：别再二次掷骰
+      initiativePlan = opts.initiativePlan;
+    } else if (force) {
+      const mid = this._dialogueAlreadyStarted();
       initiativePlan = {
         shouldSpeak: true,
         action: 'poke',
-        phase: 'presence',
-        contextFresh: false,
-        useAnchor: false,
-        delivery: { style: 'poke', bubbleCount: 1, maxCharsPerBubble: 18, pauseMinMs: 380, pauseMaxMs: 1100, allowNonSemantic: true },
+        phase: mid ? 'copresence' : 'presence',
+        contextFresh: mid,
+        useAnchor: mid,
+        delivery: { style: 'poke', bubbleCount: 2, maxCharsPerBubble: 36, pauseMinMs: 380, pauseMaxMs: 1100, allowNonSemantic: true },
       };
     } else {
       try {
@@ -3625,15 +4743,21 @@ class AmadeusConsciousness {
           body: JSON.stringify({
             phase,
             idleMs,
-            facePresent: opts.facePresent === true || this._cameraFacePresent === true,
+            facePresent,
             contextFresh: phase === 'idle' && idleMs <= 3 * 60 * 1000,
             lastUserText: lastUserRaw,
+            alreadyTalking: this._dialogueAlreadyStarted(),
+            dialogueStarted: this._dialogueAlreadyStarted(),
+            senseDriven: true,
+            eventDriven: true,
+            eventKind: opts.eventKind || '',
+            force: opts.force === true,
             dnd: Boolean(presenceApi?.isPresenceActive(dnd)),
             userPresenceActive: Boolean(presenceApi?.isPresenceActive(dnd)),
             proactiveQuotaOk: this._autonomyQuotaOk(),
             pad: this.pad,
             relScore: rel,
-            noticeChange,
+            noticeChange: false,
           }),
           signal: AbortSignal.timeout(5000),
         });
@@ -3643,20 +4767,7 @@ class AmadeusConsciousness {
       }
     }
 
-    if (!initiativePlan?.shouldSpeak) {
-      const holdMs = Number(initiativePlan?.nextCheckMs) || (presenceLike ? 15000 : (S > 0.55 ? 50000 : 80000));
-      // 见面窗口内 hold 后仍优先再试 presence，而不是立刻掉进长空闲
-      const sessionAge = Date.now() - (this.autonomy.sessionOpenedAt || Date.now());
-      const retryOpts = sessionAge < 3 * 60000 && phase === 'presence'
-        ? { phase: 'presence', facePresent: opts.facePresent === true }
-        : {};
-      if (retryOpts.phase) {
-        this._scheduleNextTick(holdMs + Math.random() * 8000, retryOpts);
-      } else {
-        this._scheduleAutonomyPause(holdMs);
-      }
-      return;
-    }
+    if (!initiativePlan?.shouldSpeak) return;
 
     const now = Date.now();
     this.state.isThinking     = true;
@@ -3677,9 +4788,13 @@ class AmadeusConsciousness {
         ? `【这仍是刚才的话题，可轻轻接住】「${lastUserText.slice(0, 120)}」。`
         : '';
       const delivery = { ...(initiativePlan.delivery || {
-        style: 'poke', bubbleCount: 1, maxCharsPerBubble: 18,
+        style: 'poke', bubbleCount: 2, maxCharsPerBubble: 36,
         pauseMinMs: 380, pauseMaxMs: 1100, allowNonSemantic: true,
-      }), action: initiativePlan.action };
+      }),
+        action: initiativePlan.action,
+        thoughtId: initiativePlan.thoughtId || '',
+        urgeId: initiativePlan.urgeId || '',
+      };
 
       document.getElementById(tid)?.remove();
       let msgDiv = null;
@@ -3706,7 +4821,7 @@ class AmadeusConsciousness {
           idleMsSinceUser: idleMs,
           model: this.config.mainModel,
           temperature: 0.9,
-          max_tokens: 72,
+          max_tokens: 320,
         }),
         signal: AbortSignal.timeout(90000),
       });
@@ -3715,9 +4830,16 @@ class AmadeusConsciousness {
         throw new Error(liteData.error || `lite ${liteRes.status}`);
       }
       let rawFull = String(liteData.response || '').trim();
+      if (!rawFull || /^\[?SILENCE\]?$/i.test(rawFull) || liteData.skipped) {
+        this._log('Autonomy: 本轮选择沉默', 'sys');
+        return;
+      }
 
-      const pairs = await this._buildAutonomySpeechPairs(rawFull, lastUserText, recentCtx, delivery);
-      if (!pairs.length) throw new Error('主动对话模型返回空内容');
+      const groundedCn = this._cleanForDisplay(String(liteData.groundedChinese || ''));
+      const pairs = groundedCn
+        ? [{ cn: groundedCn, jp: this._cleanTTSJapanese(rawFull) || rawFull }]
+        : await this._buildAutonomySpeechPairs(rawFull, lastUserText, recentCtx, delivery);
+      if (!pairs.length) throw new Error('主动对话定稿失败（有原文但气泡为空）');
 
       const cnText = pairs.map((p) => p.cn).join(' ');
       const priorLine = this._lastKurisuLine();
@@ -3729,15 +4851,19 @@ class AmadeusConsciousness {
       msgDiv = this._beginKurisuReplyStream(this._appendStreamMsg());
       this._onKurisuStreamToken(msgDiv, pairs[0].cn);
       this.autonomy.lastSpokeAt = Date.now();
-      if (speakPhase === 'presence') this.autonomy.lastPresenceSpeakAt = Date.now();
+      if (speakPhase === 'presence' || speakPhase === 'copresence') {
+        this.autonomy.lastPresenceSpeakAt = Date.now();
+      }
       this._recordProactiveSent();
       const proactiveStatus = document.getElementById('autst');
       if (proactiveStatus) {
         proactiveStatus.textContent = speakPhase === 'presence'
           ? 'NOTICED YOU'
-          : speakPhase === 'coldness'
-            ? 'PULLING YOU BACK'
-            : 'PRESENCE REACHING OUT';
+          : speakPhase === 'copresence'
+            ? 'STILL HERE WITH YOU'
+            : speakPhase === 'coldness'
+              ? 'PULLING YOU BACK'
+              : 'PRESENCE REACHING OUT';
       }
       await this._postAutonomyBubbles(pairs, msgDiv, lastUserText, '', `autonomy_${speakPhase}`, delivery);
       void this._loadDialogueFromServer();
@@ -3756,22 +4882,25 @@ class AmadeusConsciousness {
       if (proactiveStatus) proactiveStatus.textContent = 'PRESENCE QUIET';
     } finally {
       this.state.isThinking = false;
-      this._setState('STANDBY');
+      this._setState(this.isLocalCallOn ? 'LISTENING' : 'STANDBY');
       const proactiveStatus = document.getElementById('autst');
-      if (proactiveStatus) proactiveStatus.textContent = 'PRESENCE AWAKE';
-      const sessionAge = Date.now() - (this.autonomy.sessionOpenedAt || Date.now());
-      if (sessionAge < 3 * 60000 && speakPhase === 'presence') {
-        this._scheduleNextTick(35000 + Math.random() * 40000, { phase: 'idle' });
-      } else {
-        const next = S > 0.6 ? 45000 + Math.random() * 70000
-                   :           65000 + Math.random() * 100000;
-        this._scheduleNextTick(next);
+      if (proactiveStatus) {
+        proactiveStatus.textContent = this._presenceSense?.facePresent ? 'SEEING YOU' : 'SENSING';
       }
+      // 说完不续约定时器；若在等你回，由摄像头持续感知里的 silence 条件驱动
     }
   }
 
   forceObserve() {
-    this._autonomyTick(true);
+    this._queuePresenceImpulse('force', {
+      phase: this._dialogueAlreadyStarted() ? 'copresence' : 'presence',
+      force: true,
+    });
+  }
+
+  /** 用户活动后：放下旧冲动；沉默共在由摄像头感知流继续看 */
+  _onPresenceUserActivity() {
+    this._clearPresencePending('user');
   }
 
   // ══════════════════════════════════════════════
@@ -3800,15 +4929,67 @@ class AmadeusConsciousness {
     } catch { return `${userMsg.substring(0,12)}→${aiMsg.substring(0,12)}`; }
   }
 
-  async _archiveToPalace(userMsg, aiMsg) {
-    const room       = this._classifyRoom(userMsg+aiMsg);
-    const compressed = await this._compress(userMsg, aiMsg);
-    const conflict   = await this._checkConflict(room, compressed);
-    this.palace[room].push(conflict ? `[矛盾] ${compressed}` : compressed);
-    if (conflict) this._log(`Conflict [${room}]: ${conflict}`, 'warn');
-    if (this.palace[room].length > 30) this.palace[room].shift();
-    localStorage.setItem(`palace_${room}`, JSON.stringify(this.palace[room]));
+  /** 后端已在定稿时经 WriteGate 归档；前端只同步权威宫殿并刷新 UI */
+  async _archiveToPalace(_userMsg, _aiMsg) {
+    await this._loadPalaceFromServer();
     this._renderPalace();
+  }
+
+  async _loadPalaceFromServer() {
+    const legacy = {
+      hall: [...(this.palace.hall || [])],
+      lab: [...(this.palace.lab || [])],
+      cafe: [...(this.palace.cafe || [])],
+      forbidden: [...(this.palace.forbidden || [])],
+    };
+    const legacyCount = Object.values(legacy).reduce((s, a) => s + a.length, 0);
+    try {
+      const r = await fetch(`${this.config.apiBase}/memory/palace`);
+      if (!r.ok) return;
+      let j = await r.json();
+      let total = Number(j.counts?.total) || 0;
+      if (total === 0 && legacyCount > 0) {
+        await fetch(`${this.config.apiBase}/memory/palace/import`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rooms: legacy }),
+        });
+        const r2 = await fetch(`${this.config.apiBase}/memory/palace`);
+        if (r2.ok) j = await r2.json();
+      }
+      const rooms = j.rooms || {};
+      for (const room of ['hall', 'lab', 'cafe', 'forbidden']) {
+        const nodes = Array.isArray(rooms[room]) ? rooms[room] : [];
+        this.palace[room] = nodes.map((n) => (typeof n === 'string' ? n : String(n?.text || ''))).filter(Boolean);
+        localStorage.setItem(`palace_${room}`, JSON.stringify(this.palace[room]));
+      }
+    } catch (e) {
+      this._log(`Palace sync: ${e.message}`, 'warn');
+    }
+  }
+
+  /** 后端相关度检索（权威）；失败时本地退化 */
+  async _navigatePalaceAsync(userInput) {
+    try {
+      const r = await fetch(`${this.config.apiBase}/memory/palace/navigate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userText: String(userInput || ''),
+          mood: this.emotion?.mood,
+          topK: 6,
+        }),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        if (j.excerpt) {
+          const room = j.room || this._classifyRoom(userInput);
+          if (room && room !== 'hall') this._flashRoom(room);
+          return String(j.excerpt);
+        }
+      }
+    } catch (_) { /* fallback */ }
+    return this._navigatePalace(userInput);
   }
 
   _navigatePalace(userInput) {
@@ -4026,7 +5207,14 @@ ${data.padDescription || ''}`);
     const ki = document.getElementById('ki');
     const stage = document.getElementById('stage');
     if (!ki || !stage || !expr) return;
-    const safeDefault = 'assets/Live2d/kurisu/kurisu_stand.png';
+    // 纯窗口：不换情绪立绘、不叠滤镜，只保留说话态
+    if (this.state.uiMode === 'pure') {
+      ki.src = this._purePortraitSrc;
+      stage.dataset.expression = 'neutral';
+      ki.style.filter = '';
+      return;
+    }
+    const safeDefault = this._labPortraitSrc;
     const approvedPath = expr.assetApproved === true && typeof expr.spritePath === 'string' && expr.spritePath;
     ki.src = approvedPath || safeDefault;
     ki.onerror = () => { ki.src = safeDefault; };
@@ -4065,23 +5253,18 @@ ${data.padDescription || ''}`);
           const result = this._faceDetector.detectForVideo(video, performance.now());
           const present = Boolean(result?.detections?.length);
           const now = Date.now();
-          const prev = this._cameraFacePresent;
-          if (present !== prev && now - this._lastVisionEventAt > 10000) {
+          const prev = this._presenceSense?.facePresent;
+          if (present !== prev && now - this._lastVisionEventAt > 8000) {
             this._lastVisionEventAt = now;
-            // 首次认出人脸也算「看见你」，不必等从 absent→present
-            if (prev !== null || present) {
-              void fetch(`${this.config.apiBase}/vision-event`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kind: present ? 'face_present' : 'face_absent', score: present ? 1 : 0, source: 'mediapipe-face-detector' }),
-                signal: AbortSignal.timeout(3000),
-              }).catch(() => {});
-            }
-            if (present && !this.state.isThinking) {
-              this._scheduleNextTick(2500 + Math.random() * 4500, { phase: 'presence', facePresent: true });
-            }
+            void fetch(`${this.config.apiBase}/vision-event`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ kind: present ? 'face_present' : 'face_absent', score: present ? 1 : 0, source: 'mediapipe-face-detector' }),
+              signal: AbortSignal.timeout(3000),
+            }).catch(() => {});
           }
-          this._cameraFacePresent = present;
+          // 每一帧都更新在场；开口由感知状态机决定
+          this._tickPresenceSense(present);
           return;
         }
         const canvas = document.createElement('canvas');
@@ -4093,23 +5276,29 @@ ${data.padDescription || ''}`);
         for (let i = 0; i < pixels.length; i += 16) {
           signature.push(Math.round((pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114) / 16));
         }
+        let motionPresent = false;
         if (this._cameraSignature) {
           let delta = 0;
           for (let i = 0; i < signature.length; i++) delta += Math.abs(signature[i] - this._cameraSignature[i]);
           const score = Math.min(1, delta / (signature.length * 12));
           const now = Date.now();
-          if (score >= 0.08 && now - this._lastVisionEventAt > 30000) {
-            this._lastVisionEventAt = now;
-            void fetch(`${this.config.apiBase}/vision-event`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ kind: 'camera_motion', score, source: 'local-frame-diff' }),
-              signal: AbortSignal.timeout(3000),
-            }).catch(() => {});
-            this._log(`Camera motion event ${score.toFixed(2)} (not injected into chat)`, 'sys');
+          if (score >= 0.08) {
+            this._presenceSense.motionPresentUntil = now + 12000;
+            if (now - this._lastVisionEventAt > 20000) {
+              this._lastVisionEventAt = now;
+              void fetch(`${this.config.apiBase}/vision-event`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kind: 'camera_motion', score, source: 'local-frame-diff' }),
+                signal: AbortSignal.timeout(3000),
+              }).catch(() => {});
+            }
           }
+          motionPresent = now < (this._presenceSense.motionPresentUntil || 0);
         }
         this._cameraSignature = signature;
+        // 无人脸模型时：近期有画面变化 ≈ 有人在场
+        this._tickPresenceSense(motionPresent);
       } catch (e) {
         this._log(`Camera perception: ${e.message}`, 'warn');
       } finally {
@@ -4117,15 +5306,67 @@ ${data.padDescription || ''}`);
       }
     };
     void sample();
-    this._cameraPerceptionTimer = setInterval(() => { void sample(); }, 10000);
+    // ~1.2s 刷新：这是「一直看着」的采样率，不是主动开口计时器
+    this._cameraPerceptionTimer = setInterval(() => { void sample(); }, 1200);
   }
 
   _setPortraitPose(pose = 'neutral') {
     const ki = document.getElementById('ki');
     if (!ki || ki.dataset.pose === pose) return;
-    // 只使用一套已批准立绘；说话/思考状态由 CSS 姿态、光晕和信号表现。
-    ki.src = 'assets/Live2d/kurisu/kurisu_stand.png';
+    // 纯窗口用独立人物图；实验室仍用已批准立绘 + CSS 姿态。
+    if (this.state.uiMode !== 'pure') {
+      ki.src = this._labPortraitSrc;
+    }
     ki.dataset.pose = pose;
+  }
+
+  _restoreUiMode() {
+    let mode = 'lab';
+    try {
+      const q = new URLSearchParams(location.search || '');
+      const fromQuery = String(q.get('ui') || '').toLowerCase();
+      if (fromQuery === 'pure' || fromQuery === 'window') mode = 'pure';
+      else if (fromQuery === 'lab') mode = 'lab';
+      else mode = localStorage.getItem('amadeus_ui_mode') || 'lab';
+    } catch (_) {}
+    this.setUiMode(mode === 'pure' ? 'pure' : 'lab', { silent: true });
+  }
+
+  toggleUiMode() {
+    this.setUiMode(this.state.uiMode === 'pure' ? 'lab' : 'pure');
+  }
+
+  setUiMode(mode, opts = {}) {
+    const next = mode === 'pure' ? 'pure' : 'lab';
+    this.state.uiMode = next;
+    document.documentElement.classList.toggle('ui-mode-pure', next === 'pure');
+    document.documentElement.classList.toggle('ui-mode-lab', next !== 'pure');
+    document.body.classList.toggle('ui-mode-pure', next === 'pure');
+    document.body.classList.toggle('ui-mode-lab', next !== 'pure');
+    const ki = document.getElementById('ki');
+    const ico = document.getElementById('ui-mode-ico');
+    const ci = document.getElementById('ci');
+    const enterBtn = document.querySelector('.fr-enter');
+    if (ki) {
+      if (next === 'pure') {
+        ki.src = this._purePortraitSrc;
+        ki.onerror = () => { ki.src = this._labPortraitSrc; };
+      } else {
+        ki.src = this._labPortraitSrc;
+        ki.onerror = () => { ki.src = this._labPortraitSrc; };
+      }
+    }
+    if (ico) ico.textContent = next === 'pure' ? '▣' : '◇';
+    if (ci) {
+      ci.placeholder = next === 'pure' ? '说点什么…' : '向 Amadeus 注入指令...';
+    }
+    if (enterBtn) {
+      enterBtn.textContent = next === 'pure' ? '开始' : 'ENTER THE LAB';
+    }
+    if (next !== 'pure') this._clearPureBubbleStack?.();
+    else this._hydratePureDialogue();
+    try { localStorage.setItem('amadeus_ui_mode', next); } catch (_) {}
+    if (!opts.silent && next === 'lab') this._notify('实验室界面', 'green');
   }
 
   injectMemory() {
@@ -4140,8 +5381,11 @@ ${data.padDescription || ''}`);
     this._notify(`注入 ${room.toUpperCase()}`, 'green');
   }
 
-  clearMemory() {
+  async clearMemory() {
     if (!confirm('确认清除整个记忆宫殿？')) return;
+    try {
+      await fetch(`${this.config.apiBase}/memory/palace/clear`, { method: 'POST' });
+    } catch (_) { /* ignore */ }
     ['hall','lab','cafe','forbidden'].forEach(r=>{
       this.palace[r]=[]; localStorage.removeItem(`palace_${r}`);
     });
@@ -4448,10 +5692,19 @@ ${data.padDescription || ''}`);
 
   async _submitCallUtterance(float32, sampleRate) {
     if (!this.isLocalCallOn || this._callAsrBusy) return;
+    if (this._hasUnansweredChatTurn()) {
+      this._log('通话 ASR：上一句尚未定稿，跳过识别提交', 'warn');
+      this._setPureCallChip('idle');
+      this._showPureUserEcho('', { phase: 'transcribing' });
+      this._notify('上一句还没回完，稍等再说', 'warn');
+      return;
+    }
     const down = this._downsampleFloat32(float32, sampleRate, 16000);
     if (down.length < 16000 * 0.35) return;
     const pcm = this._floatTo16BitPCM(down);
     this._callAsrBusy = true;
+    this._callHeardSpeech = false;
+    this._showPureUserEcho('', { phase: 'transcribing', callMode: true });
     try {
       const res = await fetch(`${this.config.apiBase}/asr`, {
         method: 'POST',
@@ -4465,16 +5718,36 @@ ${data.padDescription || ''}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
         this._log(`Call ASR: ${data.error || res.status}`, 'warn');
+        this._setPureCallChip('listening');
+        this._dismissPureUserEcho(true);
+        this._notify('识别失败，请再说一次', 'warn');
         return;
       }
       const text = String(data.text || '').trim();
-      if (!text) return;
+      if (!text) {
+        this._log('Call ASR: 空识别或乱码已丢弃', 'warn');
+        this._setPureCallChip('listening');
+        this._dismissPureUserEcho(true);
+        return;
+      }
+      // 二次拦截：明显编码损坏不进对话
+      if (/\uFFFD/.test(text) || (/[ÃÂåæçèé]{3,}/.test(text) && !/[\u4e00-\u9fff]{2,}/.test(text))) {
+        this._log(`Call ASR: 丢弃乱码「${text.slice(0, 40)}」`, 'warn');
+        this._setPureCallChip('listening');
+        this._dismissPureUserEcho(true);
+        this._notify('识别结果异常，已丢弃', 'warn');
+        return;
+      }
       if (this._ttsPlaying) this._interruptCurrentReply('call-barge-in');
       document.getElementById('ci').value = text;
       this._log(`通话识别[${data.engine || 'asr'}]: ${text}`, 'green');
+      this._showPureUserEcho(text, { phase: 'sent', sent: true, callMode: true, notify: true });
       void this.userSend();
     } catch (e) {
       this._log(`Call ASR: ${e.message}`, 'warn');
+      this._setPureCallChip('listening');
+      this._dismissPureUserEcho(true);
+      this._notify(`识别出错：${String(e.message || e).slice(0, 40)}`, 'warn');
     } finally {
       this._callAsrBusy = false;
     }
@@ -4510,6 +5783,7 @@ ${data.padDescription || ''}`);
           speechChunks.length = 0;
           speaking = false;
           silenceMs = 0;
+          this._callHeardSpeech = false;
           return;
         }
         const input = event.inputBuffer.getChannelData(0);
@@ -4521,6 +5795,10 @@ ${data.padDescription || ''}`);
           speaking = true;
           silenceMs = 0;
           speechChunks.push(Float32Array.from(input));
+          if (!this._callHeardSpeech) {
+            this._callHeardSpeech = true;
+            this._showPureUserEcho('', { phase: 'listening', callMode: true });
+          }
         } else if (speaking) {
           silenceMs += frameMs;
           speechChunks.push(Float32Array.from(input));
@@ -4542,9 +5820,11 @@ ${data.padDescription || ''}`);
       this._callSourceNode = source;
       this.isLocalCallOn = true;
       this._callRecognitionSuspended = false;
+      this._callHeardSpeech = false;
       document.getElementById('callbtn')?.classList.add('active');
       this._setState('LISTENING');
-      this._notify('本地连续通话已启动（本地识别，不依赖网页语音）', 'green');
+      this._setPureCallChip('listening');
+      this._notify('通话已开启：说话后会显示识别与发送状态', 'green');
     } catch (e) {
       this._stopLocalCall(false);
       this._notify(`通话启动失败：${String(e.message || e).slice(0, 100)}`, 'red');
@@ -4566,7 +5846,9 @@ ${data.padDescription || ''}`);
     try { this.callRecognition?.stop(); } catch (_) {}
     this.callRecognition = null;
     this._releaseMicrophoneAccess();
-    document.getElementById('callbtn')?.classList.remove('active');
+    document.getElementById('callbtn')?.classList.remove('active', 'is-hearing');
+    this._setPureCallChip('idle');
+    this._dismissPureUserEcho(true);
     this._setState('STANDBY');
     if (notify) this._notify('本地连续通话已停止', 'blue');
   }
@@ -4683,6 +5965,364 @@ ${data.padDescription || ''}`);
 
   //  UI HELPERS
   // ══════════════════════════════════════════════
+  _pureKurisuStackEl() {
+    return document.getElementById('pure-bubble-stack');
+  }
+
+  _isPureUi() {
+    return this.state.uiMode === 'pure'
+      || document.documentElement.classList.contains('ui-mode-pure')
+      || document.body.classList.contains('ui-mode-pure');
+  }
+
+  _flatPureMessages(msgs) {
+    const out = [];
+    for (const m of (msgs || [])) {
+      const text = String(m?.text || '').trim();
+      if (!text || this._isInternalControlLeak(text)) continue;
+      const role = m.role === 'user' ? 'user' : 'kurisu';
+      if (role === 'user') {
+        out.push({ role, text });
+        continue;
+      }
+      const bubbles = this._dedupeAutonomyBubbles(this._splitAutonomyBubbles(text, 5));
+      for (const bubble of bubbles) out.push({ role, text: bubble });
+    }
+    return out;
+  }
+
+  _createPureMessageBubbleEl(msg, opts = {}) {
+    const el = document.createElement('div');
+    const isUser = msg.role === 'user';
+    el.className = `pure-bubble is-on${isUser ? ' is-user' : ''}`;
+    const html = opts.draftHtml
+      || (msg.text ? this._escapeHTML(msg.text).replace(/\n/g, '<br>') : '…');
+    el.innerHTML = `<div class="pure-bubble-text${opts.isDraft ? ' is-draft' : ''}">${html}</div>`;
+    el.addEventListener('click', () => {
+      const stack = this._pureKurisuStackEl();
+      if (!stack) return;
+      const cards = [...stack.querySelectorAll('.pure-bubble:not(.leaving)')];
+      const idx = cards.indexOf(el);
+      if (idx >= 0) this._setPureBubbleFocus(idx);
+    });
+    return el;
+  }
+
+  _ensurePureBubbleGestures(stack) {
+    if (!stack || stack.dataset.gestureBound === '1') return;
+    stack.dataset.gestureBound = '1';
+    let touchY = null;
+    let lockUntil = 0;
+    const tryShift = (dir) => {
+      const now = Date.now();
+      if (now < lockUntil) return;
+      lockUntil = now + 280;
+      this._shiftPureBubbleFocus(dir);
+    };
+    stack.addEventListener('wheel', (e) => {
+      if (Math.abs(e.deltaY) < 8) return;
+      e.preventDefault();
+      tryShift(e.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
+    stack.addEventListener('touchstart', (e) => {
+      if (!e.touches?.[0]) return;
+      touchY = e.touches[0].clientY;
+    }, { passive: true });
+    stack.addEventListener('touchend', (e) => {
+      if (touchY == null) return;
+      const y = e.changedTouches?.[0]?.clientY;
+      const dy = (y == null ? 0 : y) - touchY;
+      touchY = null;
+      if (Math.abs(dy) < 36) return;
+      tryShift(dy < 0 ? 1 : -1);
+    }, { passive: true });
+  }
+
+  _shiftPureBubbleFocus(dir) {
+    const stack = this._pureKurisuStackEl();
+    if (!stack) return;
+    const cards = [...stack.querySelectorAll('.pure-bubble:not(.leaving)')];
+    if (cards.length < 2) return;
+    const cur = Number.isInteger(this._pureBubbleFocus) ? this._pureBubbleFocus : cards.length - 1;
+    const next = Math.max(0, Math.min(cards.length - 1, cur + (dir > 0 ? 1 : -1)));
+    if (next === cur) return;
+    this._setPureBubbleFocus(next);
+  }
+
+  _setPureBubbleFocus(index) {
+    const stack = this._pureKurisuStackEl();
+    if (!stack) return;
+    const cards = [...stack.querySelectorAll('.pure-bubble:not(.leaving)')];
+    if (!cards.length) return;
+    const focus = Math.max(0, Math.min(cards.length - 1, Number(index) || 0));
+    this._pureBubbleFocus = focus;
+    cards.forEach((card, idx) => {
+      const dist = Math.abs(idx - focus);
+      card.classList.remove('is-primary', 'is-near', 'is-far', 'is-hidden');
+      card.style.display = '';
+      card.classList.add('is-on');
+      if (dist > 2) {
+        card.classList.add('is-hidden');
+        return;
+      }
+      if (dist === 0) card.classList.add('is-primary');
+      else if (dist === 1) card.classList.add('is-near');
+      else card.classList.add('is-far');
+      card.dataset.depth = String(dist);
+    });
+  }
+
+  _refreshPureBubbleDepth(stack, opts = {}) {
+    if (!stack) return;
+    const cards = [...stack.querySelectorAll('.pure-bubble:not(.leaving)')];
+    const maxKeep = 3;
+    while (cards.length > maxKeep) {
+      const old = cards.shift();
+      if (!old) break;
+      old.classList.add('leaving');
+      setTimeout(() => old.remove(), 360);
+    }
+    const live = [...stack.querySelectorAll('.pure-bubble:not(.leaving)')];
+    if (!live.length) {
+      stack.classList.remove('visible');
+      return;
+    }
+    let focus = opts.focus;
+    if (!Number.isInteger(focus)) {
+      focus = Number.isInteger(this._pureBubbleFocus) ? this._pureBubbleFocus : live.length - 1;
+    }
+    if (opts.pinLatest) focus = live.length - 1;
+    focus = Math.max(0, Math.min(live.length - 1, focus));
+    this._setPureBubbleFocus(focus);
+    this._ensurePureBubbleGestures(stack);
+    stack.classList.add('visible');
+  }
+
+  _rebuildPureTurnCarousel(opts = {}) {
+    if (!this._isPureUi()) return;
+    const stack = this._pureKurisuStackEl();
+    if (!stack) return;
+    const draft = String(this._pureKurisuStreamDraft || '').trim();
+    let msgs = this._flatPureMessages(this.working).slice(-3);
+    if (draft) {
+      const last = msgs[msgs.length - 1];
+      if (last?.role === 'kurisu') {
+        msgs[msgs.length - 1] = { role: 'kurisu', text: draft, draft: true };
+      } else {
+        msgs.push({ role: 'kurisu', text: draft, draft: true });
+        msgs = msgs.slice(-3);
+      }
+    }
+    stack.innerHTML = '';
+    if (!msgs.length) {
+      stack.classList.remove('visible');
+      return;
+    }
+    for (const msg of msgs) {
+      stack.appendChild(this._createPureMessageBubbleEl(msg, {
+        isDraft: msg.draft === true,
+        draftHtml: msg.draft ? this._escapeHTML(msg.text).replace(/\n/g, '<br>') : undefined,
+      }));
+    }
+    this._refreshPureBubbleDepth(stack, { pinLatest: opts.pinLatest !== false });
+  }
+
+  _appendPureKurisuBubble(_text, opts = {}) {
+    if (!this._isPureUi()) return null;
+    this._rebuildPureTurnCarousel({ pinLatest: opts.pinLatest !== false });
+    return null;
+  }
+
+  _hydratePureDialogue() {
+    this._pureKurisuStreamDraft = null;
+    this._rebuildPureTurnCarousel({ pinLatest: true });
+  }
+
+  _showPureStackedBubble(text, opts = {}) {
+    const stack = this._pureKurisuStackEl();
+    const ki = document.getElementById('ki');
+    if (!stack) return;
+    const raw = String(text || '').trim();
+    if (opts.streaming) {
+      this._pureKurisuStreamDraft = raw;
+    } else {
+      this._pureKurisuStreamDraft = null;
+    }
+    this._rebuildPureTurnCarousel({ pinLatest: true });
+    if (raw) ki?.classList.add('talking');
+  }
+
+  _showSpeechBubble(text, opts = {}) {
+    const raw = String(text || '').trim();
+    if (!raw || this._isInternalControlLeak(raw)) return;
+    try { document.getElementById('sjp').textContent = ''; } catch (_) {}
+    if (this._isPureUi()) {
+      this._showPureStackedBubble(raw, opts);
+      if (this._speechBubbleHideTimer) {
+        clearTimeout(this._speechBubbleHideTimer);
+        this._speechBubbleHideTimer = null;
+      }
+      return;
+    }
+    const scn = document.getElementById('scn');
+    const sb = document.getElementById('sb');
+    const ki = document.getElementById('ki');
+    if (!scn || !sb) return;
+    const shown = opts.streaming ? raw.split('\n')[0] : raw;
+    scn.innerHTML = String(shown).replace(/\n/g, '<br>');
+    if (!opts.streaming && !sb.classList.contains('visible')) {
+      sb.classList.remove('visible');
+      void sb.offsetWidth;
+    }
+    sb.classList.add('visible');
+    ki?.classList.add('talking');
+    if (this._speechBubbleHideTimer) {
+      clearTimeout(this._speechBubbleHideTimer);
+      this._speechBubbleHideTimer = null;
+    }
+  }
+
+  _hideSpeechBubble() {
+    if (this._speechBubbleHideTimer) {
+      clearTimeout(this._speechBubbleHideTimer);
+      this._speechBubbleHideTimer = null;
+    }
+    document.getElementById('sb')?.classList.remove('visible');
+    document.getElementById('ki')?.classList.remove('talking');
+    // 纯窗口堆叠气泡不整清空，保持连续对话痕迹
+  }
+
+  _setPureCallChip(mode, detail = '') {
+    if (!this._isPureUi()) return;
+    const chip = document.getElementById('pure-call-chip');
+    const inner = chip?.querySelector('.pure-call-chip-inner');
+    const btn = document.getElementById('callbtn');
+    if (!chip || !inner) return;
+    const labels = {
+      listening: '正在听',
+      transcribing: '识别中',
+      sent: '已发送',
+      thinking: '她在想',
+      idle: '',
+    };
+    const m = String(mode || '').trim();
+    chip.classList.remove('is-listening', 'is-transcribing', 'is-sent', 'is-thinking');
+    if (!this.isLocalCallOn || !m || m === 'idle') {
+      chip.classList.remove('visible');
+      btn?.classList.remove('is-hearing');
+      return;
+    }
+    chip.classList.add(`is-${m}`, 'visible');
+    const base = labels[m] || m;
+    inner.textContent = detail ? `${base} · ${detail}` : `${base}…`;
+    if (m === 'listening') btn?.classList.add('is-hearing');
+    else btn?.classList.remove('is-hearing');
+  }
+
+  _dismissPureUserEcho(force = false) {
+    if (!force && this._pureUserEchoHoldUntilReply) return;
+    const el = document.getElementById('pure-user-echo');
+    if (this._pureUserEchoTimer) {
+      clearTimeout(this._pureUserEchoTimer);
+      this._pureUserEchoTimer = null;
+    }
+    this._pureUserEchoHoldUntilReply = false;
+    if (el) {
+      el.classList.remove('visible', 'is-call', 'is-sent', 'is-listening', 'is-transcribing');
+      el.innerHTML = '';
+    }
+  }
+
+  _renderPureUserEcho(raw, phase, label = '') {
+    const el = document.getElementById('pure-user-echo');
+    if (!el) return;
+    el.className = '';
+    el.classList.add('visible', `is-${phase}`);
+    if (phase === 'sent') el.classList.add('is-sent');
+    el.innerHTML = `<div class="pure-user-echo-card">${
+      label ? `<span class="pure-user-echo-label">${this._escapeHTML(label)}</span>` : ''
+    }<span class="pure-user-echo-body">${this._escapeHTML(raw || '…')}</span></div>`;
+  }
+
+  _appendPureUserBubble(_text, opts = {}) {
+    if (!this._isPureUi()) return null;
+    if (opts.draft) {
+      const phase = opts.phase === 'transcribing' ? 'transcribing' : 'listening';
+      this._renderPureUserEcho(_text || '…', phase, opts.label || (phase === 'transcribing' ? '识别中' : '正在听'));
+      this._setPureCallChip(phase);
+      return null;
+    }
+    this._rebuildPureTurnCarousel({ pinLatest: true });
+    return null;
+  }
+
+  _hydratePureUserStack() {
+    this._hydratePureDialogue();
+  }
+
+  _showPureUserEcho(text, opts = {}) {
+    if (!this._isPureUi()) return;
+    const raw = String(text || '').trim().replace(/\s+/g, ' ');
+    const phase = String(opts.phase || (opts.sent ? 'sent' : 'preview')).trim();
+    const labelMap = {
+      sent: '已发送',
+      listening: '正在听',
+      transcribing: '识别中',
+      preview: '',
+    };
+    const label = labelMap[phase] || labelMap.preview;
+
+    if (phase === 'listening' || phase === 'transcribing') {
+      this._renderPureUserEcho(raw || '…', phase, label);
+      this._setPureCallChip(phase);
+      return;
+    }
+
+    if (!raw) return;
+
+    this._dismissPureUserEcho(true);
+    this._rebuildPureTurnCarousel({ pinLatest: true });
+
+    const callMode = opts.callMode === true || this.isLocalCallOn;
+    if (phase === 'sent' && callMode) {
+      this._pureUserEchoHoldUntilReply = true;
+      this._setPureCallChip('sent', raw.length > 18 ? `${raw.slice(0, 18)}…` : raw);
+      if (opts.notify !== false) {
+        this._notify(`已发送：${raw.length > 28 ? `${raw.slice(0, 28)}…` : raw}`, 'green');
+      }
+    }
+  }
+
+  _clearPureBubbleStack() {
+    const stack = this._pureKurisuStackEl();
+    if (stack) {
+      stack.innerHTML = '';
+      stack.classList.remove('visible');
+    }
+    this._pureBubbleFocus = null;
+    this._pureKurisuStreamDraft = null;
+    if (this._pureUserEchoTimer) {
+      clearTimeout(this._pureUserEchoTimer);
+      this._pureUserEchoTimer = null;
+    }
+  }
+
+  _scheduleHideSpeechBubble(text) {
+    if (this._isPureUi()) {
+      if (this._speechBubbleHideTimer) {
+        clearTimeout(this._speechBubbleHideTimer);
+        this._speechBubbleHideTimer = null;
+      }
+      return;
+    }
+    const t = String(text || '');
+    const delay = Math.min(Math.max(2400, t.length * 70), 14000);
+    if (this._speechBubbleHideTimer) clearTimeout(this._speechBubbleHideTimer);
+    this._speechBubbleHideTimer = setTimeout(() => {
+      this._hideSpeechBubble();
+    }, delay);
+  }
+
   _appendStreamMsg() {
     const h=document.getElementById('ch');
     const d=document.createElement('div'); d.className='msg kurisu';
@@ -4692,6 +6332,10 @@ ${data.padDescription || ''}`);
   _appendChatMsg(role, text) {
     const cleaned = String(text || '').trim();
     if (!cleaned || this._isInternalControlLeak(cleaned)) return null;
+    if (this._isPureUi()) {
+      this._rebuildPureTurnCarousel({ pinLatest: true });
+      return null;
+    }
     const h=document.getElementById('ch');
     const d=document.createElement('div'); d.className=`msg ${role}`;
     const ts=new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'});

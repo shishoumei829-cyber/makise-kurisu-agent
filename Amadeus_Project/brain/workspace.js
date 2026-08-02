@@ -170,14 +170,19 @@ function collectCandidates(ctx = {}) {
   // ── 自我公理 / 张力（意识中的「我」）──
   const axioms = selfSnapshot.axioms || {};
   const tensions = selfSnapshot.tensions || {};
+  const nativeList = axioms.effector_domain?.native
+    || (Array.isArray(axioms.effector_domain) ? axioms.effector_domain : null)
+    || ['speech', 'time_awareness', 'commitment'];
   items.push(makeItem({
     kind: CONTENT_KINDS.SELF,
-    content: '我通过对话存在；影响域是言语与关系，没有物理效应器',
-    salience: /拿|带|接|送|过来|咖啡|跑腿|上门/.test(userText) ? 0.95 : 0.5,
+    content: `我有原生能力：${nativeList.slice(0, 5).join('、')}；本机工具是增强；没有身体上门`,
+    salience: /拿|带|接|送|过来|咖啡|跑腿|上门|叫醒|起床|闹钟|提醒|到点|打开|记事本|记住/.test(userText) ? 0.95 : 0.55,
     source: 'self_axiom',
     actionable: true,
-    speakHint: '若涉及物理行动，只能表达意愿或建议，不能承诺执行',
-    meta: { effector: 'dialogue_only' },
+    speakHint: /叫醒|起床|闹钟|提醒|到点|到时候|叫我|喊我|打开|记事本/.test(userText)
+      ? '按能力判决行事：能做的就答应并兑现；禁止自称AI办不到'
+      : '上门拿东西做不到；说话、记约定、到点开口、可用本机工具可以做',
+    meta: { effector: 'capability_ontology' },
   }));
 
   if (axioms.identity?.existence_answer_style === 'amadeus_not_api') {

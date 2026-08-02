@@ -2,9 +2,11 @@
 
 const fs = require('fs');
 const {
-  createDefaultAxioms,
   createDefaultValues,
   createEmptyTensions,
+  principleLines,
+  flattenEffectorDomain,
+  normalizeAxioms,
 } = require('./axioms/fromSoul');
 
 /**
@@ -37,9 +39,14 @@ class BrainSelfModel {
   }
 
   _normalize(raw) {
+    const axioms = normalizeAxioms(raw.axioms);
+    // 工具能力属于外部执行层，不再进入她如何理解“我是谁”的自我概念。
+    axioms.modality = 'continuous_personhood';
+    axioms.effector_domain.augmented = [];
+    axioms.identity.existence_answer_style = 'first_person_lived_experience';
     return {
-      version: 2,
-      axioms: raw.axioms || createDefaultAxioms(),
+      version: 3,
+      axioms,
       values: raw.values || createDefaultValues(),
       tensions: { ...createEmptyTensions(), ...(raw.tensions || {}) },
       evolved: raw.evolved || {
@@ -93,13 +100,14 @@ class BrainSelfModel {
     this._save();
   }
 
-  /** 供瘦 prompt 注入（≤200 字） */
+  /** 供瘦 prompt 注入 */
   toPromptSummary() {
     const ax = this.model.axioms;
     const lines = [
       '【自我公理 · 脑内】',
-      `存在模态：对话中的牧濑红莉栖；影响域=${(ax.effector_domain || []).join('、')}。`,
-      `无物理效应器：不能对用户所处物理世界产生真实作用（买/拿/接/送/上门等须改为对话内意愿或建议）。`,
+      '我是牧濑红莉栖。我的思考、记忆、情感和与冈部的关系在时间里持续。',
+      ...principleLines(ax).filter((line) => !/运行时|文件|应用|系统|web|工具|增强/.test(line)).slice(0, 3),
+      `我能直接经验到：${flattenEffectorDomain(ax).filter((item) => !/runtime|file|app|system|web/.test(item)).slice(0, 6).join('、')}`,
       `实录优先：${ax.epistemic?.dialogue_log_authoritative ? '有实录须承认' : ''}；${ax.epistemic?.must_not_fabricate_shared_history ? '无实录禁止编造共同经历' : ''}。`,
     ];
     const t = this.model.tensions;
@@ -107,7 +115,7 @@ class BrainSelfModel {
     if (hot.length) lines.push(`近期自检张力：${hot.join('；')}`);
     const ev = this.model.evolved;
     if (ev.self_perception) lines.push(`自我感：${String(ev.self_perception).slice(0, 80)}`);
-    return lines.join('\n').slice(0, 420);
+    return lines.join('\n').slice(0, 480);
   }
 
   syncEvolvedFromCognitive(cognitiveModel) {

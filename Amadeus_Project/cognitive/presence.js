@@ -167,7 +167,7 @@ function presenceToPromptLine(presence) {
     `注意到：${presence.notice}`,
     `此刻想：${presence.intent}`,
     `不想露出来：${presence.withhold}`,
-    '从这三点自然开口；句式每次可以不同。禁止套用「先嘴硬再关心」「先否认再转移再软化」等固定弧线；也不必每句都吐槽或都嘴硬。',
+    '从这三点自然开口；句式每次可以不同。你是独立的灵魂——不必套固定情绪弧线，也不必每句都吐槽或都嘴硬。',
   ];
   if (presence.agenda) {
     parts.splice(4, 0, `你带进来的：${presence.agenda}`);

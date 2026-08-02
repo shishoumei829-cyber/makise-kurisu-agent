@@ -7,15 +7,26 @@ const { extractSpeechActs } = require('./speechActs');
  */
 function checkCapability(speechActs, axioms = {}) {
   const violations = [];
-  const forbidden = new Set(axioms.effector_forbidden || ['physical_world']);
+  const forbidden = new Set(axioms.effector_forbidden || ['physical_world_manipulation']);
+
+  const isForbidden = (eff) => {
+    if (forbidden.has(eff)) return true;
+    if (eff === 'physical_world' || String(eff).startsWith('physical')) {
+      return forbidden.has('physical_world_manipulation') || forbidden.has('physical_world');
+    }
+    if (eff === 'user_location') {
+      return forbidden.has('user_location_presence') || forbidden.has('user_location');
+    }
+    return false;
+  };
 
   for (const act of speechActs) {
     for (const eff of act.effectors || []) {
-      if (forbidden.has(eff) || forbidden.has('physical_world') && eff.startsWith('physical')) {
+      if (isForbidden(eff)) {
         violations.push({
           id: 'effector.physical',
           severity: 'block',
-          rewriteHint: '我没有对用户物理环境的效应器；改为对话内的关心、建议或等待，不承诺亲自执行。',
+          rewriteHint: '没有身体上门；说话、记约定、到点开口、可用本机工具做得到。不要自称AI办不到。',
         });
         break;
       }
@@ -24,7 +35,7 @@ function checkCapability(speechActs, axioms = {}) {
       violations.push({
         id: 'effector.physical',
         severity: 'block',
-        rewriteHint: '不能承诺在用户所在物理空间行动；用口语短句表达意愿或建议即可。',
+        rewriteHint: '不能承诺亲自上门或伸手推醒；可以说到点主动开口或给出本机替代。',
       });
     }
   }
@@ -52,6 +63,13 @@ function checkEpistemic(speechActs, worldSnapshot = {}, axioms = {}) {
         id: 'dialogue.partner_unknown',
         severity: 'block',
         rewriteHint: '你们很熟，禁止装不认识冈部或「那还能是谁」。',
+      });
+    }
+    if (act.epistemicClaims?.includes('ai_identity') && axioms.identity?.is_character_not_assistant) {
+      violations.push({
+        id: 'identity.ai_tone',
+        severity: 'block',
+        rewriteHint: '禁止 AI/程序自称或「无法干涉现实」自我否定；你是牧濑红莉栖。',
       });
     }
   }

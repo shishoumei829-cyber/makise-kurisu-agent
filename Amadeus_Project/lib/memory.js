@@ -95,6 +95,7 @@ class MemorySystem {
 
   getTodayTimeline() {
     const today = new Date().toDateString();
+    this.timeline = Array.isArray(this.timeline) ? this.timeline : [];
     const entries = this.timeline.filter(t => {
       try { return new Date(t.time).toDateString() === today; } catch { return false; }
     });
@@ -176,6 +177,23 @@ class MemorySystem {
       })
       .filter(ev => ev.weight > MEMORY_THRESHOLD);
     this._scheduleSaveEvents();
+  }
+
+  /** 清理摄像头环境噪音（vision_presence/vision_motion），启动时自愈一次 */
+  purgeVisionNoise() {
+    const beforeEvents = this.events.length;
+    this.events = this.events.filter(ev => ev.type !== 'vision_presence' && ev.type !== 'vision_motion');
+    if (this.events.length !== beforeEvents) {
+      console.log(`[memory] 清理视觉环境噪音：移除 ${beforeEvents - this.events.length} 条事件，剩余 ${this.events.length} 条`);
+      this._scheduleSaveEvents();
+    }
+    const beforeTimeline = this.timeline.length;
+    this.timeline = this.timeline.filter(t => !/vision/.test(String(t.type || '')));
+    if (this.timeline.length !== beforeTimeline) {
+      console.log(`[memory] 清理 timeline 视觉噪音：移除 ${beforeTimeline - this.timeline.length} 条`);
+      this._scheduleSaveTimeline();
+    }
+    return { removedEvents: beforeEvents - this.events.length, removedTimeline: beforeTimeline - this.timeline.length };
   }
 
   getLongTermPadBias() {

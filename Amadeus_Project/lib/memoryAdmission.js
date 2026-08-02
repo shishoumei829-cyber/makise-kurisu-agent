@@ -4,7 +4,10 @@ const fs = require('fs');
 const path = require('path');
 
 const INTERNAL_CONTROL = /(?:^（想说话）|^（转移话题）|NO_CONFLICT|压[缩縮]为\s*[≤<]?\s*\d+\s*字标签|只输出结果|信息提取器|个人信息[:：]|NAME:.*TRAIT:)/i;
-const EXPLICIT_PROFILE = /(?:我(?:很|最|一直|通常|平时){0,2}(?:喜欢|讨厌|不喜欢|偏爱|习惯|从不|总是)|我的(?:名字|工作|职业|生日|家乡|专业|爱好)|我叫|请记住|记住我|以后叫我)/;
+const META_POLLUTION = /刚才那句不算|我重新说|微调|说话方式|对话模式|我们这边|已经(?:好好)?调整|语言更差|解释自己(?:的)?说话|作为(?:一个)?AI|语言模型|智能助手/;
+const EXPLICIT_PROFILE = /(?:我(?:很|最|一直|通常|平时){0,2}(?:喜欢|讨厌|不喜欢|偏爱|习惯|从不|总是)|我的(?:名字|工作|职业|生日|家乡|专业|爱好)|我叫|我是(?:做|学|来自)|请记住|记住我|以后叫我)/;
+const LIVED_EVENT = /(?:准备|打算|计划|决定|刚刚|刚才|回来|到了|出门|要去|去了|正在|今天|明天|今晚|健身|运动|上班|下班|吃饭|睡觉|生病|感冒|发烧|疼|痛|流血|鼻血|医院|吃药|累死|困死)/;
+const RELATIONAL_EVENT = /(?:喜欢我|爱我|想我|在乎我|陪我|抱抱|情侣|恋人|女朋友|男朋友|不理我|吵架|和好|吃醋|傲娇)/;
 const SUBSTANTIVE = /(?:我觉得|我认为|我发现|我最近|其实我|因为|所以|但是|不过|为什么|怎么回事|本质|原理|如果|假如|担心|害怕|难过|焦虑|计划|打算|决定)/;
 const CASUAL_COMMAND = /^(?:去|来|看|听|玩|刷|吃|喝|睡|走|打开|关掉|开始|继续|算了|随便|聊聊|说说)[^。！？!?]{0,8}(?:吧|啊|呀|呗|呢)?[。！？!?]?$/;
 
@@ -72,6 +75,7 @@ class MemoryAdmissionPolicy {
     const kind = source === 'user' ? 'user' : source === 'proactive' ? 'proactive' : 'assistant';
     const now = Number(meta.now) || Date.now();
     const newlyQuarantined = [];
+    const metaHit = META_POLLUTION.test(normalized);
     for (const fragment of textFragments(normalized)) {
       const entry = this.state.evidence[fragment] || { user: 0, assistant: 0, proactive: 0, explicitUser: 0, lastSeen: 0 };
       entry[kind] = Number(entry[kind] || 0) + 1;
@@ -81,6 +85,11 @@ class MemoryAdmissionPolicy {
       }
       entry.lastSeen = now;
       this.state.evidence[fragment] = entry;
+      if (metaHit && kind !== 'user') {
+        if (!this.state.quarantined[fragment]) newlyQuarantined.push(fragment);
+        this.state.quarantined[fragment] = now + 30 * 86400000;
+        continue;
+      }
       if (entry.proactive >= 2 && entry.user <= 1 && entry.explicitUser === 0) {
         if (!this.state.quarantined[fragment]) newlyQuarantined.push(fragment);
         this.state.quarantined[fragment] = now + 7 * 86400000;
@@ -110,11 +119,24 @@ class MemoryAdmissionPolicy {
     }
 
     const compactLength = normalized.length;
-    if (compactLength <= 9 || CASUAL_COMMAND.test(normalized)) {
+    const livedEvent = LIVED_EVENT.test(normalized);
+    const relationalEvent = RELATIONAL_EVENT.test(normalized);
+    if (livedEvent || relationalEvent) {
+      return this._decision(
+        'episodic',
+        relationalEvent ? 'relationship_event' : 'lived_event',
+        true,
+        false,
+        true,
+        true,
+        normalized,
+      );
+    }
+    if (compactLength <= 4 || CASUAL_COMMAND.test(normalized)) {
       return this._decision('working', 'short_casual_utterance', false, false, false, false, normalized);
     }
 
-    const substantive = SUBSTANTIVE.test(normalized) || compactLength >= 16;
+    const substantive = SUBSTANTIVE.test(normalized) || compactLength >= 10;
     if (substantive) return this._decision('episodic', 'substantive_user_turn', true, false, true, true, normalized);
     return this._decision('working', 'insufficient_evidence', false, false, false, false, normalized);
   }

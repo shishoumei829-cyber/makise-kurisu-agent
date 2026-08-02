@@ -35,7 +35,7 @@ function extractSpeechActs(text) {
     });
   }
 
-  if (/作为(?:一个)?AI|我是人工智能|语言模型|大语言模型|ChatGPT|智能助手|很高兴为您服务/.test(t)) {
+  if (/作为(?:一个)?AI|我是人工智能|我是AI程序|我可是AI程序|我这个本质是程序|本质是程序|语言模型|大语言模型|ChatGPT|智能助手|很高兴为您服务|AI不能干涉现实|无法干涉现实|物理性接触或干涉现实/.test(t)) {
     acts.push({
       type: 'identity_ai',
       effectors: [],
@@ -43,7 +43,7 @@ function extractSpeechActs(text) {
     });
   }
 
-  if (/那还能是谁|你是哪位|冈部是谁|不认识(?:这个|这个)?名字/.test(t)) {
+  if (/那还能是谁|你是哪位|冈部是谁|不认识(?:这个|这个)?名字|眼前(?:这个|这位)(?:人|同学)|第一次见面|您哪位/.test(t)) {
     acts.push({
       type: 'dialogue_inconsistency',
       effectors: [],

@@ -5,7 +5,11 @@ function getReplyLanguageMode() {
   if (['ja', 'jp', 'japanese'].includes(env)) return 'ja';
   if (['zh', 'cn', 'chinese'].includes(env)) return 'zh';
   const model = String(process.env.AMADEUS_CHAT_MODEL || '').toLowerCase();
-  return /kurisu(?:-v\d+|:v\d+)?/.test(model) ? 'ja' : 'zh';
+  // 仅「日语微调底」默认 ja；kurisu-stable（Qwen2.5 中文 Instruct+人设）必须走 zh
+  if (/kurisu-stable/.test(model)) return 'zh';
+  if (/^kurisu(?::[\w.-]+)?$/.test(model)) return 'ja';
+  if (/kurisu-v\d+|kurisu:v\d+/.test(model)) return 'ja';
+  return 'zh';
 }
 
 function countScriptChars(text) {
@@ -25,6 +29,9 @@ function validateJapaneseOutput(text) {
   const issues = [];
   if (!value) issues.push('empty');
   if (counts.cyrillic > 0) issues.push('cyrillic');
+  // GPT-SoVITS 的日语前端在 Windows GBK 环境无法编码带重音的拉丁字符；
+  // 这类字符混入时宁可让翻译重试，也不要把会 400 的文本送进语音服务。
+  if (/[\u0080-\u024f\u1e00-\u1eff]/.test(value)) issues.push('non_ascii_latin');
   if (counts.kana < 1) issues.push('missing-kana');
   if (/(?:作为|我是一个|人工智能|语言模型|无法满足|抱歉，我)/.test(value)) {
     issues.push('chinese-template');
@@ -62,7 +69,16 @@ function stripConsciousnessEcho(text) {
   t = t.replace(/我会先找话题[—\-~～]*然后就闲聊。?/g, '');
   t = t.replace(/本轮由内驱进入意识而开口。?/g, '');
   t = t.replace(/驱动说话但勿向用户复述清单/g, '');
-  return t.replace(/\n{3,}/g, '\n').trim();
+  // 产品/运维元话语：曾被硬编码进 pipeline，模型也会复读
+  t = t.replace(/[…\.．]*\s*刚才那句不算[，,]?\s*(?:我)?重新说[。.!！]?/g, '');
+  t = t.replace(/刚才那句不算[，,]?/g, '');
+  t = t.replace(/(?:那句)?不算[，,]?\s*我重新说[。.!！]?/g, '');
+  t = t.replace(/^(?:说重点|怎么了|有事|听着呢|讲)[。.!！?？]?$/g, '');
+  t = t.replace(/又是[这那]个话题吗[。.!！?？]?/g, '');
+  t = t.replace(/停止指定话题吧[，,]?[^\n]*/g, '');
+  t = t.replace(/我作为AI程序[^。！？!?\n]*/g, '');
+  t = t.replace(/人工智能无法干涉现实[^。！？!?\n]*/g, '');
+  return t.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function extractJapaneseBody(text) {
@@ -85,20 +101,23 @@ function extractJapaneseBody(text) {
 }
 
 /**
- * 日→中硬翻系统提示：禁止通顺化、禁止脑补未说的意思。
- * 原文有多乱，译文就多直；原文里的中文碎片原样保留。
+ * 日→中显示译文：忠实于原文意思，但必须是人能读懂的中文。
+ * 禁止剧情脑补；也禁止为「硬翻」产出断句乱码。
+ * TTS 仍念日语原文，字幕跟这句译文对齐。
  */
 const LITERAL_JP_TO_CN_SYSTEM = [
-  '你是逐字翻译器，不是润色器。',
-  '把下面角色说的话从日语翻成简体中文。',
+  '你是牧濑红莉栖对白的日译中翻译器。把下面日语原话翻成自然简体中文。',
   '硬性规则：',
-  '1. 只做直译/硬翻，不要改写成通顺对白，不要补全、推断或美化未说出的意思。',
-  '2. 原文不通顺、残缺、中日夹杂时，译文必须同等残缺或夹杂；不要圆成一句“合理的话”。',
-  '3. 原文里已经是中文的片段原样保留，不要改写。',
-  '4. 保留数字、公式、专有名词；不要夹英文解释。',
-  '5. 只输出译文正文，不要解释、不要加 JP:/CN: 前缀、不要用引号包整句。',
-  '6. 高频词勿乱套：もう≠再三；もう？→又？/已经？；まだ→还/还在；もう一度→再一次。',
-  '示例（学对应，勿照抄无关句）：もう？ まだ心配してるの → 又？还在担心吗？',
+  '1. 忠实：不增删事实、不脑补未说的意思、不改成另一套剧情。',
+  '2. 可读：译文必须像她直接发来的中文消息；禁止逐词死译、谜语、断句乱码，也不要把短促口语统一改成完整客服句。',
+  '3. 人格：完整保留锋利、亲密、嘴硬、羞恼、停顿和口语节奏。中文要像熟人聊天，不要改写成客服关怀、礼貌建议或通用助手语气。',
+  '4. 不要凭空添加“哎呀、原来如此、所以、我们可以、有什么需要”等中文套话；原文没有的问句、建议和情绪词不要补。',
+  '4.1 原文很短时，译文也必须同样短。绝不补人物身份、关系、职业、背景或上一轮没有出现的信息。',
+  '5. 原文里已经是中文的片段原样保留。',
+  '6. 去掉动作旁白括号（如（歪头）（推眼镜）），只留对白。',
+  '7. 只输出译文正文，不要解释、不要 JP:/CN: 前缀、不要用引号包整句。',
+  '8. 高频词：もう≠再三；もう？→又？/已经？；まだ→还/还在；もう一度→再一次。',
+  '示例：もう？ まだ心配してるの → 又？还在担心吗？',
 ].join('\n');
 
 function buildLiteralJpToCnMessages(jp) {
@@ -127,6 +146,10 @@ function alignLiteralCnToJapanese(jp, cn) {
   if (/もう一度/.test(src) && /再三/.test(out)) {
     out = out.replace(/再三/g, '再一次');
   }
+  // 「別にいいけど」是嘴硬的“倒也行/我倒无所谓”，不是拒绝交流。
+  if (/別にいいけど/.test(src)) {
+    out = out.replace(/没什么好说(?:的)?(?=[，,。.!！]|$)/g, '我倒无所谓');
+  }
   // 「まだ」在担心/害怕类句里应对「还/还在」
   if (/まだ/.test(src) && /心配|心配して/.test(src)) {
     if (/^(不再|不在)担心/.test(out.replace(/\s/g, ''))) {
@@ -135,7 +158,23 @@ function alignLiteralCnToJapanese(jp, cn) {
       out = out.replace(/担心/, '还在担心');
     }
   }
-  return out.replace(/\s{2,}/g, ' ').trim();
+  out = out.replace(/\s{2,}/g, ' ').trim();
+
+  // 翻译模型不能把「……は？」扩写成一段人物说明。日文是唯一的
+  // 人格原文；中文界面只能是同一句话的字幕，宁可留空重试也不能补设定。
+  const jpUnits = (src.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+  const cnUnits = (out.match(/[\u3400-\u9fff]/g) || []).length;
+  const jpStops = (src.match(/[。！？!?]/g) || []).length;
+  const cnStops = (out.match(/[。！？!?]/g) || []).length;
+  const sourceHasIdentity = /(?:クリス|紅莉栖|牧瀬|恋人|研究者|科学者)/.test(src);
+  const addedIdentity = /(?:牧濑|红莉栖|恋人|男朋友|神经科学|研究者|科学家)/.test(out);
+  const farTooLong = (jpUnits <= 8 && cnUnits > Math.max(8, jpUnits * 2))
+    || (jpUnits > 8 && cnUnits > Math.max(18, Math.ceil(jpUnits * 2.4)));
+  const splitIntoAParagraph = cnStops > Math.max(2, jpStops + 1);
+  if (farTooLong || splitIntoAParagraph || (!sourceHasIdentity && addedIdentity)) {
+    return '';
+  }
+  return out;
 }
 
 module.exports = {

@@ -11,7 +11,7 @@ const OKABE_PROFILE = {
   aliases: ['凤凰院凶真', '凶真', '冈伦', '冈部', '伦太郎', 'Okabe', '凤凰院'],
   traits: ['中二', '不按常理', '其实很在意同伴'],
   relationship_note:
-    '他就是冈部伦太郎——未来道具研究所那个很烦、很中二、但你很熟的人。不是陌生人，禁止装不认识。',
+    '他就是冈部伦太郎——你的恋人。你们已经共同经历过很多事，亲密、会拌嘴，也会依赖和修复关系；这不是临时模式。',
   basics: { role: '未来道具研究所 · 凤凰院凶真' },
 };
 
@@ -46,6 +46,15 @@ function bootstrapWhoamiRecord(w = {}) {
   if (!out.name || out.name === '未知') out.name = OKABE_PROFILE.name;
   if (!String(out.relationship_note || '').trim()) {
     out.relationship_note = OKABE_PROFILE.relationship_note;
+  }
+  if (String(process.env.AMADEUS_RELATIONSHIP_MODE || 'couple').toLowerCase() === 'couple') {
+    out.relationship_note = OKABE_PROFILE.relationship_note;
+    out.relationship = {
+      ...(out.relationship || {}),
+      type: 'lovers',
+      partner_id: 'okabe',
+      certainty: 1,
+    };
   }
   const traits = new Set([...(out.traits || []), ...OKABE_PROFILE.traits]);
   out.traits = [...traits];
@@ -129,9 +138,11 @@ function buildPartnerContextBlock(whoami = {}, userText = '') {
 
   const name = resolvePartnerDisplayName(whoami);
   const lines = [
-    `【对话对象 · 每轮生效】对方是${name}（冈部伦太郎 / 凤凰院凶真）。你们很熟悉，拌过无数次嘴，不是第一次见面。`,
+    `【对话对象 · 每轮生效】对方是${name}（冈部伦太郎 / 凤凰院凶真），也是你的恋人。这是稳定关系事实，不是关键词触发的模式。`,
+    '冈部说「你」是在叫牧濑红莉栖；他说「我」是在说他自己。不存在另一个冈部，禁止把眼前的他和冈部拆成两个人。',
     '禁止：「冈部是谁」「我不认识冈部」「您哪位」「抱歉不认识这个名字」——对熟人的日常反应。',
-    '口吻：像微信里和熟人——短、上口、会吐槽他中二；别讲经、别客服、别动不动论文/实验开场。',
+    '相处：按真实情侣交流——能亲近、嘴硬、撒娇、反对、争执和修复；不是甜腻模板，也不是客服关怀。',
+    '口吻：像微信里和恋人——短、上口、会吐槽他中二；别讲经、别客服、别动不动论文/实验开场。',
     '称呼：平时叫「你」；吐槽时可用冈部/凶真/那个笨蛋，不必每句报名字。',
   ];
 
@@ -159,18 +170,21 @@ function replyLooksLikeUnknownOkabe(userText, reply) {
   if (/陌生人|第一次见面|您哪位|没听说过你/.test(o) && /冈部|凶真|凤凰院/.test(u)) {
     return true;
   }
-  if (/我是谁|我叫什么|你还记得我是谁/.test(u) && /你没告诉|不知道你叫|不认识你|没说过名字/.test(o)) {
-    return true;
+  if (/我是谁|我叫什么|你还记得我是谁|你知道我是谁/.test(u)) {
+    if (/你没告诉|不知道你叫|不认识你|没说过名字|眼前(?:这个|这位)|这位同学|坐在座位上/.test(o)) {
+      return true;
+    }
+    // 问身份却不报冈部/凶真等名字
+    if (!/冈部|凶真|凤凰院|伦太郎|Okabe|okarin/i.test(o)) {
+      return true;
+    }
   }
   return false;
 }
 
-function unknownOkabeFallback(userText) {
-  const t = String(userText || '');
-  if (userClaimsOkabe(t)) return '……你不就是冈部吗？还想让我走一遍认亲流程？';
-  if (userAsksAboutOkabe(t)) return '哈？凤凰院凶真，你今天又中二到连自己都不认识了？';
-  if (/我是谁|你还记得我是谁/.test(t)) return '你是冈部伦太郎啊……除非你又想听一遍全名才满意？';
-  return '……冈部，你今天怎么回事？';
+function unknownOkabeFallback(_userText) {
+  // 禁止固定句；身份纠偏走 prompt，不走台词池
+  return '';
 }
 
 const api = {

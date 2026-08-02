@@ -18,6 +18,7 @@ const EXPRESSION_PRESETS = [
   { id: 'cold', label: '冷淡', pad: { P: -0.45, A: -0.15, D: 0.35 } },
   { id: 'sad', label: '低落', pad: { P: -0.35, A: -0.2, D: -0.15 } },
   { id: 'excited', label: '兴奋', pad: { P: 0.35, A: 0.65, D: 0.15 } },
+  { id: 'shocked', label: '震惊', pad: { P: 0.05, A: 0.78, D: -0.2 } },
 ];
 
 const SPECIAL_DATES = new Map([

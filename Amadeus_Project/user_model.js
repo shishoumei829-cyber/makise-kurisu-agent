@@ -92,9 +92,11 @@ class UserModel {
         updated_at: 0,
       },
       relationship: {
-        stage: 'stranger', // stranger, acquaintance, friend, close, intimate
-        trust_level: 0.5,  // 0-1
-        closeness: 0.5,    // 0-1
+        stage: 'lover', // 当前产品关系事实：恋人，不是随分数切换的模式
+        type: 'lovers',
+        partner_id: 'okabe',
+        trust_level: 0.84,  // 0-1
+        closeness: 0.88,    // 0-1
         history: [],       // 关系事件历史
       },
       pending_confirmations: [], // 待确认的推测
@@ -136,6 +138,7 @@ class UserModel {
       friend: '朋友',
       close: '亲密朋友',
       intimate: '特别亲密的人',
+      lover: '恋人',
     };
     parts.push(`你们的关系：${stageNames[m.relationship.stage] || '未知'}`);
     
@@ -170,6 +173,22 @@ class UserModel {
     const closeness = Math.max(0, Math.min(1, (r + 1) / 2));
     const trust = Math.max(0, Math.min(1, 0.5 + r * 0.5));
     const m = this.model.relationship;
+    if (String(process.env.AMADEUS_RELATIONSHIP_MODE || 'couple').toLowerCase() === 'couple') {
+      m.type = 'lovers';
+      m.partner_id = 'okabe';
+      m.stage = 'lover';
+      m.closeness = Math.max(0.82, closeness);
+      m.trust_level = Math.max(0.78, trust);
+      if (!m.history.some((item) => item?.type === 'relationship_premise')) {
+        m.history.push({
+          type: 'relationship_premise',
+          text: '牧濑红莉栖与冈部伦太郎是恋人',
+          at: Date.now(),
+        });
+      }
+      _save(this.model);
+      return;
+    }
     m.closeness = closeness;
     m.trust_level = trust;
     if (r > 0.55) m.stage = 'intimate';
@@ -208,6 +227,24 @@ class UserModel {
       .filter((item) => !hit(JSON.stringify(item)));
     _log = _log.filter((item) => !hit(item.text));
     _save(this.model);
+  }
+
+  ensureCoupleRelationship() {
+    const m = this.model.relationship;
+    m.type = 'lovers';
+    m.partner_id = 'okabe';
+    m.stage = 'lover';
+    m.closeness = Math.max(0.82, Number(m.closeness) || 0);
+    m.trust_level = Math.max(0.78, Number(m.trust_level) || 0);
+    if (!m.history.some((item) => item?.type === 'relationship_premise')) {
+      m.history.push({
+        type: 'relationship_premise',
+        text: '牧濑红莉栖与冈部伦太郎是恋人',
+        at: Date.now(),
+      });
+    }
+    _save(this.model);
+    return this.model.relationship;
   }
 }
 

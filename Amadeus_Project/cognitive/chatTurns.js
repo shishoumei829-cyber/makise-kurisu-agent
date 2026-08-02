@@ -137,7 +137,9 @@ function fitSystemForDialogue(systemPrompt, dialogue, maxChars) {
   const budget = Math.max(1200, Number(maxChars) || 6000);
   const turns = Array.isArray(dialogue) ? dialogue : [];
   const histEst = turns.reduce((s, m) => s + String(m?.content || '').length, 0);
-  const reserve = Math.min(Math.max(400, Math.floor(budget * 0.42)), histEst + 280);
+  // 短社交轮也要保住人格锚点；旧的 42% 固定预留会在 2600 字预算下
+  // 把 system 压到约 1500 字，日语微调模型只看到半截人格而退回客服腔。
+  const reserve = Math.min(Math.max(300, Math.floor(budget * 0.24)), histEst + 280);
   const sysCap = Math.max(900, budget - reserve);
   return _fitPromptToBudget(systemPrompt, '', sysCap);
 }

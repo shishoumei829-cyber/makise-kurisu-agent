@@ -9,11 +9,15 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
+CONFIG_PATH = Path(
+    os.environ.get("AMADEUS_FINETUNE_CONFIG")
+    or (Path(__file__).resolve().parent / "config.json")
+)
 
 
 def main() -> int:
@@ -28,10 +32,12 @@ def main() -> int:
         print(f"[merge] 适配器目录不存在: {adapter_dir}", file=sys.stderr)
         return 1
 
-    base_model = cfg["base_model"]
+    base_model = cfg.get("local_base_model") or cfg["base_model"]
     if meta_path.exists():
         with open(meta_path, "r", encoding="utf-8") as f:
-            base_model = json.load(f).get("base_model", base_model)
+            trained_base = json.load(f).get("base_model", base_model)
+            if not cfg.get("local_base_model"):
+                base_model = trained_base
 
     try:
         import torch

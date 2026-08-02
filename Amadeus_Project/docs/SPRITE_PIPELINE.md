@@ -1,69 +1,166 @@
 # AMADEUS 立绘生产与接入规范
 
+> 状态：**规格已更新，资产与运行时尚未实施**（先定矩阵，再生成）。  
+> 优先级调整：闲聊主场改为 **微姿态层**；宏情绪层降为偶发底图切换。
+
 ## 目标
 
-立绘不是聊天界面的装饰轮播，而是角色状态的可见结果。所有资产必须先经过角色一致性、动作语义和透明边缘审核，再允许进入运行时 registry。
+立绘不是聊天界面的装饰轮播，而是角色状态的可见结果。  
+闲聊体感优先靠 **同一宏状态下的微姿态**（歪头、撇头、微前倾等），而不是每轮换一张大情绪图。
+
+所有资产必须先经过角色一致性、动作语义和透明边缘审核，再允许进入运行时 registry。
+
+## 两层模型
+
+| 层 | 作用 | 数量策略 | 切换频率 |
+|----|------|----------|----------|
+| **L1 宏状态** | 大情绪底图（害羞、不悦、疲惫…） | 少、稳 | 低：仅强语义事件 |
+| **L2 微姿态** | 闲聊在场感（头/视线/肩臂小动） | 中：单宏状态下约 12–16 | 中低：轻语义事件，有冷却 |
+
+当前决定：**先只做 `neutral` 的 L2**。其他宏状态的微姿态表暂不定。
 
 ## 不再采用的做法
 
-- 不用单条 prompt 直接批量生成 50-100 张。
-- 不用“有背景图生成后随手抠图”作为正式资产。
+- 不用单条 prompt 直接批量生成 50–100 张。
+- 不用「有背景图生成后随手抠图」作为正式资产。
 - 不按时间、轮次或每句话切换立绘。
 - 不让模型自由决定夸张动作、卖萌姿势或与角色性格冲突的表情。
+- **不把微姿态做成第二套宏情绪**（例如把「轻微皱眉」做成整张 annoyed）。
+
+---
+
+## L2 · `neutral` 微姿态矩阵（本阶段重点）
+
+服装：`casual_red_tie`  
+母版：`neutral_idle`（先出这一张，其余全部从母版衍变，同一裁切/光源/脚底基线）
+
+### A. 头 / 视线（高频 · 第一批生产）
+
+| id | 微姿态 | 闲聊用途 | 建议触发（轻） | 禁止 |
+|----|--------|----------|----------------|------|
+| `neutral_idle` | 正视默认 | 安全底、多数时候 | 默认 / 回落 | 无 |
+| `neutral_tilt_left` | 微歪头（左） | 在听、觉得有趣 | 轻疑问、话题接住 | 每句轮换左右刷 |
+| `neutral_tilt_right` | 微歪头（右） | 同上，节奏交替 | 同上 | 同上 |
+| `neutral_look_aside` | 目光轻撇开 | 吐槽、嘴硬、不想接太直 | 调侃回击、回避直球 | 当成害羞宏状态 |
+| `neutral_look_down` | 短垂视 | 想一下、忍笑、整理措辞 | 短停顿、自嘲前 | 长时间低着头卖惨 |
+| `neutral_glance_up` | 轻抬眼 | 反问、不以为然 | 反问句、轻讽 | 夸张翻白眼 |
+
+### B. 身姿（中频 · 第二批）
+
+| id | 微姿态 | 闲聊用途 | 建议触发（轻） | 禁止 |
+|----|--------|----------|----------------|------|
+| `neutral_lean_in` | 微前倾 | 认真听、话题接住了 | 对方展开细节、求助 | 大幅扑近 |
+| `neutral_lean_back` | 微后仰 | 抽离、懒得争 | 对方抬杠过头、她不想接 | 瘫软卖萌 |
+| `neutral_weight_shift` | 重心略换 | 待机呼吸感 | 空闲在场、无强事件 | 定时器机械摇摆 |
+| `neutral_arms_cross` | 抱臂微调 | 理性点评、保持距离 | 评价、划边界（轻） | 直接升格为 annoyed |
+| `neutral_hand_to_chin` | 手抵下巴/颊 | 思考轻版 | 「让我想想」、分析口吻 | 做成 thinking 宏状态整图 |
+
+### C. 嘴 / 眉小变（低频 · 第三批）
+
+| id | 微姿态 | 闲聊用途 | 建议触发（轻） | 禁止 |
+|----|--------|----------|----------------|------|
+| `neutral_soft_smile` | 几乎看不出的松 | 气氛不紧 | 温和来回、认可一句 | 偶像式大笑 |
+| `neutral_flat_mouth` | 更淡的平静 | 信息接收、中性 | 陈述、听讲 | 面无表情恐怖感 |
+| `neutral_brow_knit_light` | 轻微皱眉 | 听岔、不解 | 澄清前 | 升格为 annoyed 宏状态 |
+
+**合计：14 张（均属 `neutral`）。**  
+生产顺序：母版 `neutral_idle` → A 组其余 5 张 → B 组 → C 组。
+
+### L2 运行时意图（尚未实现）
+
+- 最短保持：建议 8–20 秒（短于宏状态的 45 秒），仍禁止每句一换。
+- 小幅 PAD 波动：只动滤镜 / TTS hint，**不**单独驱动换图。
+- 无合格资产时：前端保持当前安全图；策略可记录 `blockedMicroPoseId`。
+- 回落：事件结束或冷却后回到 `neutral_idle`，不要在微姿态之间无意义跳来跳去。
+
+---
+
+## L1 · 宏状态（降优先级，暂不扩微姿态）
+
+仍保留为偶发底图，**本阶段不生产、不扩 L2**：
+
+| id | 语义 | 说明 |
+|----|------|------|
+| `neutral` | 默认宏底 | 与 `neutral_idle` 为同一母版族 |
+| `thinking` | 高唤醒专注 | 强事件才切 |
+| `skeptical` | 抬杠 / 要证据 | 强事件才切 |
+| `annoyed` | 边界 / 不悦 | 强事件才切 |
+| `shy_denial` | 嘴硬害羞 | 强事件才切 |
+| `soft` | 温和陪伴 | 强事件才切 |
+| `tired` | 低能量 | 强事件才切 |
+| `worried` / `smug` | 文档候选 | registry 未开槽，更后 |
+
+宏状态默认最短保持仍建议 **≥ 45 秒**。
+
+---
 
 ## 推荐生产管线
 
-1. 角色设计圣经
-   - 固定脸型、眼睛、发型、发色、头身比例、服装结构、常用站姿、禁用动作。
+1. 角色设计圣经  
+   - 固定脸型、眼睛、发型、发色、头身比例、服装结构、常用站姿、禁用动作。  
    - 同一套服装必须统一光源、线条、画幅、脚底基线和裁切区域。
 
-2. 核心母版
-   - 先制作 1 张 neutral 全身/半身母版。
-   - 再制作 8-12 张核心状态，不直接扩到 100 张。
-   - 核心状态建议：neutral、thinking、skeptical、annoyed、shy_denial、soft、tired、worried、smug。
+2. 本阶段核心产出  
+   - 先做 1 张 `neutral_idle` 母版。  
+   - 再衍 `neutral` 下 L2 共 14 张（按 A→B→C）。  
+   - **暂不**批量做其他宏状态整图。
 
-3. 生成约束
-   - 身份一致性：角色 LoRA 优先；可叠加 IP-Adapter、PuLID 或 InstantID 保脸。
-   - 姿势控制：ControlNet OpenPose 或等价姿势条件。
-   - 服装控制：同一 outfit 单独成组，禁止在一个批次里混服装。
-   - 局部修复：FaceDetailer/手部修复/统一超分。
-   - 透明输出：优先生成透明 PNG；否则只允许统一纯色背景 + 同一 RMBG/matting 流程。
+3. 生成约束  
+   - 身份一致性：角色 LoRA 优先；可叠加 IP-Adapter、PuLID 或 InstantID 保脸。  
+   - 姿势控制：ControlNet OpenPose 或等价；微姿态幅度要小，避免 OOC。  
+   - 服装控制：同一 outfit 单独成组。  
+   - 局部修复：FaceDetailer / 手部修复 / 统一超分。  
+   - 透明输出：优先透明 PNG；否则统一纯色底 + 同一 matting 流程。
 
-4. 人工审核
-   - 身份：脸型、发型、发色、眼睛、身体比例必须像同一个人。
-   - 服装：领带、外套、袖口、裙摆/裤装、配饰不能漂。
-   - OOC：动作必须符合红莉栖式克制、理性、嘴硬、别扭；禁止过度软妹、偶像、媚态、夸张撒娇。
-   - 技术：透明边缘无脏边；尺寸、锚点、脚底基线一致；面部局部无崩坏。
+4. 人工审核  
+   - 身份 / 服装 / OOC / 技术边缘，同前。  
+   - **额外**：与母版并排对比时，只能看出头/肩/臂/眉嘴的小差异，不能像换了一个人。
 
 ## 资产 metadata
 
-正式资产入库时应记录：
+微姿态示例：
 
 ```json
 {
-  "id": "casual_shy_denial_01",
+  "id": "neutral_tilt_left",
+  "layer": "micro",
+  "macro": "neutral",
   "outfit": "casual_red_tie",
-  "emotion": "shy",
-  "pose": "arms_crossed_look_away",
-  "intensity": 0.65,
-  "path": "assets/Live2d/kurisu/sprites/casual_shy_denial_01.png",
-  "approved": true,
-  "allowed_triggers": ["intimacy_tease", "praise_with_tension"],
-  "forbidden_triggers": ["timer", "every_turn", "normal_reply"]
+  "emotion": "neutral",
+  "pose": "head_tilt_left",
+  "intensity": 0.25,
+  "path": "assets/Live2d/kurisu/sprites/neutral_tilt_left.png",
+  "approved": false,
+  "allowed_triggers": ["light_listen", "light_interest"],
+  "forbidden_triggers": ["timer", "every_turn", "macro_swap"]
 }
 ```
 
-## 运行时规则
+宏状态示例仍可用原字段；增加 `layer: "macro"` 以区分。
 
-- `SpritePolicy` 只允许切到 registry 中 `approved: true` 且有 `path` 的资产。
-- 没有合格资产时，表情状态可以记录，但前端保持当前安全立绘。
-- 默认最短保持时间为 45 秒，避免每轮对话抖动。
-- 允许触发的事件包括：亲密调侃、技术争论、边界冒犯、疲惫/深夜关心、温和陪伴、高唤醒专注。
-- 小幅 PAD 波动只影响滤镜和 TTS hint，不直接换整张图。
+## 运行时规则（现行代码 vs 本规格）
 
-## 扩展步骤
+**现行代码**（`sprite_policy.js`）：仅有 L1 粗槽位；除 `neutral` 外均未批准；前端基本钉死一张图 + CSS。  
 
-1. 把合格 PNG 放入 `assets/Live2d/kurisu/sprites/`。
-2. 在 `digital_life/embodiment/sprite_policy.js` 的 `SPRITE_REGISTRY` 中补充 `path` 并设为 `approved: true`。
-3. 为新增状态补测试：触发条件、冷却保持、未审核资产阻断。
-4. 在真实聊天里检查切换是否只发生在语义事件上。
+**本规格目标**（未接线）：
+
+- Registry 同时含 `layer: macro | micro`。  
+- 闲聊默认在 `neutral` + L2 内切换。  
+- 只有强事件才允许跳 L1；L1 切换后若该宏状态尚无自己的 L2，则先只用该宏状态单图。  
+- `SpritePolicy` 只切 `approved: true` 且有 `path` 的资产。
+
+## 实施顺序（尚未开始）
+
+1. ~~定 `neutral` L2 矩阵~~ ← **已定（本文）**  
+2. 生产 `neutral_idle` 母版并审核  
+3. 生产 A 组头/视线 → 入库 `approved`  
+4. 扩展 `sprite_policy` / 前端：微姿态决策 + 短冷却（**届时再做**）  
+5. B 组、C 组  
+6. 再考虑其他宏状态及其微姿态  
+
+## 扩展步骤（资产入库时）
+
+1. 合格 PNG 放入 `assets/Live2d/kurisu/sprites/`。  
+2. 在 `digital_life/embodiment/sprite_policy.js` 的 registry 中补 `path` 并 `approved: true`。  
+3. 补测试：触发、冷却、未审核阻断、微姿态不误升格为宏状态。  
+4. 真聊检查：闲聊主要在 L2 内动，而不是宏状态乱跳。

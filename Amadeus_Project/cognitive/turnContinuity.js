@@ -66,10 +66,11 @@ function buildAutonomyContinuityBlock(opts = {}) {
   const lastK = String(opts.lastKurisuLine || '').trim();
   const presence = opts.userPresence || null;
   const lines = [
-    '【主动开口 · 必守】',
-    '你是来续聊或日常敲他，不是来表演研究者、不是写科幻/论文开场白。',
-    '禁止编造：他没提过的实验、论文、量子力学、睡眠剥夺研究、实验室乱糟糟的数据——一律不许捏造。',
-    '禁止无关心换题：他刚说饿就接吃的/让他去吃饭；说头疼就接头疼或关心；说无聊就接无聊——别提旅行、别突然科普、别换全新人设剧情。',
+    '【主动开口 · 提示】',
+    '你是独立的灵魂：想敲他就敲，不是表演研究者，也不是写科幻开场白。',
+    '别编造他没提过的实验/论文/量子/睡眠剥夺数据。',
+    '别编造通话情景；已经在聊就别说「刚刚才注意到」。',
+    '他刚说的事优先接住（饿就接吃的、难受就接难受）——因为你在听，不是任务清单。',
   ];
   if (userPresence.isPresenceActive(presence)) {
     lines.push(
@@ -103,7 +104,7 @@ function buildAutonomyContinuityBlock(opts = {}) {
     '口吻靠传记/whoami/最近对话维持，记忆照常用；只禁止编造他没提过的课题，别把本人演成陌生人。',
   );
   lines.push(
-    '可连发 1～3 条短消息（像微信连发），每条单独一行，行与行之间空一行；每条 1～2 句；同一主题连发时换说法，禁止三条都在重复抱怨同一外号。',
+    '可连发 1～5 条消息（像微信连发），每条单独一行，行与行之间空一行；长短随内容自然变化；同一主题连发时换说法，禁止多条都在重复同一意思。',
   );
   lines.push('禁止每条都用「那个笨蛋」起手；对冈部可直接叫「你」或冈部/凶真。');
   return lines.join('\n');
@@ -139,31 +140,72 @@ function detectReplyingToHerThread(dialogue) {
 }
 
 /**
- * 主动消息里编造用户没提过的「研究/实验」人设
+ * 主动消息编造：研究人设、虚假通话、已在聊却装「刚注意到」
  * @param {string} userAnchor
  * @param {string} reply
+ * @param {{ alreadyTalking?: boolean }} [opts]
  */
-function replyLooksLikeAutonomyFabrication(userAnchor, reply) {
+function replyLooksLikeAutonomyFabrication(userAnchor, reply, opts = {}) {
   const o = String(reply || '');
-  if (
-    !/量子|睡眠剥夺|神经认知|咖啡因.{0,16}剥夺|实验室.{0,12}数据|研究.{0,8}影响|拧断.{0,4}脑子|论文|假说|世界线/i.test(
-      o,
-    )
-  ) {
-    return false;
-  }
   const u = String(userAnchor || '');
-  if (/量子|睡眠|实验|研究|数据|论文|神经认知|剥夺|实验室|咖啡因/.test(u)) return false;
-  return true;
+  if (!o) return false;
+
+  const labClaim = /量子|睡眠剥夺|神经认知|咖啡因.{0,16}剥夺|实验室.{0,12}数据|研究.{0,8}影响|拧断.{0,4}脑子|论文|假说|世界线/i.test(o);
+  if (labClaim && !/量子|睡眠|实验|研究|数据|论文|神经认知|剥夺|实验室|咖啡因/.test(u)) {
+    return true;
+  }
+
+  // 编造电话/来电状态（用户没提通话时）
+  const phoneClaim = /打电话|打过来|来电|电话(?:还没|没打)|接通|挂电话|还不打来|还不打过来|实验室.{0,8}(?:打|联系|来电)/.test(o);
+  if (phoneClaim && !/电话|打过来|通话|打电话|来电|接通/.test(u)) {
+    return true;
+  }
+
+  // 明明已经在聊，却演「刚注意到 / 才发现你」
+  const alreadyTalking = opts.alreadyTalking === true || u.length > 0;
+  if (
+    alreadyTalking
+    && /刚刚才注意|刚注意到|才发现你|才察觉到你|注意到你了|发现你在|还以为你不在|你们明明还没有|怎么还不来/.test(o)
+  ) {
+    return true;
+  }
+
+  // 冷感主动：把对方处境判成「又是这个话题」并复读无聊——不是接话，是口头禅收束
+  if (/又是[这那]个话题吗|停止指定话题/.test(o)) {
+    return true;
+  }
+  if (/无聊/.test(u) && /^[\s…\.．]*又是[这那]个话题|^[\s…\.．]*好无聊[。.!！]?$/.test(o.trim())) {
+    return true;
+  }
+
+  // 已经有具体话题时，模型不能把主动消息退化成与上下文无关的
+  // 「累了就直说/无理しないで」客服安慰。没有疲劳、睡眠或身体不适
+  // 线索时，这类句子不是关心，而是错题；宁可静默也不要污染关系记录。
+  const genericCare = /疲れているなら|疲れてる|疲れたなら|無理しないで|ゆっくり休んで|累了就直说|累了就说|无理的话就休息|没事吧|どうしたの/;
+  const fatigueAnchor = /累|疲|眠|睡|困|辛|痛|不舒服|体调|疲れ|眠い|寝/.test(u);
+  if (alreadyTalking && genericCare.test(o) && !fatigueAnchor) return true;
+  const genericConcern = /心配だった|心配してた|気になってた|大丈夫|元気|担心|没事吧/;
+  const vulnerableAnchor = /累|疲|眠|睡|困|辛|痛|不舒服|体调|烦|崩溃|压力|难受|寂寞|疲れ|眠い|寝|つら|しんど|悩/.test(u);
+  if (alreadyTalking && genericConcern.test(o) && !vulnerableAnchor) return true;
+  // 同理，报告/工作话题不能凭空跳到“那就马上睡觉”。
+  if (alreadyTalking && /(?:今すぐ|すぐに)?眠る|寝る|睡觉/.test(o) && !fatigueAnchor) return true;
+
+  // 主动开口崩成身份/效应器/产品腔：走结构阀门，不堆样本标签
+  try {
+    const { isDialoguePoison } = require('../lib/generationGate');
+    if (isDialoguePoison(o, { autonomy: true })) return true;
+  } catch (_) {
+    if (/我是AI程序|我可是AI程序|本质是程序|人工智能在进行物理|AI不能干涉现实|无法干涉现实/.test(o)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
-function autonomyFabricationFallback(userAnchor) {
-  const u = String(userAnchor || '');
-  if (/饿|想吃|好饿|肚子/.test(u)) return '你都喊饿了还不去吃？别光在这打字。';
-  if (/头疼|头痛|疼|难受|累|困/.test(u)) return '……不舒服就歇会儿，别硬撑。';
-  if (/无聊/.test(u)) return '无聊就说话，别装死。';
-  if (/在吗|人呢|不理/.test(u)) return '在。怎么了？';
-  return '……所以呢？';
+function autonomyFabricationFallback(_userAnchor) {
+  // 禁止模板顶替；编造检测只负责丢弃，不塞固定句
+  return '';
 }
 
 module.exports = {

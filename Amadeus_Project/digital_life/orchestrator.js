@@ -195,6 +195,17 @@ class DigitalLifeOrchestrator {
       motivationState: ctx.motivationState,
       relScore: ctx.relScore,
       idleMs: ctx.idleMs,
+      quietMs: ctx.quietMs,
+      dtMs: ctx.dtMs,
+      facePresent: ctx.facePresent === true,
+      faceMs: ctx.faceMs || 0,
+      social: ctx.social,
+      lastUserText: ctx.lastUserText,
+      lastReplyText: ctx.lastReplyText,
+      alreadyTalking: ctx.alreadyTalking === true,
+      awaitingProactiveReply: ctx.awaitingProactiveReply === true,
+      isThinking: ctx.isThinking === true,
+      ttsPlaying: ctx.ttsPlaying === true,
       userPresenceActive: ctx.userPresenceActive,
       dnd: ctx.dnd,
       proactiveQuotaOk: ctx.proactiveQuotaOk,
@@ -204,6 +215,12 @@ class DigitalLifeOrchestrator {
     this._lastAutonomyBehavior = behavior;
     this._saveLegacyIndex();
     return behavior;
+  }
+
+  satisfyAutonomyUrge(urgeId, reason = 'expressed') {
+    if (!urgeId) return;
+    this.autonomy.satisfyUrge(urgeId, reason);
+    this._saveLegacyIndex();
   }
 
   runIdleCycle(ctx = {}) {
