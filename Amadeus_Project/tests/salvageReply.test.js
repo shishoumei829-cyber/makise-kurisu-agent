@@ -61,5 +61,5 @@ it('unsafe observation discards the original draft and regenerates from user fac
   });
   assert.equal(out, '今天烦什么，直接说。');
   assert.match(system, /不能沿用/);
-  assert.match(system, /不描述他的脸色/);
+  assert.match(system, /不要描述他的脸色/);
 });

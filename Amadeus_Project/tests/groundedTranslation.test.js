@@ -36,7 +36,7 @@ test('a user question is not evidence that a past drinking event happened', () =
     evidence: '',
   });
   assert.deepEqual(issues, ['invented_drinking']);
-  assert.match(buildFactSafeJapaneseFallback(issues), /記録はない/);
+  assert.equal(buildFactSafeJapaneseFallback(issues), '');
 });
 
 test('strict JSON result is parsed', () => {
@@ -70,7 +70,7 @@ test('grounding rejects unsupported self activity claims', () => {
     evidence: '',
   });
   assert.deepEqual(issues, ['invented_self_activity']);
-  assert.match(buildFactSafeChineseFallback(issues), /\u6ca1\u6709\u4f9d\u636e/);
+  assert.equal(buildFactSafeChineseFallback(issues), '');
 });
 
 test('unsupported observation of the user has no canned comfort fallback', () => {
@@ -98,7 +98,7 @@ test('coherence repair answers confusion and why instead of asking another quest
     detectReplyCoherenceIssues('\u4e3a\u4ec0\u4e48\u5b89\u5fc3\u5462', '\u6240\u4ee5\u8fd9\u6837\u60f3\u6765\uff0c\u591a\u5c11\u4f1a\u5b89\u5fc3\u4e00\u70b9\u5427'),
     ['missing_reason'],
   );
-  assert.match(buildContextSafeFallback('\u6211\u4e0d\u7406\u89e3\u4f60\u8ddf\u6211\u8bf4\u7684\u8fd9\u4e9b\u8bdd').chinese, /\u6ca1\u6709\u63a5\u4f4f|\u8bb2\u6e05\u695a/);
+  assert.deepEqual(buildContextSafeFallback('\u6211\u4e0d\u7406\u89e3\u4f60\u8ddf\u6211\u8bf4\u7684\u8fd9\u4e9b\u8bdd'), { japanese: '', chinese: '' });
 });
 
 test('coherence intent is semantic enough to survive alternate wording', () => {

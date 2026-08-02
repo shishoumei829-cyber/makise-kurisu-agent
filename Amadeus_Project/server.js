@@ -30,8 +30,6 @@ const {
   buildGroundedTranslationMessages,
   validateGroundedTranslation,
   detectUnsupportedAdditions,
-  buildFactSafeJapaneseFallback,
-  buildFactSafeChineseFallback,
   buildContextSafeFallback,
   detectReplyCoherenceIssues,
 } = require('./lib/groundedTranslation');
@@ -2779,14 +2777,8 @@ async function _polishJapaneseModelReply(jpRaw, userContent = '', extra = {}) {
       }
     } else if (additions.length) {
       console.warn('[grounding] rejected invented additions:', additions.join(','));
-      // 对用户状态的无依据观察不能用一条写死的“安慰句”覆盖。
-      // 整稿作废并交给 salvage 在当前原话范围内重新生成。
-      if (additions.includes('invented_user_state')) {
-        return _polishResult('', '', { dropped: true, dropReasons: additions });
-      }
-      const safeJapanese = buildFactSafeJapaneseFallback(additions, userContent);
-      if (safeJapanese) jp = safeJapanese;
-      forcedChinese = buildFactSafeChineseFallback(additions, userContent);
+      // 事实校验只负责废弃错误稿，绝不替人物塞一段固定纠错台词。
+      return _polishResult('', '', { dropped: true, dropReasons: additions });
     }
   } catch (error) {
     console.warn('[grounding] fact check skipped:', error.message);
@@ -2802,14 +2794,7 @@ async function _polishJapaneseModelReply(jpRaw, userContent = '', extra = {}) {
       evidence: authoritativeMemories,
     });
     if (deterministicIssues.length) {
-      if (deterministicIssues.includes('invented_user_state')) {
-        return _polishResult('', '', { dropped: true, dropReasons: deterministicIssues });
-      }
-      const safeJapanese = buildFactSafeJapaneseFallback(deterministicIssues, userContent);
-      const safeChinese = buildFactSafeChineseFallback(deterministicIssues, userContent);
-      if (safeJapanese) jp = safeJapanese;
-      if (safeChinese) forcedChinese = safeChinese;
-      grounded = null;
+      return _polishResult('', '', { dropped: true, dropReasons: deterministicIssues });
     }
   }
 
@@ -3100,50 +3085,7 @@ function _dialogueQualityIssues(reply, userContent, recentAssistant = []) {
 }
 
 function _dialogueHardFallback(issueList, userContent) {
-  const issues = new Set(issueList || []);
-  const user = String(userContent || '');
-  if (issues.has('physical_promise') && /两天|没理你|不理你/.test(user)) {
-    return '我会生气，也会想你。两天都不说一声，你最好准备好解释。';
-  }
-  if (issues.has('unsupported_detail') && /回来|回来了/.test(user)) {
-    return '……你还知道回来。今天怎么样？';
-  }
-  if (issues.has('physical_promise') && /做饭|煮面|吃/.test(user)) {
-    return '你使唤人倒是很自然。想吃什么可以说，别默认我已经站在厨房里。';
-  }
-  if (issues.has('generic_science') && /相位噪声/.test(user)) {
-    return '相位噪声会造成困难，但单凭这一点还不足以证明实验不可能成功。系统尺度、误差阈值和校准方式呢？';
-  }
-  if ((issues.has('customer_tone') || issues.has('caretaker_tone')
-      || issues.has('stale_topic') || issues.has('unsupported_detail'))
-    && /论文|思路|写不下/.test(user)) {
-    return '先别把“思路乱”当结论。你卡在论证、数据，还是结构？';
-  }
-  if (issues.has('missed_request')) {
-    return '谁是克里斯蒂娜。……不过能坚持练完，确实值得夸。';
-  }
-  if ((issues.has('unsupported_detail') || issues.has('physical_promise') || issues.has('caretaker_tone'))
-    && /练|健身|散架|累/.test(user)) {
-    return '练成这样还说得这么轻松。今天到底练了什么，能把你折腾成这样？';
-  }
-  if (issues.has('dodged_intimacy')) {
-    return '……喜欢你。非要我说得这么直白才肯罢休吗？';
-  }
-  if (issues.has('hostile_projection') || issues.has('caretaker_tone')) {
-    return '一次没做好和你这个人不行，是两回事。别在情绪最差的时候乱下结论。';
-  }
-  if (issues.has('failed_presence')) {
-    return '……知道了。那就待着，我不分析。';
-  }
-  if (issues.has('agreement_reflex')) {
-    return '当然不是。你说得没道理时，我照样会反驳你。';
-  }
-  if (issues.has('short_context_drift')) {
-    return '……嗯什么。';
-  }
-  if (issues.has('user_echo')) {
-    return '我听见了。然后呢？';
-  }
+  // 审稿器只能拒绝或请求重生，不能把问题类型映射到固定角色台词。
   return '';
 }
 
@@ -3312,11 +3254,9 @@ async function _postReplyPadUpdate(reply, userContent = '', extra = {}) {
       if (asksUnverifiedDrinking && !issues.includes('invented_drinking')) {
         issues.push('invented_drinking');
       }
-      const safe = buildFactSafeChineseFallback(issues, userContent);
-      if (issues.includes('invented_user_state')) {
+      if (issues.length) {
         return _polishResult('', '', { dropped: true, dropReasons: issues });
       }
-      if (safe) finalReply = safe;
     }
 
     const asksRecentRecall = /(?:刚才|之前).*(?:干嘛|什么|说了|做了|去了)|(?:记得|还记得).*[?？吗]/.test(userContent);
@@ -3361,6 +3301,9 @@ async function _postReplyPadUpdate(reply, userContent = '', extra = {}) {
     if (coherenceIssues.length) {
       const contextSafe = buildContextSafeFallback(userContent);
       console.warn('[dialogue] coherence repair:', coherenceIssues.join(','));
+      if (!contextSafe.chinese || !contextSafe.japanese) {
+        return _polishResult('', '', { dropped: true, dropReasons: coherenceIssues });
+      }
       finalReply = contextSafe.chinese;
       modelJp = contextSafe.japanese;
       extra._coherenceRepaired = true;

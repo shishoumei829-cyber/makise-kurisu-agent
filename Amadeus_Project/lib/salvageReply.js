@@ -39,8 +39,10 @@ async function salvageAssistantReply(deps, {
 } = {}) {
   // 无依据地判断对方外表/状态时，旧稿不能“抽一句还能说的”再放行；
   // 必须丢掉整稿并在原话范围内重生，否则同一个臆测会循环回来。
-  const factUnsafe = reasons.includes('invented_user_state');
-  const fromDirty = factUnsafe ? '' : extractSpeechCandidate(previousDraft);
+  const factUnsafe = reasons.some((reason) => /^invented_/.test(String(reason)));
+  const userStateUnsafe = reasons.includes('invented_user_state');
+  const coherenceUnsafe = reasons.some((reason) => /^(?:unresolved_context|unresolved_confusion|missing_reason|dodged_opinion|off_topic)$/.test(String(reason)));
+  const fromDirty = (factUnsafe || coherenceUnsafe) ? '' : extractSpeechCandidate(previousDraft);
   if (fromDirty) return fromDirty;
 
   const chatOnce = deps.ollamaChatOnce;
@@ -53,7 +55,13 @@ async function salvageAssistantReply(deps, {
     '对话对象是冈部伦太郎（凤凰院凶真），男的，你很熟。他说凶真/冈部是在说他自己，别把凶真说成第三人称「她」。',
     '禁止分析、禁止站在对话外面说明、禁止括号旁白。',
     factUnsafe
-      ? '上一稿猜测了对方没有明确说出的外表或状态，不能沿用。只回应他实际说出的内容；不描述他的脸色、表情、坐姿、疲惫或任何看见的画面。'
+      ? '上一稿加入了没有依据的事实，不能沿用。只回应他实际说出的内容，不补充共同经历、承诺、行程或刚刚发生的事。'
+      : '',
+    userStateUnsafe
+      ? '不要描述他的脸色、表情、坐姿、疲惫或任何看见的画面。'
+      : '',
+    coherenceUnsafe
+      ? '上一稿没有直接接住他的问题，不能沿用。先弄清他当前一句要你说明、回答还是表态，再直接回答；不要谈论上一稿或你的回答方式。'
       : '',
     reasons?.length ? '上一稿不能使用。直接回到他这一句的具体内容。' : '',
     factAnchor ? String(factAnchor).slice(0, 500) : '',

@@ -140,42 +140,12 @@ function detectUnsupportedAdditions(input = {}) {
 }
 
 function buildFactSafeJapaneseFallback(issues = [], userText = '') {
-  const set = new Set(issues);
-  if (set.has('invented_self_activity')) {
-    return '……さっきの「今日何をしていたか」という話には根拠がない。私が勝手に足したわ。';
-  }
-  if (set.has('invented_drinking')) {
-    return 'その記録はない。だから、一緒に飲んだとは言えないわ。';
-  }
-  if (set.has('invented_conflict')) {
-    return 'その喧嘩は記録にない。覚えているふりはしないわ。';
-  }
-  if (set.has('invented_promise')) {
-    return '約束の内容は記録にない。何を約束したのか確認させて。';
-  }
-  if (set.has('invented_schedule_excuse') && /不主动|主动找我|連絡/.test(String(userText))) {
-    return '忙しかったことを理由にはしない。最近、私から話しかけなかったのは認めるわ。';
-  }
+  // 事实核验只提供“不能说这稿”的判定，不提供任何预写台词。
+  // 调用者会废弃原稿并受约束重生；保留这个兼容接口以避免旧调用写回模板句。
   return '';
 }
 
 function buildFactSafeChineseFallback(issues = [], userText = '') {
-  const set = new Set(issues);
-  if (set.has('invented_self_activity')) {
-    return '……刚才关于我今天在做什么的说法没有依据，是我擅自补出来的。';
-  }
-  if (set.has('invented_drinking')) {
-    return '没有。至少我不记得有这回事，别把没发生的事硬塞给我。';
-  }
-  if (set.has('invented_conflict')) {
-    return '我没有这次吵架的记录，不会装作记得。';
-  }
-  if (set.has('invented_promise')) {
-    return '我这里没有承诺的具体内容。你告诉我是什么，我再认真核对。';
-  }
-  if (set.has('invented_schedule_excuse') && /不主动|主动找我|連絡/.test(String(userText))) {
-    return '我不拿“最近很忙”当借口。最近确实没主动找你，这点我认。';
-  }
   return '';
 }
 
@@ -200,27 +170,7 @@ function inferUserDialogueIntent(userText = '') {
 }
 
 function buildContextSafeFallback(userText = '') {
-  const intent = inferUserDialogueIntent(userText);
-  if (intent === 'confusion' || intent === 'off_topic') {
-    return {
-      japanese: '……今の返しは話を受け損ねた。言い方を変えて、ちゃんと順番に話すわ。',
-      chinese: '……刚才没有接住你说的重点。我换个说法，把中间那一步讲清楚。',
-    };
-  }
-  if (intent === 'reason') {
-    return {
-      japanese: '……先に理由を言う。さっきは結論だけ出して、根拠をつなげなかった。私の説明不足ね。',
-      chinese: '……先说原因：刚才我只给了结论，没有把依据接上。这是我的问题。',
-    };
-  }
-  if (intent === 'stance') {
-    return {
-      japanese: '……私の考えを先に言うべきだった。話をあなたに投げ返して、私自身の判断を隠したわ。',
-      chinese: '……我应该先说自己的判断，刚才却把话题推回给你了。',
-    };
-  }
-  // 不知道该怎么接，不等于用户累了，更不能用一句固定安慰盖过去。
-  // 交给上游重新生成；空值会触发受约束的重生，而非展示模板句。
+  // 语境检查只判定“这一稿没接住”，不替人物指定一段道歉或解释。
   return { japanese: '', chinese: '' };
 }
 
